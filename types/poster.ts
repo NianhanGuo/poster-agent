@@ -214,6 +214,11 @@ export interface ReferenceAnalysis {
   texture: string;
   lighting: string;
   visualSummary: string;
+  // Hard-constraint fields — used for enforced generation
+  brightness: "light" | "medium" | "dark";
+  contrast: "low" | "medium" | "high";
+  styleClass: "abstract-poster" | "blurred-gradient" | "geometric-graphic" | "photographic" | "illustration" | "typographic";
+  forbiddenDrift: string[];  // auto-generated terms the output must never become
 }
 
 export type ReferenceMode = "loose" | "balanced" | "strict";

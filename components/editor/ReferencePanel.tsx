@@ -13,6 +13,7 @@ import type {
   PosterLayer,
 } from "@/types/poster";
 import { extractPaletteFromUrl } from "@/lib/colorExtract";
+import { getAutoForbiddenTerms } from "@/lib/referencePrompt";
 
 type TargetKey = keyof ReferenceTargets;
 
@@ -74,6 +75,91 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+// ── Analysis debug section ────────────────────────────────────────────────────
+
+function AnalysisDebug({ image }: { image: ReferenceImage }) {
+  const a = image.analysis;
+  if (!a && image.palette.length === 0) return null;
+
+  const forbidden = getAutoForbiddenTerms({
+    strength: image.strength,
+    targets: {},
+    palette: image.palette.length > 0 ? image.palette : undefined,
+    analysis: a,
+  });
+
+  return (
+    <div
+      className="mx-2 mb-2 rounded-sm space-y-1.5 text-[7px] font-mono"
+      style={{ border: "1px solid rgba(255,255,255,0.06)", background: "rgba(0,0,0,0.15)", padding: "6px 8px" }}
+    >
+      <div className="text-zinc-600 uppercase tracking-widest text-[6px]">debug · analysis</div>
+
+      {/* Palette */}
+      {image.palette.length > 0 && (
+        <div className="flex items-center gap-1 flex-wrap">
+          <span className="text-zinc-700 w-14 flex-none">palette</span>
+          <div className="flex gap-0.5 flex-wrap">
+            {image.palette.map((c) => (
+              <div
+                key={c.hex}
+                className="w-3.5 h-3.5 rounded-sm"
+                title={`${c.hex} (${c.role})`}
+                style={{ background: c.hex, border: "1px solid rgba(255,255,255,0.1)" }}
+              />
+            ))}
+          </div>
+          <span className="text-zinc-700">{image.palette.map((p) => p.hex).join(" ")}</span>
+        </div>
+      )}
+
+      {/* Brightness + Contrast + Style Class */}
+      {a && (
+        <>
+          <div className="flex gap-3">
+            <span><span className="text-zinc-700">bright </span><span className="text-zinc-400">{a.brightness ?? "—"}</span></span>
+            <span><span className="text-zinc-700">contrast </span><span className="text-zinc-400">{a.contrast ?? "—"}</span></span>
+          </div>
+          <div>
+            <span className="text-zinc-700">style </span>
+            <span className="text-zinc-400">{a.styleClass ?? "—"}</span>
+          </div>
+          {a.visualSummary && (
+            <div>
+              <span className="text-zinc-700">summary </span>
+              <span className="text-zinc-500 italic">"{a.visualSummary}"</span>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Forbidden terms */}
+      {forbidden.length > 0 && (
+        <div>
+          <div className="text-zinc-700 mb-0.5">auto-forbidden</div>
+          <div className="text-red-500/60 leading-relaxed">
+            {forbidden.map((f, i) => (
+              <span key={i} className="inline-block mr-1">— {f}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* GPT forbiddenDrift */}
+      {a?.forbiddenDrift && a.forbiddenDrift.length > 0 && (
+        <div>
+          <div className="text-zinc-700 mb-0.5">gpt forbidden drift</div>
+          <div className="text-amber-600/60 leading-relaxed">
+            {a.forbiddenDrift.map((f, i) => (
+              <span key={i} className="inline-block mr-1">— {f}</span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Image card ────────────────────────────────────────────────────────────────
 
 function RefImageCard({
@@ -87,7 +173,7 @@ function RefImageCard({
   onUpdate: (updates: Partial<ReferenceImage>) => void;
   onRemove: () => void;
 }) {
-  const [showPalette, setShowPalette] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
 
   return (
     <div
@@ -151,7 +237,7 @@ function RefImageCard({
             className="w-full h-0.5 accent-zinc-400"
           />
 
-          {/* Analysis status */}
+          {/* Analysis status + debug toggle */}
           <div className="flex items-center justify-between">
             <span
               className="font-mono text-[7px] tracking-wide"
@@ -176,12 +262,13 @@ function RefImageCard({
                 : ""}
             </span>
 
-            {image.palette.length > 0 && (
+            {(image.palette.length > 0 || image.analysis) && (
               <button
-                onClick={() => setShowPalette((v) => !v)}
-                className="font-mono text-[7px] text-zinc-700 hover:text-zinc-500 transition-colors"
+                onClick={() => setShowDebug((v) => !v)}
+                className="font-mono text-[7px] transition-colors"
+                style={{ color: showDebug ? "#a1a1aa" : "#3f3f46" }}
               >
-                {showPalette ? "hide" : "palette"}
+                {showDebug ? "hide debug" : "debug"}
               </button>
             )}
           </div>
@@ -197,22 +284,8 @@ function RefImageCard({
         </button>
       </div>
 
-      {/* Palette swatches (collapsible) */}
-      {showPalette && image.palette.length > 0 && (
-        <div className="px-2 pb-2 flex flex-wrap gap-1">
-          {image.palette.map((c) => (
-            <div
-              key={c.hex}
-              className="w-5 h-5 rounded-sm"
-              style={{
-                background: c.hex,
-                border: "1px solid rgba(255,255,255,0.12)",
-              }}
-              title={`${c.hex} (${c.role})`}
-            />
-          ))}
-        </div>
-      )}
+      {/* Debug panel (collapsible) */}
+      {showDebug && <AnalysisDebug image={image} />}
 
       {/* Strict mode warning */}
       {image.mode === "strict" && !image.analysis && !image.analyzing && (
@@ -283,16 +356,19 @@ export function ReferencePanel() {
     project,
   } = usePosterStore();
 
-  const [genLoading, setGenLoading] = useState(false);
-  const [genToast, setGenToast]   = useState("");
-  const [adding, setAdding]       = useState(false);
+  const [genLoading, setGenLoading]         = useState(false);
+  const [genToast, setGenToast]             = useState("");
+  const [adding, setAdding]                 = useState(false);
+  const [promptPreview, setPromptPreview]   = useState<string | null>(null);
+  const [showPrompt, setShowPrompt]         = useState(false);
+  const [graphicLoading, setGraphicLoading] = useState(false);
 
   const images = reference.images;
   const hasImages = images.length > 0;
   const anyTarget = Object.values(reference.targets).some(Boolean);
   const noTargetsWarning = hasImages && !anyTarget;
 
-  // ── Drop handler: reads files, creates ReferenceImage entries, kicks off analysis ──
+  // ── Drop handler ──────────────────────────────────────────────────────────
 
   const handleDrop = useCallback(
     async (files: File[]) => {
@@ -310,7 +386,6 @@ export function ReferencePanel() {
             return;
           }
 
-          // Determine role based on how many images already exist
           const existingCount = images.length;
           const role: ReferenceRole =
             existingCount === 0 ? "primary" : existingCount === 1 ? "secondary" : "accent";
@@ -332,7 +407,6 @@ export function ReferencePanel() {
 
           addReferenceImage(newImage);
 
-          // Run analysis in background, update image when done
           analyzeImage(url)
             .then(({ palette, analysis, analysisError }) => {
               updateReferenceImage(id, { palette, analysis, analysisError, analyzing: false });
@@ -348,7 +422,7 @@ export function ReferencePanel() {
     [images, adding, addReferenceImage, updateReferenceImage],
   );
 
-  // ── Apply palette from primary image to canvas text layers ──
+  // ── Apply palette to text layers ──────────────────────────────────────────
 
   function applyPaletteToCanvas() {
     if (!project) return;
@@ -369,19 +443,29 @@ export function ReferencePanel() {
       });
   }
 
-  // ── Generate images from reference ──
+  // ── Generate images from reference ───────────────────────────────────────
 
-  async function generateFromReference() {
+  async function generateFromReference(matchMode?: "max") {
     if (!project || !hasImages) return;
-    if (!anyTarget) {
-      setGenToast("⚠ Select at least one target to apply reference.");
+    if (!anyTarget && matchMode !== "max") {
+      setGenToast("Select at least one target to apply reference.");
       return;
     }
 
     setGenLoading(true);
     setGenToast("");
+    setPromptPreview(null);
 
-    const refCtx = buildEditorRefCtx(reference);
+    // "Match Reference More" forces strict mode + all targets + full strength
+    const refForGeneration = matchMode === "max"
+      ? {
+          ...reference,
+          targets: { mood: true, color: true, backgroundStyle: true, typography: false, layout: true, texture: true, lighting: true },
+          images: reference.images.map((img) => ({ ...img, mode: "strict" as ReferenceMode, strength: 100 })),
+        }
+      : reference;
+
+    const refCtx = buildEditorRefCtx(refForGeneration);
     const imagePrompt = project.promptHistory.at(-1) ?? "";
 
     try {
@@ -397,9 +481,16 @@ export function ReferencePanel() {
               height: project.canvas.height,
               reference: refCtx,
             }),
-          }).then((r) => r.json() as Promise<{ url?: string }>),
+          }).then((r) => r.json() as Promise<{ url?: string; promptPreview?: string }>),
         ),
       );
+
+      // Capture prompt preview from first result
+      const preview = results[0]?.promptPreview;
+      if (preview) {
+        setPromptPreview(preview);
+        setShowPrompt(false);
+      }
 
       let added = 0;
       for (const { url } of results) {
@@ -410,11 +501,10 @@ export function ReferencePanel() {
           imageUrl: url,
           fileName: `ref-gen-${Date.now()}`,
           createdAt: new Date().toISOString(),
-          generatedTag: "from reference",
+          generatedTag: matchMode === "max" ? "match-max" : "from reference",
         };
         addAsset(asset);
 
-        // Auto-apply first result to background
         if (added === 0) {
           const layers = getSortedLayers();
           const bgLayer = layers.find((l) => l.type === "backgroundImage");
@@ -438,7 +528,7 @@ export function ReferencePanel() {
         added++;
       }
 
-      setGenToast(added > 0 ? `${added} image${added > 1 ? "s" : ""} generated — background updated` : "No images returned");
+      setGenToast(added > 0 ? `${added} image${added > 1 ? "s" : ""} generated` : "No images returned");
       setTimeout(() => setGenToast(""), 4000);
     } catch {
       setGenToast("Generation failed — check API key");
@@ -448,12 +538,79 @@ export function ReferencePanel() {
     }
   }
 
+  // ── Generate Graphic Match (SVG fallback) ─────────────────────────────────
+
+  async function generateGraphicMatch() {
+    if (!project || !hasImages) return;
+    const primary = images.find((i) => i.role === "primary") ?? images[0];
+    if (!primary || primary.palette.length === 0) {
+      setGenToast("Need palette — wait for analysis to finish");
+      return;
+    }
+
+    setGraphicLoading(true);
+    setGenToast("");
+
+    try {
+      const res = await fetch("/api/generate/graphic-match", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          palette: primary.palette,
+          width: project.canvas.width,
+          height: project.canvas.height,
+          styleClass: primary.analysis?.styleClass,
+        }),
+      }).then((r) => r.json() as Promise<{ url?: string }>);
+
+      if (!res.url) throw new Error("No URL returned");
+
+      const asset = {
+        id: uuidv4(),
+        userId: "local",
+        imageUrl: res.url,
+        fileName: `graphic-match-${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        generatedTag: "graphic match",
+      };
+      addAsset(asset);
+
+      const layers = getSortedLayers();
+      const bgLayer = layers.find((l) => l.type === "backgroundImage");
+      if (bgLayer) {
+        updateLayer(bgLayer.id, { imageData: { src: res.url, fit: "fill" } });
+      } else {
+        const canvas = project.canvas;
+        const newLayer: PosterLayer = {
+          id: uuidv4(),
+          type: "backgroundImage",
+          label: "Background",
+          x: 0, y: 0,
+          width: canvas.width, height: canvas.height,
+          rotation: 0, opacity: 1,
+          visible: true, locked: false, zIndex: 1,
+          imageData: { src: res.url, fit: "fill" },
+        };
+        addLayer(newLayer);
+      }
+
+      setGenToast("Graphic match applied to background");
+      setTimeout(() => setGenToast(""), 4000);
+    } catch {
+      setGenToast("Graphic match failed");
+      setTimeout(() => setGenToast(""), 4000);
+    } finally {
+      setGraphicLoading(false);
+    }
+  }
+
   function toggleTarget(key: TargetKey) {
     setReference({ targets: { ...reference.targets, [key]: !reference.targets[key] } });
   }
 
-  const hasPalette = images.some((i) => i.palette.length > 0);
-  const strictCount = images.filter((i) => i.mode === "strict").length;
+  const hasPalette      = images.some((i) => i.palette.length > 0);
+  const strictCount     = images.filter((i) => i.mode === "strict").length;
+  const hasAnalysis     = images.some((i) => i.analysis !== null);
 
   return (
     <div className="p-3 space-y-4">
@@ -572,12 +729,14 @@ export function ReferencePanel() {
         </div>
       )}
 
-      {/* ── Generate CTA ────────────────────────────────────────────────────── */}
+      {/* ── Generate CTAs ────────────────────────────────────────────────────── */}
       {project && hasImages && (
         <div className="space-y-2" style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: "12px" }}>
+
+          {/* Primary generate button */}
           <button
-            onClick={generateFromReference}
-            disabled={genLoading || !hasImages}
+            onClick={() => generateFromReference()}
+            disabled={genLoading || graphicLoading || !hasImages}
             className="w-full py-2.5 font-mono text-[9px] tracking-[0.15em] uppercase transition-all disabled:opacity-30 disabled:cursor-not-allowed rounded-sm"
             style={{
               background: genLoading ? "rgba(255,255,255,0.03)" : "rgba(255,255,255,0.07)",
@@ -595,8 +754,70 @@ export function ReferencePanel() {
             )}
           </button>
 
+          {/* Match Reference More button */}
+          {hasAnalysis && (
+            <button
+              onClick={() => generateFromReference("max")}
+              disabled={genLoading || graphicLoading}
+              className="w-full py-2 font-mono text-[8px] tracking-[0.12em] uppercase transition-all disabled:opacity-30 disabled:cursor-not-allowed rounded-sm"
+              style={{
+                background: "rgba(251,191,36,0.04)",
+                border: "1px solid rgba(251,191,36,0.20)",
+                color: genLoading ? "#71717a" : "#fbbf24",
+              }}
+              title="Regenerates at strength 100 + strict mode + all visual targets enabled"
+            >
+              Match Reference More →
+            </button>
+          )}
+
+          {/* Generate Graphic Match (SVG fallback) */}
+          {hasPalette && (
+            <button
+              onClick={generateGraphicMatch}
+              disabled={genLoading || graphicLoading}
+              className="w-full py-2 font-mono text-[8px] tracking-[0.12em] uppercase transition-all disabled:opacity-30 disabled:cursor-not-allowed rounded-sm"
+              style={{
+                background: graphicLoading ? "rgba(255,255,255,0.02)" : "transparent",
+                border: "1px solid rgba(255,255,255,0.07)",
+                color: graphicLoading ? "#52525b" : "#71717a",
+              }}
+              title="Generates a blurred abstract SVG directly from the extracted palette — always matches reference colors and style"
+            >
+              {graphicLoading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-1.5 h-1.5 border border-zinc-700 border-t-zinc-400 rounded-full animate-spin inline-block" />
+                  building…
+                </span>
+              ) : (
+                "Generate Graphic Match →"
+              )}
+            </button>
+          )}
+
+          {/* Toast */}
           {genToast && (
             <p className="font-mono text-[8px] text-zinc-400 text-center">{genToast}</p>
+          )}
+
+          {/* Prompt preview (returned after generation) */}
+          {promptPreview && (
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.04)", paddingTop: "8px" }}>
+              <button
+                onClick={() => setShowPrompt((v) => !v)}
+                className="w-full text-left font-mono text-[7px] text-zinc-700 hover:text-zinc-500 transition-colors pb-1"
+              >
+                {showPrompt ? "▲ hide prompt sent to model" : "▼ show prompt sent to model"}
+              </button>
+              {showPrompt && (
+                <pre
+                  className="font-mono text-[7px] text-zinc-600 whitespace-pre-wrap leading-relaxed overflow-auto"
+                  style={{ maxHeight: "200px", border: "1px solid rgba(255,255,255,0.04)", padding: "6px", borderRadius: "2px" }}
+                >
+                  {promptPreview}
+                </pre>
+              )}
+            </div>
           )}
         </div>
       )}

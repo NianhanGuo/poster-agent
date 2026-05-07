@@ -264,3 +264,225 @@ export function buildReferenceSection(
   }
   return buildLegacySection(ref, purpose);
 }
+
+// ── Hard constraint system (for image generation strict / strength ≥ 80) ──────
+
+/** Returns true if any reference in the context is in strict mode or has strength ≥ 80. */
+export function isHardConstraintMode(ref: EnrichedRefCtx): boolean {
+  if (ref.references && ref.references.length > 0) {
+    return ref.references.some((r) => r.mode === "strict" || r.strength >= 80);
+  }
+  return ref.strength >= 80;
+}
+
+function styleClassLabel(styleClass: string): string {
+  switch (styleClass) {
+    case "abstract-poster":   return "abstract poster / non-representational graphic design";
+    case "blurred-gradient":  return "blurred gradient / soft-focus color field";
+    case "geometric-graphic": return "geometric graphic design / flat shapes";
+    case "photographic":      return "photographic";
+    case "illustration":      return "illustration / painted";
+    case "typographic":       return "typographic design";
+    default:                  return styleClass;
+  }
+}
+
+function styleClassForbiddenTypes(styleClass: string): string {
+  switch (styleClass) {
+    case "abstract-poster":
+    case "blurred-gradient":
+    case "geometric-graphic":
+      return "a photograph, cinematic scene, realistic landscape, 3D render, or fantasy environment";
+    case "photographic":
+      return "an illustration, abstract design, or flat graphic";
+    case "illustration":
+      return "a photograph or 3D CGI render";
+    default:
+      return "a radically different medium or aesthetic";
+  }
+}
+
+function isAbstractStyleClass(styleClass: string): boolean {
+  return ["abstract-poster", "blurred-gradient", "geometric-graphic"].includes(styleClass);
+}
+
+function brightnessConstraint(brightness: "light" | "medium" | "dark"): string {
+  if (brightness === "light") {
+    return "light background, pastel tones, high luminosity — NO dark backgrounds, NO black, NO dark scenes";
+  }
+  if (brightness === "dark") {
+    return "dark background, deep tones — NO bright backgrounds, NO white, NO overexposed look";
+  }
+  return "balanced mid-tones";
+}
+
+function contrastConstraint(contrast: "low" | "medium" | "high"): string {
+  if (contrast === "low") {
+    return "low contrast, soft tonal transitions — NO dramatic shadows, NO harsh highlights, NO deep blacks";
+  }
+  if (contrast === "high") {
+    return "high contrast, strong tonal separation — clear darks vs lights";
+  }
+  return "moderate tonal range";
+}
+
+function hexBrightness(hex: string): number {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return (r * 299 + g * 587 + b * 114) / 1000;
+}
+
+function buildAutoForbidden(
+  analysis: ReferenceAnalysis | null | undefined,
+  palette: PaletteColor[],
+): string[] {
+  const terms: string[] = [];
+
+  if (!analysis) {
+    // Infer from palette brightness alone
+    if (palette.length > 0) {
+      const avg = palette.reduce((s, p) => s + hexBrightness(p.hex), 0) / palette.length;
+      if (avg > 180) terms.push("dark background", "dark scene", "noir aesthetic", "deep shadows");
+      else if (avg < 80) terms.push("white background", "bright overexposed look");
+    }
+    return terms;
+  }
+
+  if (analysis.brightness === "light") {
+    terms.push("dark background", "dark scene", "noir aesthetic", "deep shadows", "black backdrop");
+  } else if (analysis.brightness === "dark") {
+    terms.push("white background", "bright background", "overexposed look", "bleached aesthetic");
+  }
+
+  if (analysis.contrast === "low") {
+    terms.push("high contrast", "dramatic lighting", "strong directional shadows", "harsh highlights", "deep blacks and bright whites");
+  } else if (analysis.contrast === "high") {
+    terms.push("flat monotone wash", "soft pastel blur with no tonal range");
+  }
+
+  const abstractClasses = ["abstract-poster", "blurred-gradient", "geometric-graphic"];
+  if (abstractClasses.includes(analysis.styleClass)) {
+    terms.push(
+      "realistic landscape or nature photography",
+      "fantasy or sci-fi environment",
+      "cinematic film composition",
+      "sharp 3D rendering or CGI",
+      "human figures or characters as focal point",
+      "identifiable objects or representational scenes",
+    );
+  }
+
+  if (analysis.styleClass === "blurred-gradient") {
+    terms.push("sharp edges or crisp outlines", "photographic depth of field", "3D modeled surfaces");
+  }
+
+  // GPT-detected forbidden drift
+  if (Array.isArray(analysis.forbiddenDrift) && analysis.forbiddenDrift.length > 0) {
+    terms.push(...analysis.forbiddenDrift);
+  }
+
+  return [...new Set(terms)];
+}
+
+/**
+ * Builds a hard constraint block for image generation.
+ * Place this FIRST in the DALL-E prompt so it carries maximum weight.
+ * Only called when isHardConstraintMode() returns true.
+ *
+ * @param ref      - enriched reference context
+ * @param subject  - the user's concept/subject prompt (e.g. "water", "film poster")
+ */
+export function buildImageConstraintPrefix(ref: EnrichedRefCtx, subject: string): string {
+  // Resolve the primary strict/high-strength reference
+  let analysis: ReferenceAnalysis | null | undefined;
+  let palette: PaletteColor[] = [];
+
+  if (ref.references && ref.references.length > 0) {
+    const sorted = [...ref.references].sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role]);
+    const primary =
+      sorted.find((r) => r.mode === "strict" || r.strength >= 80) ??
+      sorted.find((r) => r.mode === "balanced") ??
+      sorted[0];
+    analysis = primary?.analysis;
+    palette  = primary?.palette ?? [];
+  } else {
+    analysis = ref.analysis;
+    palette  = ref.palette ?? [];
+  }
+
+  if (!analysis && palette.length === 0) return "";
+
+  const lines: string[] = [
+    `REFERENCE CONSTRAINTS — HARD OVERRIDE.`,
+    `These are HARD VISUAL CONSTRAINTS, not inspiration. The output MUST preserve them exactly.`,
+    `They override the subject prompt, style preset, and brief. Do not drift from them.`,
+    ``,
+  ];
+
+  if (analysis?.styleClass) {
+    lines.push(`STYLE: ${styleClassLabel(analysis.styleClass)}`);
+    lines.push(`  NOT: ${styleClassForbiddenTypes(analysis.styleClass)}`);
+  }
+
+  if (analysis?.brightness) {
+    lines.push(`BRIGHTNESS: ${analysis.brightness.toUpperCase()} — ${brightnessConstraint(analysis.brightness)}`);
+  }
+
+  if (analysis?.contrast) {
+    lines.push(`CONTRAST: ${analysis.contrast.toUpperCase()} — ${contrastConstraint(analysis.contrast)}`);
+  }
+
+  if (palette.length > 0) {
+    const swatches = palette.map((p) => `${p.hex}(${p.role})`).join(", ");
+    lines.push(`MANDATORY PALETTE — DO NOT introduce new dominant colors outside this set:`);
+    lines.push(`  ${swatches}`);
+    if (analysis?.palette?.length) {
+      lines.push(`  Vision-confirmed: ${analysis.palette.join(", ")}`);
+    }
+  }
+
+  if (analysis?.mood)    lines.push(`MOOD: ${analysis.mood}`);
+  if (analysis?.texture) lines.push(`TEXTURE/SURFACE: ${analysis.texture}`);
+  if (analysis?.shapes)  lines.push(`GEOMETRY/SHAPES: ${analysis.shapes}`);
+
+  // Forbidden block
+  const forbidden = buildAutoForbidden(analysis, palette);
+  if (forbidden.length > 0) {
+    lines.push(``);
+    lines.push(`FORBIDDEN — output MUST NOT contain any of these:`);
+    for (const f of forbidden) lines.push(`  - ${f}`);
+  }
+
+  // Subject abstraction — reframe the concept so it doesn't override the reference aesthetic
+  const isAbstract = analysis?.styleClass ? isAbstractStyleClass(analysis.styleClass) : false;
+  if (isAbstract && subject.trim()) {
+    lines.push(``);
+    lines.push(`SUBJECT INTERPRETATION:`);
+    lines.push(`Interpret "${subject}" as an abstract graphic design concept — NOT a literal scene.`);
+    lines.push(`Do NOT generate a realistic or photographic depiction of "${subject}".`);
+    lines.push(`Instead: render it as abstract forms, blurred shapes, or graphic geometry in the palette above.`);
+    lines.push(`This is a graphic design piece, not nature photography or a cinematic scene.`);
+  }
+
+  // Global instruction (highest priority user intent)
+  const instruction = ref.globalInstruction?.trim() ?? ref.instruction?.trim();
+  if (instruction) {
+    lines.push(``);
+    lines.push(`USER INSTRUCTION (highest priority): ${instruction}`);
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * Returns auto-forbidden terms for a given reference context — used by the debug panel.
+ */
+export function getAutoForbiddenTerms(ref: EnrichedRefCtx): string[] {
+  if (ref.references && ref.references.length > 0) {
+    const sorted = [...ref.references].sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role]);
+    const primary = sorted[0];
+    return buildAutoForbidden(primary?.analysis, primary?.palette ?? []);
+  }
+  return buildAutoForbidden(ref.analysis, ref.palette ?? []);
+}
