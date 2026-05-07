@@ -363,7 +363,7 @@ export function ReferencePanel() {
   const [showPrompt, setShowPrompt]         = useState(false);
   const [graphicLoading, setGraphicLoading] = useState(false);
 
-  const images = reference.images;
+  const images = reference.images ?? [];
   const hasImages = images.length > 0;
   const anyTarget = Object.values(reference.targets).some(Boolean);
   const noTargetsWarning = hasImages && !anyTarget;
@@ -829,18 +829,19 @@ export function ReferencePanel() {
 // ── Helper: build EditorRefCtx from store reference state ─────────────────────
 
 export function buildEditorRefCtx(reference: ReferenceConfig) {
-  if (reference.images.length > 0) {
+  const images = reference.images ?? [];
+  if (images.length > 0) {
     return {
       strength: 50,
-      targets: reference.targets,
+      targets: reference.targets ?? {},
       globalInstruction: reference.globalInstruction || reference.instruction || undefined,
-      references: reference.images.map((img) => ({
+      references: images.map((img) => ({
         id: img.id,
         mode: img.mode,
         role: img.role,
         strength: img.strength,
         targets: reference.targets,
-        palette: img.palette.length > 0 ? img.palette : undefined,
+        palette: (img.palette ?? []).length > 0 ? img.palette : undefined,
         analysis: img.analysis ?? undefined,
       })),
     };
@@ -848,9 +849,9 @@ export function buildEditorRefCtx(reference: ReferenceConfig) {
   // Legacy single-ref fallback
   return {
     strength: reference.strength,
-    targets: reference.targets,
+    targets: reference.targets ?? {},
     instruction: reference.instruction || undefined,
-    palette: reference.palette.length > 0 ? reference.palette : undefined,
+    palette: (reference.palette ?? []).length > 0 ? reference.palette : undefined,
     analysis: reference.analysis ?? undefined,
   };
 }

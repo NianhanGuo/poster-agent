@@ -136,7 +136,7 @@ export const usePosterStore = create<PosterState>()(
       set((state) => {
         if (!state.project) return;
         get().pushHistory();
-        if (!layer.zIndex) {
+        if (layer.zIndex == null) {
           const maxZ = Math.max(0, ...state.project.layers.map((l) => l.zIndex));
           layer.zIndex = maxZ + 1;
         }
@@ -311,16 +311,19 @@ export const usePosterStore = create<PosterState>()(
 
     addReferenceImage: (image) =>
       set((state) => {
+        if (!Array.isArray(state.reference.images)) state.reference.images = [];
         state.reference.images.push(image);
       }),
 
     removeReferenceImage: (id) =>
       set((state) => {
+        if (!Array.isArray(state.reference.images)) { state.reference.images = []; return; }
         state.reference.images = state.reference.images.filter((img) => img.id !== id);
       }),
 
     updateReferenceImage: (id, updates) =>
       set((state) => {
+        if (!Array.isArray(state.reference.images)) return;
         const img = state.reference.images.find((i) => i.id === id);
         if (img) Object.assign(img, updates);
       }),

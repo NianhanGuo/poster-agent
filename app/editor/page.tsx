@@ -1,5 +1,9 @@
-import { EditorClient } from "@/components/editor/EditorClient";
+import { EditorClient, EditorErrorBoundary } from "@/components/editor/EditorClient";
 
 export default function EditorPage() {
-  return <EditorClient />;
+  return (
+    <EditorErrorBoundary>
+      <EditorClient />
+    </EditorErrorBoundary>
+  );
 }

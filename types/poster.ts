@@ -62,14 +62,20 @@ export type LayerType =
   | "foregroundCutout"
   | "userText"
   | "userImage"
-  | "drawingLayer";
+  | "drawingLayer"
+  | "gradientLayer"
+  | "textureLayer";
+
+const TEXT_LAYER_TYPES = new Set<LayerType>([
+  "titleText", "subtitleText", "metaText", "bodyText", "userText",
+]);
 
 export function isTextLayer(type: LayerType): boolean {
-  return type.endsWith("Text");
+  return TEXT_LAYER_TYPES.has(type);
 }
 
 export function isImageLayer(type: LayerType): boolean {
-  return !type.endsWith("Text");
+  return !TEXT_LAYER_TYPES.has(type);
 }
 
 export interface TextLayerData {

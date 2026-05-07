@@ -203,15 +203,20 @@ export function PosterCanvas({ showGuides = false }: { showGuides?: boolean }) {
                 .filter((l) => l.visible)
                 .map((layer) => {
                   if (!layer?.id || !layer.type) return null;
-                  return (
-                    <PosterLayerNode
-                      key={layer.id}
-                      layer={layer}
-                      selected={selectedLayerId === layer.id}
-                      onSelect={() => !layer.locked && selectLayer(layer.id)}
-                      onChange={(attrs) => updateLayer(layer.id, attrs)}
-                    />
-                  );
+                  try {
+                    return (
+                      <PosterLayerNode
+                        key={layer.id}
+                        layer={layer}
+                        selected={selectedLayerId === layer.id}
+                        onSelect={() => !layer.locked && selectLayer(layer.id)}
+                        onChange={(attrs) => updateLayer(layer.id, attrs)}
+                      />
+                    );
+                  } catch (err) {
+                    console.error("[PosterCanvas] Layer render error:", err, layer);
+                    return null;
+                  }
                 })}
             </KonvaLayer>
           </Stage>
@@ -371,7 +376,9 @@ function PosterLayerNode({
     layer.type === "subjectImage" ||
     layer.type === "foregroundCutout" ||
     layer.type === "userImage" ||
-    layer.type === "drawingLayer";
+    layer.type === "drawingLayer" ||
+    layer.type === "gradientLayer" ||
+    layer.type === "textureLayer";
 
   if (isImageType) {
     return (
@@ -386,7 +393,7 @@ function PosterLayerNode({
   }
 
   const td = layer.textData;
-  if (!td) return null;
+  if (!td || typeof td.text !== "string") return null;
 
   // Gradient fill
   const gradientPreset = td.fillGradient ? getGradientPreset(td.fillGradient) : undefined;

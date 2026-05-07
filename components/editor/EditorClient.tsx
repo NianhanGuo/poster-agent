@@ -1,5 +1,6 @@
 "use client";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, Component } from "react";
+import type { ReactNode, ErrorInfo } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 import { usePosterStore } from "@/store/posterStore";
 import { PosterCanvas } from "./PosterCanvas";
@@ -73,8 +74,13 @@ export function EditorClient() {
 
   const isDemo = project.isDemo ?? false;
   const lockedLayers = getSortedLayers().filter((l) => l.locked);
-  // Build enriched ref context — includes multi-ref images + vision analysis
-  const refCtx = buildEditorRefCtx(reference);
+  let refCtx: ReturnType<typeof buildEditorRefCtx>;
+  try {
+    refCtx = buildEditorRefCtx(reference);
+  } catch (err) {
+    console.error("[EditorClient] buildEditorRefCtx crashed:", err, "\nreference state:", reference);
+    refCtx = { strength: 50, targets: {} };
+  }
 
   // ── 2-step generation: brief → layout + image ──────────────────────────────
 
@@ -176,7 +182,7 @@ export function EditorClient() {
     setGenerating(false);
 
     // Build AI usage feedback label
-    const refImages = reference.images;
+    const refImages = reference.images ?? [];
     const refParts: string[] = [];
     if (refImages.length > 0) {
       const activeTargets = Object.entries(reference.targets).filter(([, v]) => v).map(([k]) => k);
@@ -380,7 +386,7 @@ export function EditorClient() {
           <div className="flex-none flex" style={{ borderBottom: `1px solid ${BORDER}` }}>
             {LEFT_TABS.map(({ id, label }) => {
               const isRef = id === "reference";
-              const refCount = isRef ? reference.images.length : 0;
+              const refCount = isRef ? (reference.images ?? []).length : 0;
               return (
                 <button
                   key={id}
@@ -654,3 +660,50 @@ function UserMenu({ session }: { session: NextSession }) {
     </div>
   );
 }
+
+// ─── Editor-level error boundary ─────────────────────────────────────────────
+
+class EditorErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("=== EditorClient render crash ===");
+    console.error("Error:", error);
+    console.error("Stack:", error.stack);
+    console.error("Component stack:", info.componentStack);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-4 px-8">
+          <p className="font-mono text-[11px] text-red-500/80 text-center max-w-lg">
+            Editor crashed: {this.state.error.message}
+          </p>
+          <p className="font-mono text-[9px] text-zinc-700 text-center max-w-lg whitespace-pre-wrap">
+            {this.state.error.stack?.split("\n").slice(0, 6).join("\n")}
+          </p>
+          <button
+            onClick={() => this.setState({ error: null })}
+            className="font-mono text-[10px] tracking-[0.15em] uppercase text-zinc-600 hover:text-zinc-300 border border-zinc-800 px-3 py-1.5 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export { EditorErrorBoundary };
