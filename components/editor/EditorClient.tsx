@@ -7,15 +7,16 @@ import { LayerPanel } from "./LayerPanel";
 import { ToolPanel } from "./ToolPanel";
 import { AssetLibrary } from "./AssetLibrary";
 import { ReferencePanel } from "./ReferencePanel";
+import { VersionStrip } from "./VersionStrip";
+import { AlignmentBar } from "./AlignmentBar";
 import { PromptComposer } from "@/components/setup/PromptComposer";
+import type { DesignBrief } from "@/types/poster";
 import type { Session } from "next-auth";
 
 type LeftTab = "layers" | "assets" | "reference";
 
-// ─── Shared glass token ────────────────────────────────────────────────────────
-const PANEL_BG  = "#0b0b0d";
-const BORDER    = "rgba(255,255,255,0.07)";
-const HEADER_BG = "rgba(0,0,0,0.75)";
+const PANEL_BG = "#0b0b0d";
+const BORDER   = "rgba(255,255,255,0.07)";
 
 export function EditorClient() {
   const {
@@ -26,26 +27,38 @@ export function EditorClient() {
     setProject,
     getSortedLayers,
     reference,
+    designBrief,
+    setDesignBrief,
+    pushVersion,
   } = usePosterStore();
 
   const { data: session } = useSession();
   const [leftTab, setLeftTab] = useState<LeftTab>("layers");
   const [command, setCommand] = useState("");
   const [genError, setGenError] = useState("");
+  const [showGuides, setShowGuides] = useState(false);
 
   const handleExport = useCallback(() => {
     (window as Window & { __posterExport?: () => void }).__posterExport?.();
   }, []);
 
-  // Undo / Redo
+  function exportJSON() {
+    if (!project) return;
+    const blob = new Blob([JSON.stringify(project, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${project.title.replace(/\s+/g, "-").toLowerCase()}.poster.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.metaKey || e.ctrlKey) {
-        if (e.key === "z") {
-          e.preventDefault();
-          if (e.shiftKey) usePosterStore.getState().redo();
-          else usePosterStore.getState().undo();
-        }
+      if ((e.metaKey || e.ctrlKey) && e.key === "z") {
+        e.preventDefault();
+        if (e.shiftKey) usePosterStore.getState().redo();
+        else usePosterStore.getState().undo();
       }
     }
     window.addEventListener("keydown", onKey);
@@ -56,8 +69,6 @@ export function EditorClient() {
 
   const isDemo = project.isDemo ?? false;
   const lockedLayers = getSortedLayers().filter((l) => l.locked);
-
-  // Reference context forwarded to AI routes
   const refCtx = {
     strength: reference.strength,
     targets: reference.targets,
@@ -65,12 +76,39 @@ export function EditorClient() {
     hasImage: !!reference.imageUrl,
   };
 
-  // ── AI actions ────────────────────────────────────────────────────────────
+  // ── 2-step generation: brief → layout + image ──────────────────────────────
 
-  async function runLayout(promptOverride?: string) {
+  async function runGeneration(promptOverride?: string) {
     if (!project) return;
-    setGenerating(true, "generating layout…");
     setGenError("");
+
+    // Step 1: Design Director generates the brief
+    setGenerating(true, "art directing…");
+    let brief: DesignBrief | undefined;
+    try {
+      const briefRes = await fetch("/api/generate/brief", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: promptOverride ?? project.promptHistory.at(-1) ?? "",
+          posterType: project.posterType,
+          styleRecipe: project.styleRecipe,
+          language: project.language,
+          reference: refCtx,
+        }),
+      });
+      if (briefRes.ok) {
+        const { brief: b } = await briefRes.json();
+        brief = b;
+        setDesignBrief(brief ?? null);
+      }
+    } catch {
+      // Non-fatal — generation continues without brief
+    }
+
+    // Step 2: Layout
+    setGenerating(true, "composing layout…");
+    let layers: unknown[], imagePrompt: string;
     try {
       const res = await fetch("/api/generate/layout", {
         method: "POST",
@@ -85,13 +123,23 @@ export function EditorClient() {
             aiWriteCopy: true,
           },
           lockedLayers,
+          brief,
           reference: refCtx,
         }),
       });
-      if (!res.ok) throw new Error();
-      const { layers, imagePrompt } = await res.json();
+      if (!res.ok) throw new Error("layout failed");
+      const data = await res.json();
+      layers = data.layers;
+      imagePrompt = data.imagePrompt;
+    } catch {
+      setGenError("Layout generation failed");
+      setGenerating(false);
+      return;
+    }
 
-      setGenerating(true, "generating image…");
+    // Step 3: Image
+    setGenerating(true, "generating image…");
+    try {
       const imgRes = await fetch("/api/generate/image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -100,22 +148,26 @@ export function EditorClient() {
           styleRecipe: project.styleRecipe,
           width: project.canvas.width,
           height: project.canvas.height,
+          brief,
           reference: refCtx,
         }),
       });
       const { url } = await imgRes.json();
-      const finalLayers = layers.map(
-        (l: { type: string; imageData?: Record<string, unknown> }) =>
-          l.type === "backgroundImage" && url
-            ? { ...l, imageData: { ...l.imageData, src: url } }
+      if (url) {
+        layers = (layers as { type: string; imageData?: Record<string, unknown> }[]).map((l) =>
+          l.type === "backgroundImage"
+            ? { ...l, imageData: { ...(l.imageData ?? {}), src: url } }
             : l,
-      );
-      setProject({ ...project, layers: finalLayers });
+        );
+      }
     } catch {
-      setGenError("Generation failed");
-    } finally {
-      setGenerating(false);
+      // Non-fatal — use layout without new image
     }
+
+    const newProject = { ...project, layers: layers as typeof project.layers };
+    pushVersion(newProject, brief);
+    setProject(newProject);
+    setGenerating(false);
   }
 
   async function regenerateImage() {
@@ -131,6 +183,7 @@ export function EditorClient() {
           styleRecipe: project.styleRecipe,
           width: project.canvas.width,
           height: project.canvas.height,
+          brief: designBrief ?? undefined,
           reference: refCtx,
         }),
       });
@@ -141,7 +194,9 @@ export function EditorClient() {
           ? { ...l, imageData: { ...l.imageData, src: url } }
           : l,
       );
-      setProject({ ...project, layers });
+      const newProject = { ...project, layers };
+      pushVersion(newProject, designBrief ?? undefined);
+      setProject(newProject);
     } catch {
       setGenError("Image failed");
     } finally {
@@ -149,9 +204,9 @@ export function EditorClient() {
     }
   }
 
-  async function improveTypography() {
+  async function runTypography(styleHint?: string) {
     if (!project) return;
-    setGenerating(true, "refining type…");
+    setGenerating(true, styleHint ? `making ${styleHint}…` : "refining type…");
     setGenError("");
     try {
       const res = await fetch("/api/generate/typography", {
@@ -163,7 +218,10 @@ export function EditorClient() {
           posterType: project.posterType,
           language: project.language,
           lockedLayers: lockedLayers.map((l) => l.id),
+          styleHint: styleHint ?? "improve",
           reference: refCtx,
+          canvasWidth: project.canvas.width,
+          canvasHeight: project.canvas.height,
         }),
       });
       if (!res.ok) throw new Error();
@@ -179,7 +237,7 @@ export function EditorClient() {
   async function handleGenerate() {
     const cmd = command.trim();
     setCommand("");
-    await runLayout(cmd || undefined);
+    await runGeneration(cmd || undefined);
   }
 
   const LEFT_TABS: { id: LeftTab; label: string }[] = [
@@ -189,10 +247,12 @@ export function EditorClient() {
   ];
 
   const QUICK_ACTIONS = [
-    { label: "Regenerate", fn: () => runLayout() },
+    { label: "Regenerate", fn: () => runGeneration() },
     { label: "Image",      fn: regenerateImage },
-    { label: "Type",       fn: improveTypography },
-    { label: "Variation",  fn: () => runLayout(`Variation: ${project.promptHistory.at(-1) ?? ""}`) },
+    { label: "Cinematic",  fn: () => runTypography("cinematic") },
+    { label: "Editorial",  fn: () => runTypography("editorial") },
+    { label: "Brutalist",  fn: () => runTypography("brutalist") },
+    { label: "Fit",        fn: () => runTypography("fit-to-canvas") },
   ];
 
   return (
@@ -201,9 +261,9 @@ export function EditorClient() {
       {/* ── Top bar ─────────────────────────────────────────────────────────── */}
       <header
         className="flex-none h-12 flex items-center gap-3 px-4 z-20"
-        style={{ background: HEADER_BG, borderBottom: `1px solid ${BORDER}`, backdropFilter: "blur(20px)" }}
+        style={{ background: "rgba(0,0,0,0.75)", borderBottom: `1px solid ${BORDER}`, backdropFilter: "blur(20px)" }}
       >
-        {/* Left: back + separator + title */}
+        {/* Left: back + title */}
         <div className="flex items-center gap-3 flex-none">
           <button
             onClick={() => usePosterStore.getState().clearProject()}
@@ -226,7 +286,7 @@ export function EditorClient() {
               value={command}
               onChange={(e) => setCommand(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
-              placeholder="Describe a change and press Generate…"
+              placeholder="Describe a change, mood, or direction…"
               disabled={isGenerating}
               className="flex-1 bg-transparent font-mono text-[10px] text-zinc-300 placeholder:text-zinc-700 outline-none disabled:opacity-40"
             />
@@ -241,8 +301,18 @@ export function EditorClient() {
           </div>
         </div>
 
-        {/* Right: status + export + user */}
+        {/* Right: brief + status + export + user */}
         <div className="flex items-center gap-4 flex-none">
+          {/* Current design brief mood */}
+          {designBrief && !isGenerating && (
+            <span
+              className="font-mono text-[9px] text-zinc-600 italic max-w-[120px] truncate hidden lg:block"
+              title={designBrief.designRationale}
+            >
+              {designBrief.mood}
+            </span>
+          )}
+
           {isDemo && (
             <span className="font-mono text-[10px] text-zinc-700" title="Add OPENAI_API_KEY for AI generation">
               ○ demo
@@ -257,12 +327,10 @@ export function EditorClient() {
           {genError && !isGenerating && (
             <span className="font-mono text-[10px] text-red-500/80">{genError}</span>
           )}
-          <button
-            onClick={handleExport}
-            className="font-mono text-[10px] tracking-[0.2em] uppercase text-zinc-500 hover:text-zinc-200 transition-colors"
-          >
-            Export →
-          </button>
+
+          {/* Export dropdown */}
+          <ExportMenu onPng={handleExport} onJson={exportJSON} />
+
           <UserMenu session={session} />
         </div>
       </header>
@@ -275,11 +343,7 @@ export function EditorClient() {
           className="w-52 flex-none flex flex-col"
           style={{ background: PANEL_BG, borderRight: `1px solid ${BORDER}` }}
         >
-          {/* Tab bar */}
-          <div
-            className="flex-none flex"
-            style={{ borderBottom: `1px solid ${BORDER}` }}
-          >
+          <div className="flex-none flex" style={{ borderBottom: `1px solid ${BORDER}` }}>
             {LEFT_TABS.map(({ id, label }) => (
               <button
                 key={id}
@@ -298,8 +362,6 @@ export function EditorClient() {
               </button>
             ))}
           </div>
-
-          {/* Tab content */}
           <div className="flex-1 overflow-y-auto">
             {leftTab === "layers"    && <LayerPanel />}
             {leftTab === "assets"    && <AssetLibrary />}
@@ -307,34 +369,56 @@ export function EditorClient() {
           </div>
         </aside>
 
-        {/* Center: quick-action bar + canvas */}
+        {/* Center: toolbar + canvas + versions */}
         <main className="flex-1 flex flex-col min-w-0">
-          {/* Quick actions */}
+
+          {/* Action bar: quick-actions + alignment + guides */}
           <div
-            className="flex-none h-8 flex items-center px-4 gap-0"
-            style={{ borderBottom: `1px solid rgba(255,255,255,0.05)`, background: "rgba(0,0,0,0.3)" }}
+            className="flex-none h-8 flex items-center px-3 gap-0"
+            style={{ borderBottom: `1px solid rgba(255,255,255,0.05)`, background: "rgba(0,0,0,0.25)" }}
           >
+            {/* Quick generation actions */}
             {QUICK_ACTIONS.map((a, i) => (
               <span key={a.label} className="flex items-center">
-                {i > 0 && <span className="mx-3" style={{ color: "#27272a" }}>·</span>}
+                {i > 0 && <span className="mx-2.5" style={{ color: "#27272a" }}>·</span>}
                 <button
                   onClick={a.fn}
                   disabled={isGenerating}
-                  className="font-mono text-[9px] tracking-[0.15em] uppercase text-zinc-600 hover:text-zinc-300 disabled:opacity-30 transition-colors"
+                  className="font-mono text-[9px] tracking-[0.12em] uppercase text-zinc-600 hover:text-zinc-300 disabled:opacity-30 transition-colors"
                 >
                   {a.label}
                 </button>
               </span>
             ))}
+
+            {/* Separator */}
+            <span className="mx-3" style={{ color: "#27272a" }}>|</span>
+
+            {/* Alignment tools */}
+            <AlignmentBar />
+
+            {/* Guide toggle */}
+            <span className="mx-2" style={{ color: "#27272a" }}>|</span>
+            <button
+              onClick={() => setShowGuides((g) => !g)}
+              title="Toggle safe margin guides"
+              className="font-mono text-[9px] tracking-wide uppercase transition-colors"
+              style={{ color: showGuides ? "#a1a1aa" : "#3f3f46" }}
+            >
+              guides
+            </button>
           </div>
 
-          {/* Canvas area */}
+          {/* Canvas */}
           <div
             className="flex-1 overflow-auto flex items-center justify-center p-8"
             style={{ background: "#050507" }}
           >
-            <PosterCanvas />
+            <PosterCanvas showGuides={showGuides} />
           </div>
+
+          {/* Version strip */}
+          <VersionStrip />
         </main>
 
         {/* Right inspector */}
@@ -342,7 +426,7 @@ export function EditorClient() {
           className="w-60 flex-none overflow-y-auto"
           style={{ background: PANEL_BG, borderLeft: `1px solid ${BORDER}` }}
         >
-          <ToolPanel />
+          <ToolPanel onTypography={runTypography} />
         </aside>
       </div>
     </div>
@@ -368,13 +452,51 @@ function TitleEditor() {
   );
 }
 
+// ─── Export menu ──────────────────────────────────────────────────────────────
+
+function ExportMenu({ onPng, onJson }: { onPng: () => void; onJson: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="font-mono text-[10px] tracking-[0.2em] uppercase text-zinc-500 hover:text-zinc-200 transition-colors"
+      >
+        Export →
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div
+            className="absolute right-0 top-full mt-1.5 w-32 rounded-sm overflow-hidden z-50"
+            style={{ background: "#141416", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 12px 32px rgba(0,0,0,0.6)" }}
+          >
+            {[
+              { label: "PNG image",    fn: () => { setOpen(false); onPng(); } },
+              { label: "JSON project", fn: () => { setOpen(false); onJson(); } },
+            ].map(({ label, fn }) => (
+              <button
+                key={label}
+                onClick={fn}
+                className="w-full text-left px-3 py-2 font-mono text-[9px] tracking-wide text-zinc-400 hover:text-zinc-200 transition-colors"
+                style={{ display: "block" }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── User menu ────────────────────────────────────────────────────────────────
 
 type NextSession = Session | null;
 
 function UserMenu({ session }: { session: NextSession }) {
   const [open, setOpen] = useState(false);
-  const hasGoogleAuth = !!process.env.NEXT_PUBLIC_HAS_GOOGLE_AUTH;
 
   if (!session?.user) {
     return (
@@ -382,7 +504,6 @@ function UserMenu({ session }: { session: NextSession }) {
         onClick={() => signIn("google")}
         className="font-mono text-[10px] tracking-[0.15em] uppercase text-zinc-600 hover:text-zinc-300 transition-colors px-2 py-0.5 rounded-sm"
         style={{ border: "1px solid rgba(255,255,255,0.08)" }}
-        title={hasGoogleAuth ? "Sign in with Google" : "Google auth not configured"}
       >
         Sign in
       </button>
@@ -397,18 +518,14 @@ function UserMenu({ session }: { session: NextSession }) {
     <div className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-6 h-6 rounded-full flex items-center justify-center font-mono text-[9px] text-zinc-300 transition-colors overflow-hidden"
+        className="w-6 h-6 rounded-full flex items-center justify-center font-mono text-[9px] text-zinc-300 overflow-hidden transition-colors"
         style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.15)" }}
         title={session.user.email ?? ""}
       >
-        {session.user.image ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={session.user.image} alt="" className="w-full h-full object-cover" />
-        ) : (
-          initials
-        )}
+        {session.user.image
+          ? <img src={session.user.image} alt="" className="w-full h-full object-cover" /> // eslint-disable-line @next/next/no-img-element
+          : initials}
       </button>
-
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
@@ -423,7 +540,6 @@ function UserMenu({ session }: { session: NextSession }) {
             <button
               onClick={() => { setOpen(false); signOut(); }}
               className="w-full text-left px-3 py-2 font-mono text-[9px] tracking-wide uppercase text-zinc-500 hover:text-zinc-300 transition-colors"
-              style={{ background: "transparent" }}
             >
               Sign out
             </button>

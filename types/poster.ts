@@ -113,6 +113,7 @@ export interface PosterLayer {
   visible: boolean;
   locked: boolean;
   zIndex: number;
+  isForeground?: boolean;
   textData?: TextLayerData;
   imageData?: ImageLayerData;
 }
@@ -157,6 +158,24 @@ export interface PosterProject {
   isDemo?: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+// ─── Design brief ─────────────────────────────────────────────────────────────
+
+export interface DesignBrief {
+  mood: string;
+  composition: "center" | "asymmetric" | "grid" | "edge-heavy";
+  typographyStrategy: "dominant-title" | "subtle-type" | "layered-type";
+  colorStrategy: "high-contrast" | "muted" | "monochrome" | "duotone";
+  imageStrategy: "background-hero" | "abstract" | "texture" | "empty";
+  negativeSpace: "high" | "medium" | "low";
+  designRationale?: string;
+}
+
+export interface ProjectVersion {
+  project: PosterProject;
+  brief?: DesignBrief;
+  timestamp: string;
 }
 
 // ─── Reference image ──────────────────────────────────────────────────────────

@@ -19,7 +19,9 @@ import { getGradientPreset, gradientPoints } from "@/lib/textEffects";
 
 const SCALE = 0.5;
 
-export function PosterCanvas() {
+const SAFE_MARGIN = 48; // canvas coordinates
+
+export function PosterCanvas({ showGuides = false }: { showGuides?: boolean }) {
   const { project, selectedLayerId, selectLayer, updateLayer, getSortedLayers } =
     usePosterStore();
   const stageRef = useRef<import("konva/lib/Stage").Stage | null>(null);
@@ -79,6 +81,21 @@ export function PosterCanvas() {
               height={project.canvas.height}
               fill="#000000"
             />
+
+            {/* Safe margin guide overlay */}
+            {showGuides && (
+              <KonvaRect
+                x={SAFE_MARGIN}
+                y={SAFE_MARGIN}
+                width={project.canvas.width - SAFE_MARGIN * 2}
+                height={project.canvas.height - SAFE_MARGIN * 2}
+                fill="transparent"
+                stroke="rgba(99,102,241,0.35)"
+                strokeWidth={1}
+                dash={[8, 8]}
+                listening={false}
+              />
+            )}
 
             {sortedLayers
               .filter((l) => l.visible)

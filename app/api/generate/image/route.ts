@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mockGradientDataUrl } from "@/lib/mockGradient";
+import type { DesignBrief } from "@/types/poster";
+
+interface ReferenceContext {
+  strength: number;
+  targets: Record<string, boolean>;
+  instruction?: string;
+  hasImage?: boolean;
+}
 
 function pickDallE3Size(width: number, height: number): "1024x1024" | "1024x1792" | "1792x1024" {
   const ratio = width / height;
@@ -8,8 +16,61 @@ function pickDallE3Size(width: number, height: number): "1024x1024" | "1024x1792
   return "1024x1024";
 }
 
+function buildImagePrompt(
+  basePrompt: string,
+  brief?: DesignBrief,
+  reference?: ReferenceContext,
+): string {
+  const parts: string[] = [basePrompt];
+
+  // Design brief directives
+  if (brief) {
+    parts.push(`Mood: ${brief.mood}.`);
+
+    switch (brief.composition) {
+      case "asymmetric":    parts.push("Asymmetric, off-center composition."); break;
+      case "edge-heavy":    parts.push("Elements at canvas edges, large central void."); break;
+      case "grid":          parts.push("Structured grid composition."); break;
+    }
+
+    switch (brief.imageStrategy) {
+      case "abstract":      parts.push("Abstract, non-representational imagery."); break;
+      case "texture":       parts.push("Textural, surface-focused. Close-up material detail."); break;
+      case "empty":         parts.push("Extremely minimal. Near-empty frame, single subject."); break;
+    }
+
+    switch (brief.colorStrategy) {
+      case "monochrome":    parts.push("Monochromatic palette only."); break;
+      case "duotone":       parts.push("Duotone color treatment — two complementary tones."); break;
+      case "muted":         parts.push("Muted, desaturated palette."); break;
+      case "high-contrast": parts.push("High contrast, strong darks and lights."); break;
+    }
+
+    if (brief.negativeSpace === "high") {
+      parts.push("Extensive negative space. Minimalist. Subject occupies at most 30% of frame.");
+    }
+  }
+
+  // Reference instruction (only if targeting relevant aspects)
+  if (reference?.instruction && reference.strength > 30) {
+    const targets = reference.targets;
+    if (targets.mood || targets.color || targets.backgroundStyle || targets.texture || targets.lighting) {
+      parts.push(`Reference guidance: ${reference.instruction}`);
+    }
+  }
+
+  // Hard rules
+  parts.push(
+    "No text, no letters, no typography, no words, no captions, no watermarks, no UI elements.",
+    "Leave intentional negative space for title overlay.",
+    "Photographic quality. Cinematic composition.",
+  );
+
+  return parts.join(" ");
+}
+
 export async function POST(req: NextRequest) {
-  const { prompt, styleRecipe, style, width, height } = await req.json();
+  const { prompt, styleRecipe, style, width, height, brief, reference } = await req.json();
   const recipe = styleRecipe ?? style ?? "cinematic-rain";
 
   if (!process.env.OPENAI_API_KEY) {
@@ -22,18 +83,11 @@ export async function POST(req: NextRequest) {
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const size = pickDallE3Size(width ?? 800, height ?? 1200);
-
-    // Compose a safety-conscious image prompt: explicitly no text
-    const imagePrompt = [
-      prompt,
-      "No text, no letters, no typography, no words, no captions, no watermarks.",
-      "Intentional negative space for title overlay.",
-      "Photographic quality, cinematic composition.",
-    ].join(" ");
+    const finalPrompt = buildImagePrompt(prompt ?? "", brief, reference);
 
     const response = await openai.images.generate({
       model: "dall-e-3",
-      prompt: imagePrompt,
+      prompt: finalPrompt,
       size,
       response_format: "b64_json",
       quality: "standard",
@@ -47,7 +101,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ url: dataUrl, demo: false });
   } catch (err) {
     console.error("Image generation error:", err);
-    // Fall back to gradient so the canvas always shows something
     const gradientUrl = mockGradientDataUrl(recipe, width ?? 800, height ?? 1200);
     return NextResponse.json({ url: gradientUrl, demo: true });
   }

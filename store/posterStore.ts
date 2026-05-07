@@ -8,6 +8,8 @@ import type {
   ImageLayerData,
   ReferenceConfig,
   AssetItem,
+  DesignBrief,
+  ProjectVersion,
 } from "@/types/poster";
 import { DEFAULT_REFERENCE } from "@/types/poster";
 
@@ -41,6 +43,16 @@ interface PosterState {
 
   // AI state
   setGenerating: (generating: boolean, step?: string) => void;
+  // Design director
+  designBrief: DesignBrief | null;
+  setDesignBrief: (brief: DesignBrief | null) => void;
+
+  // Version history
+  projectVersions: ProjectVersion[];
+  currentVersionIndex: number;
+  pushVersion: (project: PosterProject, brief?: DesignBrief) => void;
+  restoreVersion: (index: number) => void;
+
   // Reference image
   reference: ReferenceConfig;
   setReference: (updates: Partial<ReferenceConfig>) => void;
@@ -71,6 +83,9 @@ export const usePosterStore = create<PosterState>()(
     generatingStep: "",
     history: [],
     historyIndex: -1,
+    designBrief: null,
+    projectVersions: [],
+    currentVersionIndex: -1,
     reference: { ...DEFAULT_REFERENCE },
     assets: [],
 
@@ -86,6 +101,9 @@ export const usePosterStore = create<PosterState>()(
       set((state) => {
         state.project = null;
         state.selectedLayerId = null;
+        state.projectVersions = [];
+        state.currentVersionIndex = -1;
+        state.designBrief = null;
       }),
 
     selectLayer: (id) =>
@@ -215,6 +233,35 @@ export const usePosterStore = create<PosterState>()(
       set((state) => {
         state.isGenerating = generating;
         state.generatingStep = step;
+      }),
+
+    setDesignBrief: (brief) =>
+      set((state) => {
+        state.designBrief = brief;
+      }),
+
+    pushVersion: (project, brief) =>
+      set((state) => {
+        const MAX_VERSIONS = 5;
+        const version: ProjectVersion = {
+          project: JSON.parse(JSON.stringify(project)),
+          brief,
+          timestamp: new Date().toISOString(),
+        };
+        state.projectVersions.push(version);
+        if (state.projectVersions.length > MAX_VERSIONS) {
+          state.projectVersions.shift();
+        }
+        state.currentVersionIndex = state.projectVersions.length - 1;
+      }),
+
+    restoreVersion: (index) =>
+      set((state) => {
+        const version = state.projectVersions[index];
+        if (!version) return;
+        state.project = JSON.parse(JSON.stringify(version.project));
+        state.designBrief = version.brief ?? null;
+        state.currentVersionIndex = index;
       }),
 
     setReference: (updates) =>

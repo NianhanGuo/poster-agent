@@ -8,7 +8,11 @@ import { GRADIENT_PRESETS, EFFECTS, COLOR_SWATCHES } from "@/lib/textEffects";
 import type { PosterLayer } from "@/types/poster";
 import { isTextLayer, isImageLayer } from "@/types/poster";
 
-export function ToolPanel() {
+interface ToolPanelProps {
+  onTypography?: (styleHint?: string) => void;
+}
+
+export function ToolPanel({ onTypography }: ToolPanelProps) {
   const { project, selectedLayerId, getLayerById, updateLayer, updateTextData, addLayer } =
     usePosterStore();
   const [showImageUpload, setShowImageUpload] = useState(false);
@@ -82,7 +86,7 @@ export function ToolPanel() {
       )}
 
       {selected && textSelected && selected.textData && (
-        <TextInspector td={selected.textData} layer={selected} onText={onText} onLayer={onLayer} />
+        <TextInspector td={selected.textData} layer={selected} onText={onText} onLayer={onLayer} onTypography={onTypography} />
       )}
 
       {selected && imageSelected && (
@@ -141,12 +145,13 @@ function SliderRow({
 // ─── Text inspector ─────────────────────────────────────────────────────────
 
 function TextInspector({
-  td, layer, onText, onLayer,
+  td, layer, onText, onLayer, onTypography,
 }: {
   td: NonNullable<PosterLayer["textData"]>;
   layer: PosterLayer;
   onText: (u: Partial<NonNullable<PosterLayer["textData"]>>) => void;
   onLayer: (u: Partial<PosterLayer>) => void;
+  onTypography?: (styleHint?: string) => void;
 }) {
   const fontWeight = td.fontWeight ?? 400;
   const italic = td.italic ?? false;
@@ -420,6 +425,33 @@ function TextInspector({
             </div>
           </Row>
           <SliderRow label="Width" min={1} max={20} value={td.strokeWidth ?? 2} onChange={(v) => onText({ strokeWidth: v })} display={`${td.strokeWidth ?? 2}px`} />
+        </>
+      )}
+
+      {/* AI Typography actions */}
+      {onTypography && (
+        <>
+          <Section label="AI Type" />
+          <div className="px-4 pb-2 flex flex-wrap gap-1.5">
+            {[
+              { label: "Improve",   hint: "improve" },
+              { label: "Cinematic", hint: "cinematic" },
+              { label: "Editorial", hint: "editorial" },
+              { label: "Brutalist", hint: "brutalist" },
+              { label: "Fit",       hint: "fit-to-canvas" },
+            ].map(({ label, hint }) => (
+              <button
+                key={hint}
+                onClick={() => onTypography(hint)}
+                className="font-mono text-[9px] tracking-wide uppercase px-2 py-0.5 transition-colors"
+                style={{ border: "1px solid rgba(255,255,255,0.1)", color: "#71717a" }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#e4e4e7"; (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.25)"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#71717a"; (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.1)"; }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </>
       )}
     </>
