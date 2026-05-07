@@ -1,5 +1,23 @@
 "use client";
-import { useRef } from "react";
+import { useRef, useState } from "react";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+} from "@dnd-kit/core";
+import type { DragStartEvent, DragEndEvent } from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  arrayMove,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { usePosterStore } from "@/store/posterStore";
 import type { PosterLayer } from "@/types/poster";
 
@@ -13,6 +31,7 @@ const TYPE_LABEL: Record<string, string> = {
   foregroundCutout:"cutout",
   userText:        "text",
   userImage:       "image",
+  drawingLayer:    "draw",
 };
 
 export function LayerPanel() {
@@ -22,6 +41,8 @@ export function LayerPanel() {
     selectLayer,
     getSortedLayers,
     addLayer,
+    reorderLayers,
+    pushHistory,
     toggleLock,
     toggleVisibility,
     removeLayer,
@@ -31,11 +52,44 @@ export function LayerPanel() {
     setBrushActive,
   } = usePosterStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   if (!project) return null;
 
+  // Display order: highest zIndex first (top of stack = top of list)
   const layers = [...getSortedLayers()].reverse();
+  const layerIds = layers.map((l) => l.id);
   const canvas = project.canvas;
+  const activeLayer = activeId ? layers.find((l) => l.id === activeId) : null;
+
+  function handleDragStart(event: DragStartEvent) {
+    setActiveId(event.active.id as string);
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    setActiveId(null);
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = layers.findIndex((l) => l.id === active.id);
+    const newIndex = layers.findIndex((l) => l.id === over.id);
+    const newDisplayOrder = arrayMove(layers, oldIndex, newIndex);
+
+    // Normalise zIndex: top item (index 0) = highest value
+    const n = newDisplayOrder.length;
+    const reindexed = newDisplayOrder.map((layer, i) => ({
+      ...layer,
+      zIndex: n - i,
+    }));
+
+    pushHistory();
+    reorderLayers(reindexed);
+  }
 
   function addTextLayer() {
     const newLayer: PosterLayer = {
@@ -110,20 +164,57 @@ export function LayerPanel() {
           Layers
         </div>
 
-        {layers.map((layer) => (
-          <LayerRow
-            key={layer.id}
-            layer={layer}
-            selected={selectedLayerId === layer.id}
-            onSelect={() => selectLayer(layer.id)}
-            onToggleLock={() => toggleLock(layer.id)}
-            onToggleVisibility={() => toggleVisibility(layer.id)}
-            onDelete={() => removeLayer(layer.id)}
-            onDuplicate={() => duplicateLayer(layer.id)}
-            onMoveUp={() => moveLayerUp(layer.id)}
-            onMoveDown={() => moveLayerDown(layer.id)}
-          />
-        ))}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDragCancel={() => setActiveId(null)}
+        >
+          <SortableContext items={layerIds} strategy={verticalListSortingStrategy}>
+            {layers.map((layer) => (
+              <SortableLayerRow
+                key={layer.id}
+                layer={layer}
+                selected={selectedLayerId === layer.id}
+                onSelect={() => selectLayer(layer.id)}
+                onToggleLock={() => toggleLock(layer.id)}
+                onToggleVisibility={() => toggleVisibility(layer.id)}
+                onDelete={() => removeLayer(layer.id)}
+                onDuplicate={() => duplicateLayer(layer.id)}
+                onMoveUp={() => moveLayerUp(layer.id)}
+                onMoveDown={() => moveLayerDown(layer.id)}
+              />
+            ))}
+          </SortableContext>
+
+          {/* Floating drag preview */}
+          <DragOverlay dropAnimation={{ duration: 150, easing: "ease" }}>
+            {activeLayer ? (
+              <div
+                className="rounded-sm"
+                style={{
+                  background: "rgba(24,24,27,0.97)",
+                  border: "1px solid rgba(255,255,255,0.18)",
+                  boxShadow: "0 8px 32px rgba(0,0,0,0.7)",
+                }}
+              >
+                <LayerRow
+                  layer={activeLayer}
+                  selected={false}
+                  isDragging
+                  onSelect={() => {}}
+                  onToggleLock={() => {}}
+                  onToggleVisibility={() => {}}
+                  onDelete={() => {}}
+                  onDuplicate={() => {}}
+                  onMoveUp={() => {}}
+                  onMoveDown={() => {}}
+                />
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
       </div>
 
       {/* Add layer footer */}
@@ -134,10 +225,7 @@ export function LayerPanel() {
         <div className="font-mono text-[8px] tracking-[0.2em] uppercase text-zinc-800">Add</div>
         <div className="flex gap-1">
           <AddBtn onClick={addTextLayer} title="Add text layer">T</AddBtn>
-          <AddBtn
-            onClick={() => fileInputRef.current?.click()}
-            title="Add image layer"
-          >⬡</AddBtn>
+          <AddBtn onClick={() => fileInputRef.current?.click()} title="Add image layer">⬡</AddBtn>
           <AddBtn onClick={addDrawingLayer} title="Add drawing layer (activates brush)">✏</AddBtn>
         </div>
         <input
@@ -156,12 +244,13 @@ export function LayerPanel() {
   );
 }
 
-function LayerRow({
-  layer, selected, onSelect, onToggleLock, onToggleVisibility,
-  onDelete, onDuplicate, onMoveUp, onMoveDown,
-}: {
+// ─── Sortable wrapper ─────────────────────────────────────────────────────────
+
+type LayerRowProps = {
   layer: PosterLayer;
   selected: boolean;
+  isDragging?: boolean;
+  dragHandle?: React.ReactNode;
   onSelect: () => void;
   onToggleLock: () => void;
   onToggleVisibility: () => void;
@@ -169,17 +258,70 @@ function LayerRow({
   onDuplicate: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
-}) {
+};
+
+function SortableLayerRow(props: Omit<LayerRowProps, "isDragging" | "dragHandle">) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: props.layer.id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition: transition ?? undefined,
+    opacity: isDragging ? 0.35 : 1,
+    zIndex: isDragging ? 10 : undefined,
+    position: "relative",
+  };
+
+  const handle = (
+    <button
+      {...attributes}
+      {...listeners}
+      tabIndex={-1}
+      className="flex-none w-4 h-full flex items-center justify-center cursor-grab active:cursor-grabbing select-none text-zinc-800 hover:text-zinc-500 transition-colors"
+      title="Drag to reorder"
+      onClick={(e) => e.stopPropagation()}
+    >
+      ⠿
+    </button>
+  );
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <LayerRow {...props} isDragging={isDragging} dragHandle={handle} />
+    </div>
+  );
+}
+
+// ─── Layer row ────────────────────────────────────────────────────────────────
+
+function LayerRow({
+  layer, selected, isDragging, dragHandle,
+  onSelect, onToggleLock, onToggleVisibility,
+  onDelete, onDuplicate, onMoveUp, onMoveDown,
+}: LayerRowProps) {
   return (
     <div
       onClick={onSelect}
-      className={`group flex items-center gap-2 px-4 py-1.5 cursor-pointer transition-colors ${
-        selected ? "bg-zinc-900 text-zinc-200" : "hover:bg-zinc-950 text-zinc-500"
+      className={`group flex items-center gap-1.5 pl-1 pr-3 py-1.5 transition-colors ${
+        isDragging
+          ? "bg-zinc-800 text-zinc-200"
+          : selected
+          ? "bg-zinc-900 text-zinc-200 cursor-pointer"
+          : "hover:bg-zinc-950 text-zinc-500 cursor-pointer"
       } ${!layer.visible ? "opacity-30" : ""}`}
     >
+      {/* Drag handle */}
+      {dragHandle ?? <span className="w-4 flex-none" />}
+
       {/* Type badge */}
-      <span className={`font-mono text-[9px] tracking-wide w-12 flex-none ${selected ? "text-zinc-500" : "text-zinc-700"}`}>
-        {TYPE_LABEL[layer.type] ?? layer.type}
+      <span className={`font-mono text-[9px] tracking-wide w-10 flex-none ${selected ? "text-zinc-500" : "text-zinc-700"}`}>
+        {TYPE_LABEL[layer.type] ?? layer.type.slice(0, 5)}
       </span>
 
       {/* Label */}
@@ -193,7 +335,7 @@ function LayerRow({
       )}
 
       {/* Controls */}
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
         <Btn title={layer.visible ? "hide" : "show"} onClick={(e) => { e.stopPropagation(); onToggleVisibility(); }}>
           {layer.visible ? "○" : "◌"}
         </Btn>
@@ -209,11 +351,17 @@ function LayerRow({
           onClick={(e) => e.stopPropagation()}
           className="w-4 h-4 flex items-center justify-center font-mono text-[10px] text-zinc-800 cursor-not-allowed"
         >⊕</button>
-        <Btn title="delete" onClick={(e) => { e.stopPropagation(); if (confirm(`Delete "${layer.label}"?`)) onDelete(); }} className="hover:text-red-500">×</Btn>
+        <Btn
+          title="delete"
+          onClick={(e) => { e.stopPropagation(); if (confirm(`Delete "${layer.label}"?`)) onDelete(); }}
+          className="hover:text-red-500"
+        >×</Btn>
       </div>
     </div>
   );
 }
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function Btn({ children, onClick, title, className = "" }: {
   children: React.ReactNode;
