@@ -270,7 +270,7 @@ function ImageProps({ layer, onLayer }: {
         <Input
           value={layer.imageData?.src ?? ""}
           onChange={(v) => onLayer({ imageData: { ...(layer.imageData ?? {}), src: v } })}
-          placeholder="URL or /uploads/…"
+          placeholder="https://… or data:image/…"
         />
       </Row>
     </>

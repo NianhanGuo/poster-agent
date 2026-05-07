@@ -262,6 +262,7 @@ function KonvaImageNode({
         draggable={!layer.locked}
         onClick={commonProps.onClick as () => void}
         onTap={commonProps.onTap as () => void}
+        onDragEnd={commonProps.onDragEnd as (e: { target: { x: () => number; y: () => number } }) => void}
       />
     );
   }
