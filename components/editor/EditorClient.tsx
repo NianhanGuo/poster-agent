@@ -10,6 +10,7 @@ import { ReferencePanel, buildEditorRefCtx } from "./ReferencePanel";
 import { VersionStrip } from "./VersionStrip";
 import { AlignmentBar } from "./AlignmentBar";
 import { QuickPanel } from "./QuickPanel";
+import { ImageEditModal } from "./ImageEditModal";
 import { PromptComposer } from "@/components/setup/PromptComposer";
 import type { DesignBrief } from "@/types/poster";
 import type { Session } from "next-auth";
@@ -39,6 +40,7 @@ export function EditorClient() {
   const [genError, setGenError] = useState("");
   const [showGuides, setShowGuides] = useState(false);
   const [aiUsedLabel, setAiUsedLabel] = useState("");
+  const [editImageLayerId, setEditImageLayerId] = useState<string | null>(null);
 
   const handleExport = useCallback(() => {
     (window as Window & { __posterExport?: () => void }).__posterExport?.();
@@ -455,14 +457,11 @@ export function EditorClient() {
             </button>
           </div>
 
-          {/* Canvas */}
-          <div
-            className="flex-1 overflow-auto flex items-center justify-center p-8"
-            style={{ background: "#050507" }}
-          >
-            <div className="flex items-start gap-3">
+          {/* Canvas — PosterCanvas fills the parent absolutely */}
+          <div className="flex-1 relative" style={{ background: "#050507" }}>
+            <PosterCanvas showGuides={showGuides} />
+            <div className="absolute top-3 left-3 z-10">
               <QuickPanel />
-              <PosterCanvas showGuides={showGuides} />
             </div>
           </div>
 
@@ -475,12 +474,20 @@ export function EditorClient() {
           className="w-60 flex-none overflow-y-auto"
           style={{ background: PANEL_BG, borderLeft: `1px solid ${BORDER}` }}
         >
-          <ToolPanel onTypography={runTypography} />
+          <ToolPanel onTypography={runTypography} onEditImage={setEditImageLayerId} />
         </aside>
       </div>
 
       {/* ── Floating undo / redo ────────────────────────────────────────────── */}
       <UndoRedoWidget />
+
+      {/* ── Image edit modal ────────────────────────────────────────────────── */}
+      {editImageLayerId && (
+        <ImageEditModal
+          layerId={editImageLayerId}
+          onClose={() => setEditImageLayerId(null)}
+        />
+      )}
     </div>
   );
 }

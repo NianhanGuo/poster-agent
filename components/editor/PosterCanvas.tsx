@@ -1,8 +1,5 @@
 "use client";
-// react-konva requires a browser environment. Importing directly in a
-// "use client" file is safe because Next.js never runs "use client"
-// modules on the server. The `ready` guard below additionally ensures
-// Konva elements are only rendered after the component has mounted.
+// react-konva requires a browser environment — safe in "use client" files.
 import { useRef, useEffect, useState, useCallback } from "react";
 import {
   Stage,
@@ -17,29 +14,129 @@ import { CanvasErrorBoundary } from "./CanvasErrorBoundary";
 import type { PosterLayer } from "@/types/poster";
 import { getGradientPreset, gradientPoints } from "@/lib/textEffects";
 
-const SCALE = 0.5;
-
-const SAFE_MARGIN = 48; // canvas coordinates
+const SAFE_MARGIN = 48;
 
 export function PosterCanvas({ showGuides = false }: { showGuides?: boolean }) {
   const { project, selectedLayerId, selectLayer, updateLayer, getSortedLayers } =
     usePosterStore();
   const stageRef = useRef<import("konva/lib/Stage").Stage | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
+  const [containerSize, setContainerSize] = useState({ w: 900, h: 600 });
+  const [zoom, setZoom] = useState(0.45);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const panStartRef = useRef({ mx: 0, my: 0, px: 0, py: 0 });
+  const isPanningRef = useRef(false);
+  const isSpaceRef = useRef(false);
 
-  // Only mount Konva after the component has hydrated on the client
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setReady(true); }, []);
 
+  // Measure container with ResizeObserver
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      if (width > 0 && height > 0) setContainerSize({ w: width, h: height });
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  const fitToView = useCallback(() => {
+    if (!project) return;
+    const { w, h } = containerSize;
+    const { width: cW, height: cH } = project.canvas;
+    const z = Math.min(w / cW, h / cH) * 0.85;
+    setZoom(z);
+    setPan({ x: (w - cW * z) / 2, y: (h - cH * z) / 2 });
+  }, [project, containerSize]);
+
+  // Center canvas when project or container size changes
+  useEffect(() => {
+    fitToView();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.canvas.width, project?.canvas.height, containerSize.w, containerSize.h]);
+
+  // Space key for pan mode
+  useEffect(() => {
+    const onDown = (e: KeyboardEvent) => {
+      if (e.code === "Space" && !e.repeat) {
+        const tag = (document.activeElement as HTMLElement)?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA") return;
+        e.preventDefault();
+        isSpaceRef.current = true;
+      }
+      // Keyboard zoom
+      if ((e.metaKey || e.ctrlKey) && e.key === "=") { e.preventDefault(); setZoom(z => Math.min(4, z * 1.2)); }
+      if ((e.metaKey || e.ctrlKey) && e.key === "-") { e.preventDefault(); setZoom(z => Math.max(0.08, z / 1.2)); }
+      if ((e.metaKey || e.ctrlKey) && e.key === "0") { e.preventDefault(); fitToView(); }
+    };
+    const onUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") { isSpaceRef.current = false; isPanningRef.current = false; }
+    };
+    window.addEventListener("keydown", onDown);
+    window.addEventListener("keyup", onUp);
+    return () => { window.removeEventListener("keydown", onDown); window.removeEventListener("keyup", onUp); };
+  }, [fitToView]);
+
+  // Wheel zoom toward cursor
+  function handleWheel(e: import("konva/lib/Node").KonvaEventObject<WheelEvent>) {
+    e.evt.preventDefault();
+    const stage = stageRef.current;
+    if (!stage) return;
+    const pointer = stage.getPointerPosition()!;
+    const oldZoom = zoom;
+    const direction = e.evt.deltaY < 0 ? 1 : -1;
+    const factor = 1 + 0.08 * Math.min(Math.abs(e.evt.deltaY / 100), 3);
+    const newZoom = direction > 0
+      ? Math.min(4, oldZoom * factor)
+      : Math.max(0.08, oldZoom / factor);
+    const mousePointTo = {
+      x: (pointer.x - pan.x) / oldZoom,
+      y: (pointer.y - pan.y) / oldZoom,
+    };
+    setZoom(newZoom);
+    setPan({ x: pointer.x - mousePointTo.x * newZoom, y: pointer.y - mousePointTo.y * newZoom });
+  }
+
+  // Stage mouse events for space+drag pan
+  function handleMouseDown(e: import("konva/lib/Node").KonvaEventObject<MouseEvent>) {
+    if (isSpaceRef.current) {
+      e.evt.preventDefault();
+      isPanningRef.current = true;
+      panStartRef.current = { mx: e.evt.clientX, my: e.evt.clientY, px: pan.x, py: pan.y };
+    }
+  }
+  function handleMouseMove(e: import("konva/lib/Node").KonvaEventObject<MouseEvent>) {
+    if (!isPanningRef.current) return;
+    const dx = e.evt.clientX - panStartRef.current.mx;
+    const dy = e.evt.clientY - panStartRef.current.my;
+    setPan({ x: panStartRef.current.px + dx, y: panStartRef.current.py + dy });
+  }
+  function handleMouseUp() { isPanningRef.current = false; }
+
+  // Export at full canvas resolution by temporarily resetting Stage transform
   const handleExport = useCallback(() => {
     if (!stageRef.current || !project) return;
     const stage = stageRef.current;
-    const scale = stage.scaleX();
+    const cW = project.canvas.width;
+    const cH = project.canvas.height;
+    // Save current state
+    const prevScale = stage.scaleX();
+    const prevX = stage.x();
+    const prevY = stage.y();
+    const prevW = stage.width();
+    const prevH = stage.height();
+    // Set to canvas resolution
+    stage.x(0); stage.y(0);
     stage.scale({ x: 1, y: 1 });
-    stage.size({ width: project.canvas.width, height: project.canvas.height });
+    stage.size({ width: cW, height: cH });
     const uri = stage.toDataURL({ pixelRatio: 2 });
-    stage.scale({ x: scale, y: scale });
-    stage.size({ width: project.canvas.width * SCALE, height: project.canvas.height * SCALE });
+    // Restore
+    stage.scale({ x: prevScale, y: prevScale });
+    stage.x(prevX); stage.y(prevY);
+    stage.size({ width: prevW, height: prevH });
     const link = document.createElement("a");
     link.download = `${project.title}.png`;
     link.href = uri;
@@ -50,91 +147,155 @@ export function PosterCanvas({ showGuides = false }: { showGuides?: boolean }) {
     (window as Window & { __posterExport?: () => void }).__posterExport = handleExport;
   }, [handleExport]);
 
-  if (!ready || !project) return null;
+  if (!project) return null;
 
-  const displayW = project.canvas.width * SCALE;
-  const displayH = project.canvas.height * SCALE;
   const sortedLayers = getSortedLayers();
-
 
   return (
     <CanvasErrorBoundary>
       <div
-        className="relative shadow-2xl"
-        style={{ width: displayW, height: displayH, background: "#111" }}
+        ref={containerRef}
+        className="absolute inset-0"
+        style={{ cursor: isSpaceRef.current ? "grab" : "default", overflow: "hidden" }}
       >
-        <Stage
-          ref={stageRef}
-          width={displayW}
-          height={displayH}
-          scaleX={SCALE}
-          scaleY={SCALE}
-          onClick={(e) => {
-            if (e.target === e.target.getStage()) selectLayer(null);
-          }}
-        >
-          <KonvaLayer>
-            {/* Black canvas base */}
-            <KonvaRect
-              x={0} y={0}
-              width={project.canvas.width}
-              height={project.canvas.height}
-              fill="#000000"
-            />
-
-            {/* Safe margin guide overlay */}
-            {showGuides && (
+        {ready && (
+          <Stage
+            ref={stageRef}
+            width={containerSize.w}
+            height={containerSize.h}
+            x={pan.x}
+            y={pan.y}
+            scaleX={zoom}
+            scaleY={zoom}
+            onWheel={handleWheel}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onClick={(e) => {
+              if (e.target === e.target.getStage()) selectLayer(null);
+            }}
+          >
+            <KonvaLayer>
+              {/* Black canvas base */}
               <KonvaRect
-                x={SAFE_MARGIN}
-                y={SAFE_MARGIN}
-                width={project.canvas.width - SAFE_MARGIN * 2}
-                height={project.canvas.height - SAFE_MARGIN * 2}
-                fill="transparent"
-                stroke="rgba(99,102,241,0.35)"
-                strokeWidth={1}
-                dash={[8, 8]}
+                x={0} y={0}
+                width={project.canvas.width}
+                height={project.canvas.height}
+                fill="#000000"
                 listening={false}
               />
-            )}
 
-            {sortedLayers
-              .filter((l) => l.visible)
-              .map((layer) => {
-                if (!layer || typeof layer !== "object" || !layer.id || !layer.type) {
-                  console.warn("PosterCanvas: skipping invalid layer", layer);
-                  return null;
-                }
-                return (
-                  <PosterLayerNode
-                    key={layer.id}
-                    layer={layer}
-                    selected={selectedLayerId === layer.id}
-                    onSelect={() => !layer.locked && selectLayer(layer.id)}
-                    onChange={(attrs) => updateLayer(layer.id, attrs)}
-                  />
-                );
-              })}
-          </KonvaLayer>
-        </Stage>
+              {/* Safe margin guides */}
+              {showGuides && (
+                <KonvaRect
+                  x={SAFE_MARGIN} y={SAFE_MARGIN}
+                  width={project.canvas.width - SAFE_MARGIN * 2}
+                  height={project.canvas.height - SAFE_MARGIN * 2}
+                  fill="transparent"
+                  stroke="rgba(99,102,241,0.35)"
+                  strokeWidth={1}
+                  dash={[8, 8]}
+                  listening={false}
+                />
+              )}
 
-        <DrawingOverlay
-          displayW={displayW}
-          displayH={displayH}
-          canvasW={project.canvas.width}
-          canvasH={project.canvas.height}
-        />
+              {sortedLayers
+                .filter((l) => l.visible)
+                .map((layer) => {
+                  if (!layer?.id || !layer.type) return null;
+                  return (
+                    <PosterLayerNode
+                      key={layer.id}
+                      layer={layer}
+                      selected={selectedLayerId === layer.id}
+                      onSelect={() => !layer.locked && selectLayer(layer.id)}
+                      onChange={(attrs) => updateLayer(layer.id, attrs)}
+                    />
+                  );
+                })}
+            </KonvaLayer>
+          </Stage>
+        )}
 
-        <button
-          onClick={handleExport}
-          className="absolute bottom-3 right-3 bg-zinc-800/90 hover:bg-zinc-700 text-zinc-200 text-xs px-3 py-1.5 rounded-lg backdrop-blur transition-colors"
-          style={{ zIndex: 10 }}
-        >
-          Export PNG
-        </button>
+        {/* Canvas outline (visible when zoomed out) */}
+        {ready && (
+          <div
+            className="pointer-events-none absolute"
+            style={{
+              left: pan.x,
+              top: pan.y,
+              width: project.canvas.width * zoom,
+              height: project.canvas.height * zoom,
+              outline: "1px solid rgba(255,255,255,0.06)",
+              boxShadow: "0 0 0 1px rgba(0,0,0,0.8), 0 8px 40px rgba(0,0,0,0.6)",
+            }}
+          />
+        )}
+
+        {/* Drawing overlay */}
+        {ready && (
+          <DrawingOverlay
+            containerW={containerSize.w}
+            containerH={containerSize.h}
+            canvasW={project.canvas.width}
+            canvasH={project.canvas.height}
+            pan={pan}
+            zoom={zoom}
+          />
+        )}
+
+        {/* Zoom controls */}
+        <ZoomControls zoom={zoom} onZoomIn={() => setZoom(z => Math.min(4, z * 1.2))} onZoomOut={() => setZoom(z => Math.max(0.08, z / 1.2))} onFit={fitToView} />
       </div>
     </CanvasErrorBoundary>
   );
 }
+
+// ─── Zoom controls overlay ─────────────────────────────────────────────────────
+
+function ZoomControls({ zoom, onZoomIn, onZoomOut, onFit }: {
+  zoom: number;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onFit: () => void;
+}) {
+  return (
+    <div
+      className="absolute bottom-4 right-4 flex items-center gap-px z-10"
+      style={{
+        background: "rgba(12,12,14,0.82)",
+        border: "1px solid rgba(255,255,255,0.1)",
+        backdropFilter: "blur(12px)",
+        borderRadius: 6,
+      }}
+    >
+      <button
+        onClick={onZoomOut}
+        title="Zoom out (⌘-)"
+        className="w-7 h-7 flex items-center justify-center font-mono text-[13px] text-zinc-400 hover:text-zinc-100 transition-colors"
+      >
+        −
+      </button>
+      <button
+        onClick={onFit}
+        title="Fit to view (⌘0)"
+        className="px-2 h-7 font-mono text-[9px] tracking-wide text-zinc-500 hover:text-zinc-200 transition-colors"
+        style={{ borderLeft: "1px solid rgba(255,255,255,0.07)", borderRight: "1px solid rgba(255,255,255,0.07)" }}
+      >
+        {Math.round(zoom * 100)}%
+      </button>
+      <button
+        onClick={onZoomIn}
+        title="Zoom in (⌘+)"
+        className="w-7 h-7 flex items-center justify-center font-mono text-[13px] text-zinc-400 hover:text-zinc-100 transition-colors"
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
+// ─── Layer node ────────────────────────────────────────────────────────────────
 
 function PosterLayerNode({
   layer,
@@ -161,6 +322,15 @@ function PosterLayerNode({
       transformerRef.current.getLayer()?.batchDraw();
     }
   }, [selected]);
+
+  // Konva's globalCompositeOperation accepts a specific union — cast explicitly
+  type GCO = "multiply" | "screen" | "overlay" | "soft-light" | "hard-light" |
+    "color-dodge" | "color-burn" | "darken" | "lighten" | "color" |
+    "luminosity" | "difference" | "exclusion";
+  const gco: GCO | undefined = (layer.blendMode && layer.blendMode !== "normal")
+    ? (layer.blendMode as GCO)
+    : undefined;
+  const blendProp = gco ? { globalCompositeOperation: gco } : {};
 
   const commonProps = {
     x: layer.x,
@@ -208,7 +378,7 @@ function PosterLayerNode({
       <KonvaImageNode
         layer={layer}
         selected={selected}
-        commonProps={commonProps}
+        commonProps={{ ...commonProps, ...blendProp }}
         shapeRef={shapeRef as React.MutableRefObject<import("konva/lib/shapes/Image").Image | null>}
         transformerRef={transformerRef}
       />
@@ -216,10 +386,7 @@ function PosterLayerNode({
   }
 
   const td = layer.textData;
-  if (!td) {
-    console.warn("PosterCanvas: text layer missing textData", layer.id, layer.type);
-    return null;
-  }
+  if (!td) return null;
 
   // Gradient fill
   const gradientPreset = td.fillGradient ? getGradientPreset(td.fillGradient) : undefined;
@@ -240,12 +407,13 @@ function PosterLayerNode({
       <KonvaText
         ref={shapeRef as React.MutableRefObject<import("konva/lib/shapes/Text").Text | null>}
         {...commonProps}
+        {...blendProp}
         width={layer.width}
         text={td.text ?? ""}
         fontSize={td.fontSize ?? 24}
         fontFamily={td.fontFamily ?? "Arial"}
         fontStyle={td.fontStyle ?? "normal"}
-        fill={td.fill ?? "#ffffff"}
+        fill={useGradient ? undefined : (td.fill ?? "#ffffff")}
         {...gradientProps}
         align={td.align ?? "left"}
         letterSpacing={td.letterSpacing ?? 0}
@@ -272,6 +440,8 @@ function PosterLayerNode({
   );
 }
 
+// ─── Image node ────────────────────────────────────────────────────────────────
+
 function KonvaImageNode({
   layer,
   selected,
@@ -297,16 +467,11 @@ function KonvaImageNode({
     img.crossOrigin = "anonymous";
     img.src = src;
     img.onload = () => setImage(img);
-    img.onerror = () => {
-      console.warn("PosterCanvas: image failed to load", src.slice(0, 80));
-      setImgError(true);
-      setImage(null);
-    };
+    img.onerror = () => { setImgError(true); setImage(null); };
   }, [src]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   if (!src) return null;
-
   const isBg = layer.type === "backgroundImage" || layer.type === "subjectImage";
 
   if (imgError) {
@@ -359,15 +524,19 @@ function KonvaImageNode({
 // ─── Drawing overlay ──────────────────────────────────────────────────────────
 
 function DrawingOverlay({
-  displayW,
-  displayH,
+  containerW,
+  containerH,
   canvasW,
   canvasH,
+  pan,
+  zoom,
 }: {
-  displayW: number;
-  displayH: number;
+  containerW: number;
+  containerH: number;
   canvasW: number;
   canvasH: number;
+  pan: { x: number; y: number };
+  zoom: number;
 }) {
   const { brushActive, brushColor, brushSize, brushOpacity, getSortedLayers } = usePosterStore();
 
@@ -375,11 +544,30 @@ function DrawingOverlay({
   const isDrawingRef = useRef(false);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
 
+  function canvasToLocal(displayX: number, displayY: number) {
+    // Convert display coords → canvas coords
+    return {
+      x: (displayX - pan.x) / zoom,
+      y: (displayY - pan.y) / zoom,
+    };
+  }
+
   function handlePointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
     e.currentTarget.setPointerCapture(e.pointerId);
     isDrawingRef.current = true;
     const rect = e.currentTarget.getBoundingClientRect();
-    lastPointRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    lastPointRef.current = { x: cx, y: cy };
+    // Draw dot
+    const ctx = liveCanvasRef.current?.getContext("2d");
+    if (ctx) {
+      ctx.globalAlpha = brushOpacity;
+      ctx.fillStyle = brushColor;
+      ctx.beginPath();
+      ctx.arc(cx, cy, brushSize / 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   function handlePointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
@@ -412,7 +600,6 @@ function DrawingOverlay({
     const liveCanvas = liveCanvasRef.current;
     if (!liveCanvas) return;
 
-    // Snapshot current strokes and immediately clear so user can draw again
     const snapshot = document.createElement("canvas");
     snapshot.width = liveCanvas.width;
     snapshot.height = liveCanvas.height;
@@ -423,15 +610,12 @@ function DrawingOverlay({
     if (!drawingLayer) return;
 
     const existingSrc = drawingLayer.imageData?.src ?? "";
-
-    // Full-resolution canvas for committed strokes
     const offscreen = document.createElement("canvas");
     offscreen.width = canvasW;
     offscreen.height = canvasH;
     const offCtx = offscreen.getContext("2d");
     if (!offCtx) return;
 
-    // Paint existing committed strokes first
     if (existingSrc) {
       await new Promise<void>((resolve) => {
         const img = new window.Image();
@@ -441,8 +625,12 @@ function DrawingOverlay({
       });
     }
 
-    // Scale snapshot (display res) up to full canvas resolution
-    offCtx.drawImage(snapshot, 0, 0, canvasW, canvasH);
+    // Transform: snapshot is in display coords, map to canvas space
+    offCtx.save();
+    offCtx.translate(-pan.x / zoom, -pan.y / zoom);
+    offCtx.scale(1 / zoom, 1 / zoom);
+    offCtx.drawImage(snapshot, 0, 0);
+    offCtx.restore();
 
     const dataUrl = offscreen.toDataURL("image/png");
     const store = usePosterStore.getState();
@@ -455,13 +643,13 @@ function DrawingOverlay({
   return (
     <canvas
       ref={liveCanvasRef}
-      width={displayW}
-      height={displayH}
+      width={containerW}
+      height={containerH}
       style={{
         position: "absolute",
         top: 0, left: 0,
-        width: displayW,
-        height: displayH,
+        width: containerW,
+        height: containerH,
         cursor: "crosshair",
         touchAction: "none",
         zIndex: 5,
@@ -473,3 +661,4 @@ function DrawingOverlay({
     />
   );
 }
+

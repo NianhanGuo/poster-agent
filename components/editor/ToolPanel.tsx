@@ -5,14 +5,32 @@ import { ImageUploadPanel } from "./ImageUploadPanel";
 import { FontPicker } from "./FontPicker";
 import { loadGoogleFont } from "@/lib/fonts";
 import { GRADIENT_PRESETS, EFFECTS, COLOR_SWATCHES } from "@/lib/textEffects";
-import type { PosterLayer } from "@/types/poster";
+import type { PosterLayer, BlendMode } from "@/types/poster";
 import { isTextLayer, isImageLayer } from "@/types/poster";
+
+const BLEND_MODES: { value: BlendMode; label: string }[] = [
+  { value: "normal",      label: "Normal" },
+  { value: "multiply",    label: "Multiply" },
+  { value: "screen",      label: "Screen" },
+  { value: "overlay",     label: "Overlay" },
+  { value: "soft-light",  label: "Soft Light" },
+  { value: "hard-light",  label: "Hard Light" },
+  { value: "color-dodge", label: "Color Dodge" },
+  { value: "color-burn",  label: "Color Burn" },
+  { value: "darken",      label: "Darken" },
+  { value: "lighten",     label: "Lighten" },
+  { value: "color",       label: "Color" },
+  { value: "luminosity",  label: "Luminosity" },
+  { value: "difference",  label: "Difference" },
+  { value: "exclusion",   label: "Exclusion" },
+];
 
 interface ToolPanelProps {
   onTypography?: (styleHint?: string) => void;
+  onEditImage?: (layerId: string) => void;
 }
 
-export function ToolPanel({ onTypography }: ToolPanelProps) {
+export function ToolPanel({ onTypography, onEditImage }: ToolPanelProps) {
   const { project, selectedLayerId, getLayerById, updateLayer, updateTextData, addLayer } =
     usePosterStore();
   const [showImageUpload, setShowImageUpload] = useState(false);
@@ -90,7 +108,7 @@ export function ToolPanel({ onTypography }: ToolPanelProps) {
       )}
 
       {selected && imageSelected && (
-        <ImageInspector layer={selected} onLayer={onLayer} />
+        <ImageInspector layer={selected} onLayer={onLayer} onEditImage={onEditImage} />
       )}
 
       {selected && (
@@ -454,22 +472,42 @@ function TextInspector({
 
 // ─── Image inspector ───────────────────────────────────────────────────────────
 
-function ImageInspector({ layer, onLayer }: {
+function ImageInspector({ layer, onLayer, onEditImage }: {
   layer: PosterLayer;
   onLayer: (u: Partial<PosterLayer>) => void;
+  onEditImage?: (layerId: string) => void;
 }) {
+  const adj = layer.imageData?.adjustments;
+  const hasAdj = adj && Object.values(adj).some((v) => v !== 0);
   return (
     <>
       <Section label="Image" />
-      <Row label="Src">
-        <input
-          type="text"
-          value={layer.imageData?.src ?? ""}
-          onChange={(e) => onLayer({ imageData: { ...(layer.imageData ?? {}), src: e.target.value } })}
-          placeholder="https://… or data:image/…"
-          className="w-full bg-transparent border-b border-zinc-800 text-zinc-300 font-mono text-[10px] outline-none pb-0.5 placeholder:text-zinc-700"
-        />
-      </Row>
+      {onEditImage && (
+        <div className="px-4 pb-2 flex gap-2">
+          <button
+            onClick={() => onEditImage(layer.id)}
+            className="flex-1 border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-zinc-200 font-mono text-[9px] tracking-wide uppercase py-1.5 transition-colors"
+          >
+            Edit Image
+          </button>
+          {hasAdj && (
+            <button
+              onClick={() => onLayer({ imageData: { ...(layer.imageData ?? { src: "" }), adjustments: undefined } })}
+              title="Reset adjustments"
+              className="border border-zinc-800 hover:border-zinc-600 text-zinc-600 hover:text-red-400 font-mono text-[9px] px-2 py-1.5 transition-colors"
+            >
+              ↺
+            </button>
+          )}
+        </div>
+      )}
+      {hasAdj && (
+        <div className="px-4 pb-1">
+          <span className="font-mono text-[8px] text-zinc-600 tracking-wide">
+            {Object.entries(adj!).filter(([, v]) => v !== 0).map(([k, v]) => `${k} ${v > 0 ? "+" : ""}${v}`).join("  ")}
+          </span>
+        </div>
+      )}
     </>
   );
 }
@@ -551,6 +589,18 @@ function TransformInspector({ layer, onLayer }: {
           />
           <span className="font-mono text-[9px] text-zinc-600 w-8 text-right flex-none">{Math.round(layer.opacity * 100)}%</span>
         </div>
+      </Row>
+
+      <Row label="Blend">
+        <select
+          value={layer.blendMode ?? "normal"}
+          onChange={(e) => onLayer({ blendMode: e.target.value as BlendMode })}
+          className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 font-mono text-[9px] outline-none px-1 py-0.5 rounded-sm"
+        >
+          {BLEND_MODES.map(({ value, label }) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
       </Row>
 
       <Row label="Z">

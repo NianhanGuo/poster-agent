@@ -100,10 +100,25 @@ export interface TextLayerData {
   effects?: string[];
 }
 
+export type BlendMode =
+  | "normal" | "multiply" | "screen" | "overlay"
+  | "soft-light" | "hard-light" | "color-dodge" | "color-burn"
+  | "darken" | "lighten" | "color" | "luminosity" | "difference" | "exclusion";
+
+export interface ImageAdjustments {
+  brightness: number;   // -100 to 100
+  contrast: number;     // -100 to 100
+  saturation: number;   // -100 to 100
+  temperature: number;  // -100 to 100
+  highlights: number;   // -100 to 100
+  shadows: number;      // -100 to 100
+}
+
 export interface ImageLayerData {
   src: string;
   originalSrc?: string;
   fit?: "fill" | "contain" | "cover";
+  adjustments?: ImageAdjustments;
 }
 
 export interface PosterLayer {
@@ -120,6 +135,7 @@ export interface PosterLayer {
   locked: boolean;
   zIndex: number;
   isForeground?: boolean;
+  blendMode?: BlendMode;
   textData?: TextLayerData;
   imageData?: ImageLayerData;
 }
