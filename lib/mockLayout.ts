@@ -1,287 +1,235 @@
-// Generates a plausible poster layout without calling any AI API.
-// Used when ANTHROPIC_API_KEY is not configured (demo / Vercel zero-config).
-
 import { v4 as uuidv4 } from "uuid";
-import type {
-  Layer,
-  CanvasConfig,
-  PosterSetupConfig,
-  StylePreset,
-} from "@/types/poster";
+import type { Layer, CanvasConfig, PosterSetupConfig } from "@/types/poster";
+import { RECIPES } from "@/lib/styleRecipes";
 
-// Per-style typography + color defaults
-interface StyleDef {
-  titleFont: string;
-  subtitleFont: string;
-  bodyFont: string;
-  titleColor: string;
-  subtitleColor: string;
-  bodyColor: string;
-  titleStyle: string;
-  titleAlign: "left" | "center" | "right";
-  titleLetterSpacing: number;
+// Opinionated, design-forward mock layouts — one per style recipe.
+// Used when ANTHROPIC_API_KEY is absent.
+
+function p(canvas: CanvasConfig, rx: number, ry: number) {
+  return { x: Math.round(canvas.width * rx), y: Math.round(canvas.height * ry) };
 }
 
-const STYLES: Record<StylePreset, StyleDef> = {
-  cinematic: {
-    titleFont: "Impact",
-    subtitleFont: "Helvetica",
-    bodyFont: "Helvetica",
-    titleColor: "#ffffff",
-    subtitleColor: "#cccccc",
-    bodyColor: "#999999",
-    titleStyle: "normal",
-    titleAlign: "center",
-    titleLetterSpacing: 10,
-  },
-  "gallery-minimal": {
-    titleFont: "Georgia",
-    subtitleFont: "Georgia",
-    bodyFont: "Arial",
-    titleColor: "#1a1a1a",
-    subtitleColor: "#444444",
-    bodyColor: "#777777",
-    titleStyle: "normal",
-    titleAlign: "left",
-    titleLetterSpacing: 2,
-  },
-  brutalist: {
-    titleFont: "Impact",
-    subtitleFont: "Arial",
-    bodyFont: "Courier New",
-    titleColor: "#000000",
-    subtitleColor: "#ffffff",
-    bodyColor: "#555555",
-    titleStyle: "bold",
-    titleAlign: "left",
-    titleLetterSpacing: -2,
-  },
-  editorial: {
-    titleFont: "Georgia",
-    subtitleFont: "Arial",
-    bodyFont: "Georgia",
-    titleColor: "#1a1a1a",
-    subtitleColor: "#333333",
-    bodyColor: "#666666",
-    titleStyle: "italic",
-    titleAlign: "left",
-    titleLetterSpacing: 1,
-  },
-  surreal: {
-    titleFont: "Palatino",
-    subtitleFont: "Palatino",
-    bodyFont: "Arial",
-    titleColor: "#e8d5ff",
-    subtitleColor: "#c4a8ff",
-    bodyColor: "#9977cc",
-    titleStyle: "italic",
-    titleAlign: "center",
-    titleLetterSpacing: 5,
-  },
-  experimental: {
-    titleFont: "Courier New",
-    subtitleFont: "Arial",
-    bodyFont: "Courier New",
-    titleColor: "#00ffcc",
-    subtitleColor: "#ffffff",
-    bodyColor: "#aaaaaa",
-    titleStyle: "bold",
-    titleAlign: "right",
-    titleLetterSpacing: -1,
-  },
-};
+function bg(canvas: CanvasConfig): Layer {
+  return {
+    id: uuidv4(),
+    type: "backgroundImage",
+    label: "Background",
+    x: 0, y: 0,
+    width: canvas.width, height: canvas.height,
+    rotation: 0, opacity: 1,
+    visible: true, locked: false, zIndex: 1,
+    imageData: { src: "", fit: "fill" },
+  };
+}
 
-// Default text for when the user didn't provide any and AI copy is off
-const FILM_DEFAULTS = {
-  title: "UNTITLED FILM",
-  subtitle: "A story of light and shadow",
-  dateLocation: "Coming soon",
-  credits: "Written & Directed by —",
-};
-
-const EXHIBITION_DEFAULTS = {
-  title: "EXHIBITION",
-  subtitle: "Works on Paper and Space",
-  dateLocation: "1 Jan – 28 Feb 2026",
-  credits: "Gallery — City",
-};
-
-function px(canvas: CanvasConfig, ratioX: number, ratioY: number) {
-  return { x: Math.round(canvas.width * ratioX), y: Math.round(canvas.height * ratioY) };
+function textLayer(
+  type: Layer["type"],
+  label: string,
+  text: string,
+  x: number, y: number,
+  width: number,
+  fontSize: number,
+  fontFamily: string,
+  fontStyle: string,
+  fill: string,
+  align: "left" | "center" | "right",
+  letterSpacing: number,
+  zIndex: number,
+  opacity = 1,
+  rotation = 0,
+): Layer {
+  return {
+    id: uuidv4(), type, label,
+    x, y, width,
+    height: Math.round(fontSize * 2.4),
+    rotation, opacity,
+    visible: true, locked: false, zIndex,
+    textData: {
+      text, fontSize, fontFamily, fontStyle, fill, align,
+      letterSpacing, lineHeight: 1.1,
+    },
+  };
 }
 
 export function mockLayout(
   setup: PosterSetupConfig,
-  canvas: CanvasConfig
+  canvas: CanvasConfig,
 ): { layers: Layer[]; imagePrompt: string; designNotes: string } {
-  const st = STYLES[setup.stylePreset] ?? STYLES.cinematic;
-  const defaults =
-    setup.posterType === "film" ? FILM_DEFAULTS : EXHIBITION_DEFAULTS;
-
-  const title =
-    setup.userTitle ||
-    (setup.aiWriteCopy ? defaults.title : defaults.title);
-  const subtitle =
-    setup.userSubtitle ||
-    (setup.aiWriteCopy ? defaults.subtitle : defaults.subtitle);
-  const dateLocation =
-    setup.userDateLocation ||
-    (setup.aiWriteCopy ? defaults.dateLocation : defaults.dateLocation);
-  const credits =
-    setup.userCredits ||
-    (setup.aiWriteCopy ? defaults.credits : defaults.credits);
-
+  const recipe = RECIPES[setup.styleRecipe] ?? RECIPES["cinematic-rain"];
+  const t = recipe.type;
   const pad = Math.round(canvas.width * 0.05);
-  const innerW = canvas.width - pad * 2;
+  const inner = canvas.width - pad * 2;
 
-  // Title font size scales with canvas width
-  const titleSize = Math.round(canvas.width * 0.1);
-  const subtitleSize = Math.round(canvas.width * 0.035);
-  const bodySize = Math.round(canvas.width * 0.025);
+  const title   = setup.userTitle       || (setup.aiWriteCopy ? filmOrExhibitionTitle(setup.posterType)   : "—");
+  const sub     = setup.userSubtitle    || (setup.aiWriteCopy ? filmOrExhibitionSub(setup.posterType)     : "");
+  const meta    = setup.userDateLocation|| (setup.aiWriteCopy ? filmOrExhibitionMeta(setup.posterType)    : "");
+  const credits = setup.userCredits     || (setup.aiWriteCopy ? filmOrExhibitionCredits(setup.posterType) : "");
 
-  // Layout varies by style
-  let titleY: number;
-  let subtitleY: number;
-  let dateY: number;
-  let creditsY: number;
+  const titleSize  = Math.round(canvas.width * 0.1);
+  const subSize    = Math.round(canvas.width * 0.035);
+  const metaSize   = Math.round(canvas.width * 0.022);
+  const creditSize = Math.round(canvas.width * 0.017);
 
-  if (setup.stylePreset === "gallery-minimal" || setup.stylePreset === "editorial") {
-    // Top-heavy: title near top
-    titleY = Math.round(canvas.height * 0.07);
-    subtitleY = Math.round(canvas.height * 0.21);
-    dateY = Math.round(canvas.height * 0.86);
-    creditsY = Math.round(canvas.height * 0.91);
-  } else if (setup.stylePreset === "brutalist") {
-    // Stacked at top, overlapping
-    titleY = Math.round(canvas.height * 0.04);
-    subtitleY = Math.round(canvas.height * 0.22);
-    dateY = Math.round(canvas.height * 0.82);
-    creditsY = Math.round(canvas.height * 0.89);
-  } else {
-    // Default: title dominates the lower third
-    titleY = Math.round(canvas.height * 0.65);
-    subtitleY = Math.round(canvas.height * 0.55);
-    dateY = Math.round(canvas.height * 0.88);
-    creditsY = Math.round(canvas.height * 0.93);
+  let layers: Layer[];
+
+  switch (setup.styleRecipe) {
+    case "cinematic-rain":
+      // Large title at bottom, subtitle above it, credits tiny at very bottom
+      layers = [
+        bg(canvas),
+        textLayer("subtitleText", "Subtitle", sub,
+          pad, Math.round(canvas.height * 0.56), inner,
+          subSize, "Helvetica Neue", "normal", "#aaaaaa", "center", 6, 3),
+        textLayer("titleText", "Title", title.toUpperCase(),
+          pad, Math.round(canvas.height * 0.63), inner,
+          titleSize, "Impact", "normal", "#ffffff", "center", 14, 4),
+        textLayer("metaText", "Meta", meta,
+          pad, Math.round(canvas.height * 0.88), inner,
+          metaSize, "Helvetica Neue", "normal", "#666666", "center", 2, 2),
+        textLayer("bodyText", "Credits", credits,
+          pad, Math.round(canvas.height * 0.93), inner,
+          creditSize, "Helvetica Neue", "normal", "#444444", "center", 1, 2),
+      ];
+      break;
+
+    case "gallery-minimal":
+      // Small title top-left, large empty center, minimal credits bottom-right
+      layers = [
+        bg(canvas),
+        textLayer("titleText", "Title", title,
+          pad, pad, Math.round(inner * 0.55),
+          Math.round(titleSize * 0.55), "Georgia", "normal", "#111111", "left", 0, 4),
+        textLayer("subtitleText", "Subtitle", sub,
+          pad, Math.round(canvas.height * 0.18), Math.round(inner * 0.6),
+          subSize, "Arial", "normal", "#555555", "left", 0, 3),
+        textLayer("metaText", "Date / Venue", meta,
+          pad, Math.round(canvas.height * 0.87), inner,
+          metaSize, "Arial", "normal", "#333333", "left", 4, 2),
+        textLayer("bodyText", "Credits", credits,
+          pad, Math.round(canvas.height * 0.92), inner,
+          creditSize, "Arial", "normal", "#888888", "left", 2, 2),
+      ];
+      break;
+
+    case "brutalist-wall":
+      // Title overwhelming, top-left bleed, raw
+      layers = [
+        bg(canvas),
+        textLayer("titleText", "Title", title.toUpperCase(),
+          pad, Math.round(canvas.height * 0.04), inner,
+          Math.round(titleSize * 1.3), "Impact", "bold", "#ffffff", "left", -3, 4),
+        textLayer("subtitleText", "Subtitle", sub.toUpperCase(),
+          pad, Math.round(canvas.height * 0.28), Math.round(inner * 0.7),
+          subSize, "Courier New", "bold", "#cc2200", "left", 4, 3),
+        textLayer("metaText", "Meta", meta,
+          pad, Math.round(canvas.height * 0.85), inner,
+          metaSize, "Courier New", "normal", "#aaaaaa", "left", 2, 2),
+        textLayer("bodyText", "Credits", credits,
+          pad, Math.round(canvas.height * 0.91), inner,
+          creditSize, "Courier New", "normal", "#666666", "left", 1, 2),
+      ];
+      break;
+
+    case "soft-editorial":
+      // Centered, warm, layered hierarchy
+      layers = [
+        bg(canvas),
+        textLayer("subtitleText", "Subtitle", sub,
+          pad, Math.round(canvas.height * 0.38), inner,
+          subSize, "Georgia", "italic", "#b8a080", "center", 3, 3),
+        textLayer("titleText", "Title", title,
+          pad, Math.round(canvas.height * 0.44), inner,
+          Math.round(titleSize * 0.8), "Palatino", "normal", "#f0e8d8", "center", 4, 4),
+        textLayer("metaText", "Meta", meta,
+          pad, Math.round(canvas.height * 0.75), inner,
+          metaSize, "Georgia", "normal", "#888070", "center", 2, 2),
+        textLayer("bodyText", "Credits", credits,
+          pad, Math.round(canvas.height * 0.81), inner,
+          creditSize, "Georgia", "normal", "#665850", "center", 1, 2),
+      ];
+      break;
+
+    case "surreal-film":
+      // Off-center, dreamlike, loose placement
+      layers = [
+        bg(canvas),
+        textLayer("titleText", "Title", title,
+          Math.round(pad * 0.5), Math.round(canvas.height * 0.42), Math.round(inner * 1.1),
+          Math.round(titleSize * 0.85), "Palatino", "italic", "#e8d8ff", "center", 8, 4),
+        textLayer("subtitleText", "Subtitle", sub,
+          pad, Math.round(canvas.height * 0.60), inner,
+          subSize, "Arial", "normal", "#9060c0", "center", 3, 3),
+        textLayer("metaText", "Meta", meta,
+          pad, Math.round(canvas.height * 0.86), inner,
+          metaSize, "Arial", "normal", "#6648aa", "right", 1, 2),
+        textLayer("bodyText", "Credits", credits,
+          pad, Math.round(canvas.height * 0.92), inner,
+          creditSize, "Arial", "normal", "#443366", "right", 1, 2),
+      ];
+      break;
+
+    case "archive-museum":
+      // Formal, information-rich, grid-precise
+      layers = [
+        bg(canvas),
+        textLayer("titleText", "Title", title.toUpperCase(),
+          pad, pad, inner,
+          Math.round(titleSize * 0.65), "Georgia", "normal", "#1a1814", "left", 6, 4),
+        textLayer("subtitleText", "Subtitle", sub,
+          pad, Math.round(canvas.height * 0.15), Math.round(inner * 0.7),
+          Math.round(subSize * 0.9), "Times New Roman", "italic", "#4a4640", "left", 2, 3),
+        // Horizontal rule simulated with long underscore text
+        textLayer("metaText", "Date / Venue", meta,
+          pad, Math.round(canvas.height * 0.82), inner,
+          Math.round(metaSize * 1.1), "Times New Roman", "normal", "#1a1814", "left", 6, 2),
+        textLayer("bodyText", "Credits", credits,
+          pad, Math.round(canvas.height * 0.88), inner,
+          creditSize, "Times New Roman", "normal", "#6a6660", "left", 2, 2),
+      ];
+      break;
+
+    case "experimental-type":
+    default:
+      // Type as composition — large rotated title, extreme contrast
+      layers = [
+        bg(canvas),
+        // Rotated title
+        textLayer("titleText", "Title", title.toUpperCase(),
+          Math.round(canvas.width * 0.1), Math.round(canvas.height * 0.55), Math.round(inner * 1.4),
+          Math.round(titleSize * 1.1), "Courier New", "bold", "#ffffff", "left", -4, 4, 1, -8),
+        textLayer("subtitleText", "Subtitle", sub,
+          pad, Math.round(canvas.height * 0.07), inner,
+          subSize, "Courier New", "normal", "#666666", "right", 2, 3),
+        textLayer("metaText", "Meta", meta,
+          pad, Math.round(canvas.height * 0.85), inner,
+          metaSize, "Courier New", "normal", "#444444", "right", 0, 2),
+        textLayer("bodyText", "Credits", credits,
+          pad, Math.round(canvas.height * 0.91), inner,
+          creditSize, "Courier New", "normal", "#333333", "right", 0, 2),
+      ];
+      break;
   }
-
-  const layers: Layer[] = [
-    {
-      id: uuidv4(),
-      type: "background-image",
-      label: "Background",
-      x: 0,
-      y: 0,
-      width: canvas.width,
-      height: canvas.height,
-      rotation: 0,
-      opacity: 1,
-      visible: true,
-      locked: false,
-      zIndex: 1,
-      imageData: { src: "", fit: "fill" },
-    },
-    {
-      id: uuidv4(),
-      type: "subtitle-text",
-      label: "Subtitle",
-      x: pad,
-      y: subtitleY,
-      width: innerW,
-      height: Math.round(subtitleSize * 2.5),
-      rotation: 0,
-      opacity: 0.9,
-      visible: true,
-      locked: false,
-      zIndex: 3,
-      textData: {
-        text: subtitle,
-        fontSize: subtitleSize,
-        fontFamily: st.subtitleFont,
-        fontStyle: "normal",
-        fill: st.subtitleColor,
-        align: st.titleAlign,
-        letterSpacing: 1,
-        lineHeight: 1.3,
-      },
-    },
-    {
-      id: uuidv4(),
-      type: "title-text",
-      label: "Title",
-      x: pad,
-      y: titleY,
-      width: innerW,
-      height: Math.round(titleSize * 2),
-      rotation: 0,
-      opacity: 1,
-      visible: true,
-      locked: false,
-      zIndex: 4,
-      textData: {
-        text: title,
-        fontSize: titleSize,
-        fontFamily: st.titleFont,
-        fontStyle: st.titleStyle,
-        fill: st.titleColor,
-        align: st.titleAlign,
-        letterSpacing: st.titleLetterSpacing,
-        lineHeight: 1,
-      },
-    },
-    {
-      id: uuidv4(),
-      type: "date-location-text",
-      label: "Date / Location",
-      x: pad,
-      y: dateY,
-      width: innerW,
-      height: Math.round(bodySize * 2),
-      rotation: 0,
-      opacity: 0.8,
-      visible: true,
-      locked: false,
-      zIndex: 2,
-      textData: {
-        text: dateLocation,
-        fontSize: bodySize,
-        fontFamily: st.bodyFont,
-        fontStyle: "normal",
-        fill: st.bodyColor,
-        align: st.titleAlign,
-        letterSpacing: 2,
-        lineHeight: 1.4,
-      },
-    },
-    {
-      id: uuidv4(),
-      type: "credits-text",
-      label: "Credits",
-      x: pad,
-      y: creditsY,
-      width: innerW,
-      height: Math.round(bodySize * 2),
-      rotation: 0,
-      opacity: 0.6,
-      visible: true,
-      locked: false,
-      zIndex: 2,
-      textData: {
-        text: credits,
-        fontSize: Math.round(bodySize * 0.8),
-        fontFamily: st.bodyFont,
-        fontStyle: "normal",
-        fill: st.bodyColor,
-        align: st.titleAlign,
-        letterSpacing: 1,
-        lineHeight: 1.4,
-      },
-    },
-  ];
 
   return {
     layers,
-    imagePrompt: `${setup.stylePreset} style poster background for: ${setup.prompt || setup.posterType}`,
-    designNotes: `Demo layout — ${setup.stylePreset} style, ${setup.posterType} poster. Configure ANTHROPIC_API_KEY for AI-generated layouts.`,
+    imagePrompt: `${recipe.imageKeywords}. ${setup.prompt || setup.posterType + " poster"}. ${recipe.imageAvoid ? "Avoid: " + recipe.imageAvoid : ""}`,
+    designNotes: `${recipe.name} — demo layout. Add ANTHROPIC_API_KEY for AI-generated layouts.`,
   };
+}
+
+// ─── Default copy helpers ─────────────────────────────────────────────────────
+
+function filmOrExhibitionTitle(type: string) {
+  return type === "film" ? "UNTITLED" : "EXHIBITION";
+}
+function filmOrExhibitionSub(type: string) {
+  return type === "film" ? "A film" : "Works 2024–2025";
+}
+function filmOrExhibitionMeta(type: string) {
+  return type === "film" ? "Coming soon" : "1 Jan – 28 Feb 2026";
+}
+function filmOrExhibitionCredits(type: string) {
+  return type === "film"
+    ? "Written & Directed by —"
+    : "Gallery — City, Country";
 }

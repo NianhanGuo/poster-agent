@@ -198,9 +198,10 @@ function LayerNode({
   };
 
   if (
-    layer.type === "background-image" ||
-    layer.type === "foreground-cutout" ||
-    layer.type === "user-image"
+    layer.type === "backgroundImage" ||
+    layer.type === "subjectImage" ||
+    layer.type === "foregroundCutout" ||
+    layer.type === "userImage"
   ) {
     return (
       <KonvaImageLayer
@@ -277,8 +278,8 @@ function KonvaImageLayer({
         y={layer.y}
         width={layer.width}
         height={layer.height}
-        fill={layer.type === "background-image" ? "#1a1a2e" : "#2a1a2e"}
-        stroke={selected ? "#7c3aed" : "transparent"}
+        fill={layer.type === "backgroundImage" ? "#0a0a0a" : "#111111"}
+        stroke={selected ? "#71717a" : "transparent"}
         strokeWidth={2}
         opacity={layer.opacity}
         draggable={!layer.locked}

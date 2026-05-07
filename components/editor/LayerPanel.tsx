@@ -2,15 +2,16 @@
 import { usePosterStore } from "@/store/posterStore";
 import type { Layer } from "@/types/poster";
 
-const LAYER_TYPE_ICONS: Record<string, string> = {
-  "background-image": "🖼",
-  "title-text": "T",
-  "subtitle-text": "t",
-  "date-location-text": "📅",
-  "credits-text": "ℹ",
-  "foreground-cutout": "✂",
-  "user-text": "A",
-  "user-image": "🖼",
+const TYPE_LABEL: Record<string, string> = {
+  backgroundImage: "bg",
+  subjectImage:    "subject",
+  titleText:       "title",
+  subtitleText:    "subtitle",
+  metaText:        "meta",
+  bodyText:        "body",
+  foregroundCutout:"cutout",
+  userText:        "text",
+  userImage:       "image",
 };
 
 export function LayerPanel() {
@@ -29,12 +30,11 @@ export function LayerPanel() {
 
   if (!project) return null;
 
-  // Reverse sorted so highest zIndex shows at top
   const layers = [...getSortedLayers()].reverse();
 
   return (
-    <div className="p-2 space-y-1">
-      <div className="px-2 py-1.5 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+    <div className="py-3">
+      <div className="px-4 pb-2 font-mono text-[9px] tracking-[0.25em] uppercase text-zinc-700">
         Layers
       </div>
 
@@ -57,15 +57,8 @@ export function LayerPanel() {
 }
 
 function LayerRow({
-  layer,
-  selected,
-  onSelect,
-  onToggleLock,
-  onToggleVisibility,
-  onDelete,
-  onDuplicate,
-  onMoveUp,
-  onMoveDown,
+  layer, selected, onSelect, onToggleLock, onToggleVisibility,
+  onDelete, onDuplicate, onMoveUp, onMoveDown,
 }: {
   layer: Layer;
   selected: boolean;
@@ -80,90 +73,38 @@ function LayerRow({
   return (
     <div
       onClick={onSelect}
-      className={`group flex items-center gap-1.5 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${
-        selected
-          ? "bg-violet-600/20 border border-violet-600/40"
-          : "hover:bg-zinc-800 border border-transparent"
-      } ${!layer.visible ? "opacity-40" : ""}`}
+      className={`group flex items-center gap-2 px-4 py-1.5 cursor-pointer transition-colors ${
+        selected ? "bg-zinc-900 text-zinc-200" : "hover:bg-zinc-950 text-zinc-500"
+      } ${!layer.visible ? "opacity-30" : ""}`}
     >
-      {/* Icon */}
-      <span className="text-sm w-5 text-center flex-none">
-        {LAYER_TYPE_ICONS[layer.type] ?? "◻"}
+      {/* Type badge */}
+      <span className={`font-mono text-[9px] tracking-wide w-12 flex-none ${selected ? "text-zinc-500" : "text-zinc-700"}`}>
+        {TYPE_LABEL[layer.type] ?? layer.type}
       </span>
 
       {/* Label */}
-      <span className="text-xs text-zinc-300 truncate flex-1 min-w-0">
+      <span className="font-mono text-[10px] truncate flex-1 min-w-0">
         {layer.label}
       </span>
 
-      {/* Controls — shown on hover */}
-      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-        <IconButton
-          title={layer.visible ? "Hide" : "Show"}
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleVisibility();
-          }}
-        >
-          {layer.visible ? "👁" : "🙈"}
-        </IconButton>
-        <IconButton
-          title={layer.locked ? "Unlock" : "Lock"}
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleLock();
-          }}
-        >
-          {layer.locked ? "🔒" : "🔓"}
-        </IconButton>
-        <IconButton
-          title="Move up"
-          onClick={(e) => {
-            e.stopPropagation();
-            onMoveUp();
-          }}
-        >
-          ↑
-        </IconButton>
-        <IconButton
-          title="Move down"
-          onClick={(e) => {
-            e.stopPropagation();
-            onMoveDown();
-          }}
-        >
-          ↓
-        </IconButton>
-        <IconButton
-          title="Duplicate"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDuplicate();
-          }}
-        >
-          ⧉
-        </IconButton>
-        <IconButton
-          title="Delete"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (confirm(`Delete "${layer.label}"?`)) onDelete();
-          }}
-          className="hover:text-red-400"
-        >
-          ✕
-        </IconButton>
+      {/* Controls */}
+      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <Btn title={layer.visible ? "hide" : "show"} onClick={(e) => { e.stopPropagation(); onToggleVisibility(); }}>
+          {layer.visible ? "○" : "◌"}
+        </Btn>
+        <Btn title={layer.locked ? "unlock" : "lock"} onClick={(e) => { e.stopPropagation(); onToggleLock(); }}>
+          {layer.locked ? "■" : "□"}
+        </Btn>
+        <Btn title="up" onClick={(e) => { e.stopPropagation(); onMoveUp(); }}>↑</Btn>
+        <Btn title="down" onClick={(e) => { e.stopPropagation(); onMoveDown(); }}>↓</Btn>
+        <Btn title="dupe" onClick={(e) => { e.stopPropagation(); onDuplicate(); }}>+</Btn>
+        <Btn title="delete" onClick={(e) => { e.stopPropagation(); if (confirm(`Delete "${layer.label}"?`)) onDelete(); }} className="hover:text-red-500">×</Btn>
       </div>
     </div>
   );
 }
 
-function IconButton({
-  children,
-  onClick,
-  title,
-  className = "",
-}: {
+function Btn({ children, onClick, title, className = "" }: {
   children: React.ReactNode;
   onClick: (e: React.MouseEvent) => void;
   title: string;
@@ -173,7 +114,7 @@ function IconButton({
     <button
       title={title}
       onClick={onClick}
-      className={`w-5 h-5 flex items-center justify-center text-xs text-zinc-500 hover:text-zinc-200 rounded transition-colors ${className}`}
+      className={`w-4 h-4 flex items-center justify-center font-mono text-[10px] text-zinc-600 hover:text-zinc-300 transition-colors ${className}`}
     >
       {children}
     </button>

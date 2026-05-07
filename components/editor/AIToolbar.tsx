@@ -3,27 +3,18 @@ import { useState } from "react";
 import { usePosterStore } from "@/store/posterStore";
 
 export function AIToolbar() {
-  const {
-    project,
-    setProject,
-    setGenerating,
-    isGenerating,
-    getSortedLayers,
-  } = usePosterStore();
+  const { project, setProject, setGenerating, isGenerating, getSortedLayers } =
+    usePosterStore();
+  const [command, setCommand] = useState("");
   const [error, setError] = useState("");
 
   if (!project) return null;
 
   const lockedLayers = getSortedLayers().filter((l) => l.locked);
-  const unlockedIds = new Set(
-    getSortedLayers()
-      .filter((l) => !l.locked)
-      .map((l) => l.id)
-  );
 
-  async function regenerateAll() {
+  async function runLayout(promptOverride?: string) {
     if (!project) return;
-    setGenerating(true, "Regenerating layout…");
+    setGenerating(true, "regenerating…");
     setError("");
     try {
       const res = await fetch("/api/generate/layout", {
@@ -34,23 +25,23 @@ export function AIToolbar() {
             posterType: project.posterType,
             canvasSize: project.canvas.size,
             language: project.language,
-            stylePreset: project.stylePreset,
-            prompt: project.promptHistory[project.promptHistory.length - 1] ?? "",
+            styleRecipe: project.styleRecipe,
+            prompt: promptOverride ?? project.promptHistory[project.promptHistory.length - 1] ?? "",
             aiWriteCopy: true,
           },
           lockedLayers,
         }),
       });
-      if (!res.ok) throw new Error("Failed");
+      if (!res.ok) throw new Error();
       const { layers, imagePrompt } = await res.json();
 
-      setGenerating(true, "Generating image…");
+      setGenerating(true, "generating image…");
       const imgRes = await fetch("/api/generate/image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: imagePrompt,
-          style: project.stylePreset,
+          styleRecipe: project.styleRecipe,
           width: project.canvas.width,
           height: project.canvas.height,
         }),
@@ -58,57 +49,44 @@ export function AIToolbar() {
       const imgData = await imgRes.json();
 
       const finalLayers = layers.map(
-        (l: { type: string; imageData?: Record<string, unknown> }) => {
-          if (l.type === "background-image" && imgData.url) {
-            return { ...l, imageData: { ...l.imageData, src: imgData.url } };
-          }
-          return l;
-        }
+        (l: { type: string; imageData?: Record<string, unknown> }) =>
+          l.type === "backgroundImage" && imgData.url
+            ? { ...l, imageData: { ...l.imageData, src: imgData.url } }
+            : l
       );
-
       setProject({ ...project, layers: finalLayers });
-    } catch (e) {
-      console.error(e);
-      setError("Regeneration failed");
+    } catch {
+      setError("failed");
     } finally {
       setGenerating(false);
     }
   }
 
-  async function regenerateImageOnly() {
+  async function regenerateImage() {
     if (!project) return;
-    setGenerating(true, "Regenerating image…");
+    setGenerating(true, "generating image…");
     setError("");
     try {
-      const prompt =
-        project.promptHistory[project.promptHistory.length - 1] ?? "";
       const res = await fetch("/api/generate/image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt,
-          style: project.stylePreset,
+          prompt: project.promptHistory[project.promptHistory.length - 1] ?? "",
+          styleRecipe: project.styleRecipe,
           width: project.canvas.width,
           height: project.canvas.height,
         }),
       });
       const { url } = await res.json();
-      if (!url) {
-        setError("Image generation unavailable — configure REPLICATE_API_TOKEN");
-        return;
-      }
-
-      const layers = project.layers.map((l) => {
-        if (l.type === "background-image" && !l.locked) {
-          return { ...l, imageData: { ...l.imageData, src: url } };
-        }
-        return l;
-      });
-
+      if (!url) return;
+      const layers = project.layers.map((l) =>
+        l.type === "backgroundImage" && !l.locked
+          ? { ...l, imageData: { ...l.imageData, src: url } }
+          : l
+      );
       setProject({ ...project, layers });
-    } catch (e) {
-      console.error(e);
-      setError("Image regeneration failed");
+    } catch {
+      setError("failed");
     } finally {
       setGenerating(false);
     }
@@ -116,7 +94,7 @@ export function AIToolbar() {
 
   async function improveTypography() {
     if (!project) return;
-    setGenerating(true, "Improving typography…");
+    setGenerating(true, "refining type…");
     setError("");
     try {
       const res = await fetch("/api/generate/typography", {
@@ -124,156 +102,66 @@ export function AIToolbar() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           layers: project.layers,
-          style: project.stylePreset,
+          styleRecipe: project.styleRecipe,
           posterType: project.posterType,
           language: project.language,
           lockedLayers: lockedLayers.map((l) => l.id),
         }),
       });
-      if (!res.ok) throw new Error("Failed");
+      if (!res.ok) throw new Error();
       const { layers } = await res.json();
       setProject({ ...project, layers });
-    } catch (e) {
-      console.error(e);
-      setError("Typography improvement failed");
+    } catch {
+      setError("failed");
     } finally {
       setGenerating(false);
     }
   }
 
-  async function improveLayout() {
-    if (!project) return;
-    setGenerating(true, "Optimizing layout…");
-    setError("");
-    try {
-      const res = await fetch("/api/generate/layout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          setup: {
-            posterType: project.posterType,
-            canvasSize: project.canvas.size,
-            language: project.language,
-            stylePreset: project.stylePreset,
-            prompt: `Improve and refine this layout: ${project.promptHistory[project.promptHistory.length - 1] ?? ""}`,
-            aiWriteCopy: false,
-          },
-          lockedLayers,
-        }),
-      });
-      if (!res.ok) throw new Error("Failed");
-      const { layers } = await res.json();
-
-      // Preserve locked layers and merge
-      const merged = layers.map(
-        (l: { id: string }) =>
-          lockedLayers.find((ll) => ll.id === l.id) ?? l
-      );
-      setProject({ ...project, layers: merged });
-    } catch (e) {
-      console.error(e);
-      setError("Layout improvement failed");
-    } finally {
-      setGenerating(false);
-    }
+  async function handleCommand() {
+    if (!command.trim()) return;
+    const cmd = command.trim();
+    setCommand("");
+    await runLayout(cmd);
   }
 
-  async function createVariation() {
-    if (!project) return;
-    setGenerating(true, "Creating variation…");
-    setError("");
-    try {
-      const res = await fetch("/api/generate/layout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          setup: {
-            posterType: project.posterType,
-            canvasSize: project.canvas.size,
-            language: project.language,
-            stylePreset: project.stylePreset,
-            prompt: `Create a variation with different composition: ${project.promptHistory[project.promptHistory.length - 1] ?? ""}`,
-            aiWriteCopy: true,
-          },
-          lockedLayers,
-        }),
-      });
-      if (!res.ok) throw new Error("Failed");
-      const { layers, imagePrompt } = await res.json();
-
-      const imgRes = await fetch("/api/generate/image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: imagePrompt,
-          style: project.stylePreset,
-          width: project.canvas.width,
-          height: project.canvas.height,
-        }),
-      });
-      const imgData = await imgRes.json();
-
-      const finalLayers = layers.map(
-        (l: { type: string; imageData?: Record<string, unknown> }) => {
-          if (l.type === "background-image" && imgData.url) {
-            return { ...l, imageData: { ...l.imageData, src: imgData.url } };
-          }
-          return l;
-        }
-      );
-
-      setProject({ ...project, layers: finalLayers });
-    } catch (e) {
-      console.error(e);
-      setError("Variation creation failed");
-    } finally {
-      setGenerating(false);
-    }
-  }
-
-  const isDemo = project.isDemo ?? false;
-
-  const buttons = [
-    { label: "Regenerate All", action: regenerateAll, color: "violet" },
-    { label: "New Image", action: regenerateImageOnly, color: "blue" },
-    { label: "Typography", action: improveTypography, color: "emerald" },
-    { label: "Layout", action: improveLayout, color: "amber" },
-    { label: "Variation", action: createVariation, color: "pink" },
+  const actions: { label: string; fn: () => void }[] = [
+    { label: "Regenerate", fn: () => runLayout() },
+    { label: "Image", fn: regenerateImage },
+    { label: "Type", fn: improveTypography },
+    { label: "Variation", fn: () => runLayout(`Create a different composition: ${project.promptHistory[project.promptHistory.length - 1] ?? ""}`) },
   ];
 
-  const colorMap: Record<string, string> = {
-    violet:
-      "bg-violet-900/40 hover:bg-violet-800/60 text-violet-300 border-violet-800/60",
-    blue: "bg-blue-900/40 hover:bg-blue-800/60 text-blue-300 border-blue-800/60",
-    emerald:
-      "bg-emerald-900/40 hover:bg-emerald-800/60 text-emerald-300 border-emerald-800/60",
-    amber:
-      "bg-amber-900/40 hover:bg-amber-800/60 text-amber-300 border-amber-800/60",
-    pink: "bg-pink-900/40 hover:bg-pink-800/60 text-pink-300 border-pink-800/60",
-  };
-
   return (
-    <div className="flex-none border-b border-zinc-800 bg-zinc-900/50 px-4 py-2 flex items-center gap-2">
-      <span className="text-xs text-zinc-500 font-medium mr-1">AI:</span>
-      {buttons.map((btn) => (
-        <button
-          key={btn.label}
-          onClick={btn.action}
-          disabled={isGenerating}
-          title={isDemo ? `${btn.label} (mock response — add ANTHROPIC_API_KEY for real AI)` : btn.label}
-          className={`text-xs px-3 py-1.5 rounded-lg border transition-colors disabled:opacity-40 ${colorMap[btn.color]}`}
-        >
-          {btn.label}
-          {isDemo && <span className="ml-1 opacity-50 text-[10px]">demo</span>}
-        </button>
-      ))}
-      {lockedLayers.length > 0 && (
-        <span className="text-xs text-zinc-600 ml-1">
-          ({lockedLayers.length} locked)
-        </span>
-      )}
+    <div className="flex-none border-b border-zinc-900 px-5 h-9 flex items-center gap-4">
+      {/* Natural language command */}
+      <input
+        type="text"
+        value={command}
+        onChange={(e) => setCommand(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && handleCommand()}
+        placeholder="Describe a change…"
+        className="flex-1 bg-transparent font-mono text-[10px] tracking-wide text-zinc-400 placeholder:text-zinc-700 outline-none"
+      />
+
+      {/* Action links */}
+      <div className="flex items-center gap-0">
+        {actions.map((a, i) => (
+          <span key={a.label} className="flex items-center">
+            {i > 0 && <span className="text-zinc-800 mx-2">·</span>}
+            <button
+              onClick={a.fn}
+              disabled={isGenerating}
+              className="font-mono text-[10px] tracking-[0.12em] uppercase text-zinc-600 hover:text-zinc-300 disabled:opacity-30 transition-colors"
+            >
+              {a.label}
+            </button>
+          </span>
+        ))}
+      </div>
+
       {error && (
-        <span className="text-xs text-red-400 ml-2">{error}</span>
+        <span className="font-mono text-[10px] text-red-600">{error}</span>
       )}
     </div>
   );

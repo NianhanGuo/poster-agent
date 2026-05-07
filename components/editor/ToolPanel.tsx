@@ -3,58 +3,40 @@ import { useState } from "react";
 import { usePosterStore } from "@/store/posterStore";
 import { ImageUploadPanel } from "./ImageUploadPanel";
 import type { Layer } from "@/types/poster";
+import { isTextLayer, isImageLayer } from "@/types/poster";
 
 const FONT_FAMILIES = [
-  "Arial",
-  "Helvetica",
-  "Georgia",
-  "Times New Roman",
-  "Courier New",
-  "Impact",
-  "Trebuchet MS",
-  "Verdana",
-  "Palatino",
-  "Garamond",
-  "Futura",
-  "Gill Sans",
-  "Baskerville",
+  "Arial", "Helvetica Neue", "Georgia", "Times New Roman",
+  "Courier New", "Impact", "Palatino", "Garamond", "Baskerville",
 ];
 
 export function ToolPanel() {
   const { project, selectedLayerId, getLayerById, updateLayer, updateTextData, addLayer } =
     usePosterStore();
-  const [showAddText, setShowAddText] = useState(false);
   const [showImageUpload, setShowImageUpload] = useState(false);
 
   if (!project) return null;
 
   const selected = selectedLayerId ? getLayerById(selectedLayerId) : null;
-  const isText = selected?.type.includes("text");
-  const isImage =
-    selected?.type === "background-image" ||
-    selected?.type === "foreground-cutout" ||
-    selected?.type === "user-image";
+  const textSelected = selected ? isTextLayer(selected.type) : false;
+  const imageSelected = selected ? isImageLayer(selected.type) : false;
 
   function addTextLayer() {
     const canvas = project!.canvas;
     const newLayer: Layer = {
       id: crypto.randomUUID(),
-      type: "user-text",
+      type: "userText",
       label: "Text",
-      x: canvas.width / 2 - 150,
-      y: canvas.height / 2 - 30,
-      width: 300,
-      height: 60,
-      rotation: 0,
-      opacity: 1,
-      visible: true,
-      locked: false,
-      zIndex: 10,
+      x: Math.round(canvas.width * 0.1),
+      y: Math.round(canvas.height * 0.5),
+      width: Math.round(canvas.width * 0.8),
+      height: 120,
+      rotation: 0, opacity: 1, visible: true, locked: false, zIndex: 10,
       textData: {
         text: "New Text",
-        fontSize: 48,
-        fontFamily: "Helvetica",
-        fontStyle: "bold",
+        fontSize: 64,
+        fontFamily: "Helvetica Neue",
+        fontStyle: "normal",
         fill: "#ffffff",
         align: "center",
         letterSpacing: 2,
@@ -62,347 +44,296 @@ export function ToolPanel() {
       },
     };
     addLayer(newLayer);
-    setShowAddText(false);
   }
 
   return (
-    <div className="p-3 space-y-4 text-sm">
-      {/* Add layers */}
-      <div>
-        <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+    <div className="py-3 space-y-5 text-xs">
+      {/* Add */}
+      <div className="px-4 space-y-2">
+        <div className="font-mono text-[9px] tracking-[0.25em] uppercase text-zinc-700 pb-1">
           Add
         </div>
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="flex gap-2">
           <button
             onClick={addTextLayer}
-            className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg py-2 text-xs transition-colors"
+            className="flex-1 border border-zinc-800 hover:border-zinc-600 text-zinc-500 hover:text-zinc-300 font-mono text-[10px] tracking-wide uppercase py-1.5 transition-colors"
           >
             + Text
           </button>
           <button
             onClick={() => setShowImageUpload(!showImageUpload)}
-            className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg py-2 text-xs transition-colors"
+            className="flex-1 border border-zinc-800 hover:border-zinc-600 text-zinc-500 hover:text-zinc-300 font-mono text-[10px] tracking-wide uppercase py-1.5 transition-colors"
           >
             + Image
           </button>
         </div>
+        {showImageUpload && (
+          <ImageUploadPanel onClose={() => setShowImageUpload(false)} />
+        )}
       </div>
 
-      {showImageUpload && (
-        <ImageUploadPanel onClose={() => setShowImageUpload(false)} />
-      )}
-
-      {/* No selection */}
       {!selected && (
-        <div className="text-xs text-zinc-600 text-center py-4">
-          Select a layer to edit its properties
+        <div className="px-4 font-mono text-[10px] text-zinc-700">
+          select a layer
         </div>
       )}
 
-      {/* Text properties */}
-      {selected && isText && selected.textData && (
-        <TextProperties
+      {selected && textSelected && selected.textData && (
+        <TextProps
           layer={selected}
-          onUpdateText={(updates) => updateTextData(selected.id, updates)}
-          onUpdateLayer={(updates) => updateLayer(selected.id, updates)}
+          onText={(u) => updateTextData(selected.id, u)}
+          onLayer={(u) => updateLayer(selected.id, u)}
         />
       )}
 
-      {/* Image properties */}
-      {selected && isImage && (
-        <ImageProperties
+      {selected && imageSelected && (
+        <ImageProps
           layer={selected}
-          onUpdateLayer={(updates) => updateLayer(selected.id, updates)}
+          onLayer={(u) => updateLayer(selected.id, u)}
         />
       )}
 
-      {/* Common properties */}
       {selected && (
-        <CommonProperties
+        <TransformProps
           layer={selected}
-          onUpdateLayer={(updates) => updateLayer(selected.id, updates)}
+          onLayer={(u) => updateLayer(selected.id, u)}
         />
       )}
     </div>
   );
 }
 
-function TextProperties({
-  layer,
-  onUpdateText,
-  onUpdateLayer,
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 px-4 py-0.5">
+      <span className="font-mono text-[9px] tracking-wide uppercase text-zinc-700 w-16 flex-none">{label}</span>
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
+  );
+}
+
+function Input({ value, onChange, type = "text", placeholder = "" }: {
+  value: string | number;
+  onChange: (v: string) => void;
+  type?: string;
+  placeholder?: string;
+}) {
+  return (
+    <input
+      type={type}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      className="w-full bg-transparent border-b border-zinc-800 focus:border-zinc-600 text-zinc-300 font-mono text-[10px] outline-none pb-0.5 placeholder:text-zinc-700 transition-colors"
+    />
+  );
+}
+
+function Section({ label }: { label: string }) {
+  return (
+    <div className="px-4 pt-3 pb-1 font-mono text-[9px] tracking-[0.25em] uppercase text-zinc-700 border-t border-zinc-900">
+      {label}
+    </div>
+  );
+}
+
+function TextProps({
+  layer, onText, onLayer,
 }: {
   layer: Layer;
-  onUpdateText: (u: Partial<NonNullable<Layer["textData"]>>) => void;
-  onUpdateLayer: (u: Partial<Layer>) => void;
+  onText: (u: Partial<NonNullable<Layer["textData"]>>) => void;
+  onLayer: (u: Partial<Layer>) => void;
 }) {
   const td = layer.textData!;
-
   return (
-    <div className="space-y-3">
-      <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
-        Text
-      </div>
-
-      {/* Text content */}
-      <div>
-        <label className="text-xs text-zinc-400">Content</label>
+    <>
+      <Section label="Text" />
+      <div className="px-4">
         <textarea
           value={td.text}
-          onChange={(e) => onUpdateText({ text: e.target.value })}
-          className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-white text-xs resize-none h-16 focus:outline-none focus:border-violet-500"
+          onChange={(e) => onText({ text: e.target.value })}
+          rows={3}
+          className="w-full bg-transparent border-b border-zinc-800 focus:border-zinc-600 text-zinc-300 font-mono text-[10px] outline-none pb-1 resize-none placeholder:text-zinc-700 transition-colors"
         />
       </div>
 
-      {/* Font family */}
-      <div>
-        <label className="text-xs text-zinc-400">Font</label>
+      <Row label="Font">
         <select
           value={td.fontFamily}
-          onChange={(e) => onUpdateText({ fontFamily: e.target.value })}
-          className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-white text-xs focus:outline-none"
+          onChange={(e) => onText({ fontFamily: e.target.value })}
+          className="w-full bg-transparent text-zinc-300 font-mono text-[10px] outline-none border-b border-zinc-800 pb-0.5"
         >
-          {FONT_FAMILIES.map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
+          {FONT_FAMILIES.map((f) => <option key={f} value={f}>{f}</option>)}
         </select>
-      </div>
+      </Row>
 
-      {/* Font size */}
-      <div>
-        <label className="text-xs text-zinc-400">
-          Size: {td.fontSize}px
-        </label>
-        <input
-          type="range"
-          min={8}
-          max={300}
-          value={td.fontSize}
-          onChange={(e) => onUpdateText({ fontSize: Number(e.target.value) })}
-          className="w-full mt-1 accent-violet-500"
-        />
-      </div>
+      <Row label="Size">
+        <div className="flex items-center gap-2">
+          <input
+            type="range" min={8} max={400}
+            value={td.fontSize}
+            onChange={(e) => onText({ fontSize: Number(e.target.value) })}
+            className="flex-1"
+          />
+          <span className="font-mono text-[10px] text-zinc-500 w-8 text-right">{td.fontSize}</span>
+        </div>
+      </Row>
 
-      {/* Font style */}
-      <div>
-        <label className="text-xs text-zinc-400">Style</label>
-        <div className="flex gap-1 mt-1">
-          {(["normal", "bold", "italic", "bold italic"] as const).map((s) => (
+      <Row label="Style">
+        <div className="flex gap-1">
+          {(["normal", "bold", "italic"] as const).map((s) => (
             <button
               key={s}
-              onClick={() => onUpdateText({ fontStyle: s })}
-              className={`flex-1 py-1 rounded text-xs border transition-colors ${
+              onClick={() => onText({ fontStyle: s })}
+              className={`px-2 py-0.5 font-mono text-[9px] border transition-colors ${
                 td.fontStyle === s
-                  ? "border-violet-500 text-violet-300 bg-violet-500/10"
-                  : "border-zinc-700 text-zinc-500 hover:border-zinc-600"
+                  ? "border-zinc-500 text-zinc-200"
+                  : "border-zinc-800 text-zinc-600 hover:border-zinc-600"
               }`}
             >
-              {s === "normal" ? "N" : s === "bold" ? "B" : s === "italic" ? "I" : "BI"}
+              {s[0].toUpperCase()}
             </button>
           ))}
         </div>
-      </div>
+      </Row>
 
-      {/* Align */}
-      <div>
-        <label className="text-xs text-zinc-400">Align</label>
-        <div className="flex gap-1 mt-1">
+      <Row label="Align">
+        <div className="flex gap-1">
           {(["left", "center", "right"] as const).map((a) => (
             <button
               key={a}
-              onClick={() => onUpdateText({ align: a })}
-              className={`flex-1 py-1 rounded text-xs border transition-colors ${
+              onClick={() => onText({ align: a })}
+              className={`px-2 py-0.5 font-mono text-[9px] border transition-colors ${
                 td.align === a
-                  ? "border-violet-500 text-violet-300 bg-violet-500/10"
-                  : "border-zinc-700 text-zinc-500 hover:border-zinc-600"
+                  ? "border-zinc-500 text-zinc-200"
+                  : "border-zinc-800 text-zinc-600 hover:border-zinc-600"
               }`}
             >
-              {a === "left" ? "⬅" : a === "center" ? "⬛" : "➡"}
+              {a === "left" ? "L" : a === "center" ? "C" : "R"}
             </button>
           ))}
         </div>
-      </div>
+      </Row>
 
-      {/* Color */}
-      <div>
-        <label className="text-xs text-zinc-400">Color</label>
-        <div className="flex items-center gap-2 mt-1">
+      <Row label="Color">
+        <div className="flex items-center gap-2">
           <input
             type="color"
             value={td.fill}
-            onChange={(e) => onUpdateText({ fill: e.target.value })}
-            className="w-8 h-8 rounded cursor-pointer bg-transparent border-0"
+            onChange={(e) => onText({ fill: e.target.value })}
+            className="w-5 h-5 bg-transparent border-0 cursor-pointer"
           />
           <input
             type="text"
             value={td.fill}
-            onChange={(e) => onUpdateText({ fill: e.target.value })}
-            className="flex-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-white font-mono"
+            onChange={(e) => onText({ fill: e.target.value })}
+            className="flex-1 bg-transparent border-b border-zinc-800 text-zinc-300 font-mono text-[10px] outline-none pb-0.5"
           />
         </div>
-      </div>
+      </Row>
 
-      {/* Letter spacing */}
-      <div>
-        <label className="text-xs text-zinc-400">
-          Letter spacing: {td.letterSpacing ?? 0}
-        </label>
-        <input
-          type="range"
-          min={-5}
-          max={30}
-          value={td.letterSpacing ?? 0}
-          onChange={(e) =>
-            onUpdateText({ letterSpacing: Number(e.target.value) })
-          }
-          className="w-full mt-1 accent-violet-500"
-        />
-      </div>
-
-      {/* Width */}
-      <div>
-        <label className="text-xs text-zinc-400">Width: {layer.width}px</label>
-        <input
-          type="range"
-          min={50}
-          max={layer.width ? Math.max(layer.width, 2000) : 2000}
-          value={layer.width}
-          onChange={(e) => onUpdateLayer({ width: Number(e.target.value) })}
-          className="w-full mt-1 accent-violet-500"
-        />
-      </div>
-    </div>
-  );
-}
-
-function ImageProperties({
-  layer,
-  onUpdateLayer,
-}: {
-  layer: Layer;
-  onUpdateLayer: (u: Partial<Layer>) => void;
-}) {
-  return (
-    <div className="space-y-3">
-      <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
-        Image
-      </div>
-      <div>
-        <label className="text-xs text-zinc-400">Image URL</label>
-        <input
-          type="text"
-          value={layer.imageData?.src ?? ""}
-          onChange={(e) =>
-            onUpdateLayer({
-              imageData: { ...(layer.imageData ?? {}), src: e.target.value },
-            })
-          }
-          placeholder="https://... or /uploads/..."
-          className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-xs text-white focus:outline-none focus:border-violet-500 placeholder:text-zinc-600"
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="text-xs text-zinc-400">W: {layer.width}px</label>
+      <Row label="Tracking">
+        <div className="flex items-center gap-2">
           <input
-            type="number"
+            type="range" min={-5} max={40}
+            value={td.letterSpacing ?? 0}
+            onChange={(e) => onText({ letterSpacing: Number(e.target.value) })}
+            className="flex-1"
+          />
+          <span className="font-mono text-[10px] text-zinc-500 w-6 text-right">{td.letterSpacing ?? 0}</span>
+        </div>
+      </Row>
+
+      <Row label="Width">
+        <div className="flex items-center gap-2">
+          <input
+            type="range" min={50} max={Math.max(layer.width, 2000)}
             value={layer.width}
-            onChange={(e) => onUpdateLayer({ width: Number(e.target.value) })}
-            className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-white"
+            onChange={(e) => onLayer({ width: Number(e.target.value) })}
+            className="flex-1"
           />
+          <span className="font-mono text-[10px] text-zinc-500 w-10 text-right">{layer.width}px</span>
         </div>
-        <div>
-          <label className="text-xs text-zinc-400">H: {layer.height}px</label>
-          <input
-            type="number"
-            value={layer.height}
-            onChange={(e) => onUpdateLayer({ height: Number(e.target.value) })}
-            className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-white"
-          />
-        </div>
-      </div>
-    </div>
+      </Row>
+    </>
   );
 }
 
-function CommonProperties({
-  layer,
-  onUpdateLayer,
-}: {
+function ImageProps({ layer, onLayer }: {
   layer: Layer;
-  onUpdateLayer: (u: Partial<Layer>) => void;
+  onLayer: (u: Partial<Layer>) => void;
 }) {
   return (
-    <div className="space-y-3 border-t border-zinc-800 pt-3">
-      <div className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
-        Transform
-      </div>
-
-      {/* Position */}
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="text-xs text-zinc-400">X</label>
-          <input
-            type="number"
-            value={Math.round(layer.x)}
-            onChange={(e) => onUpdateLayer({ x: Number(e.target.value) })}
-            className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-white"
-          />
-        </div>
-        <div>
-          <label className="text-xs text-zinc-400">Y</label>
-          <input
-            type="number"
-            value={Math.round(layer.y)}
-            onChange={(e) => onUpdateLayer({ y: Number(e.target.value) })}
-            className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-white"
-          />
-        </div>
-      </div>
-
-      {/* Rotation */}
-      <div>
-        <label className="text-xs text-zinc-400">
-          Rotation: {Math.round(layer.rotation)}°
-        </label>
-        <input
-          type="range"
-          min={-180}
-          max={180}
-          value={layer.rotation}
-          onChange={(e) => onUpdateLayer({ rotation: Number(e.target.value) })}
-          className="w-full mt-1 accent-violet-500"
+    <>
+      <Section label="Image" />
+      <Row label="Src">
+        <Input
+          value={layer.imageData?.src ?? ""}
+          onChange={(v) => onLayer({ imageData: { ...(layer.imageData ?? {}), src: v } })}
+          placeholder="URL or /uploads/…"
         />
+      </Row>
+    </>
+  );
+}
+
+function TransformProps({ layer, onLayer }: {
+  layer: Layer;
+  onLayer: (u: Partial<Layer>) => void;
+}) {
+  return (
+    <>
+      <Section label="Transform" />
+      <div className="px-4 grid grid-cols-2 gap-x-3 gap-y-2">
+        {[
+          { label: "X", value: Math.round(layer.x), key: "x" },
+          { label: "Y", value: Math.round(layer.y), key: "y" },
+          { label: "W", value: Math.round(layer.width), key: "width" },
+          { label: "H", value: Math.round(layer.height), key: "height" },
+        ].map(({ label, value, key }) => (
+          <div key={key}>
+            <span className="font-mono text-[9px] tracking-wide uppercase text-zinc-700">{label}</span>
+            <input
+              type="number"
+              value={value}
+              onChange={(e) => onLayer({ [key]: Number(e.target.value) })}
+              className="block w-full bg-transparent border-b border-zinc-800 text-zinc-300 font-mono text-[10px] outline-none pb-0.5 mt-0.5"
+            />
+          </div>
+        ))}
       </div>
 
-      {/* Opacity */}
-      <div>
-        <label className="text-xs text-zinc-400">
-          Opacity: {Math.round(layer.opacity * 100)}%
-        </label>
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.01}
-          value={layer.opacity}
-          onChange={(e) => onUpdateLayer({ opacity: Number(e.target.value) })}
-          className="w-full mt-1 accent-violet-500"
-        />
-      </div>
+      <Row label="Rotate">
+        <div className="flex items-center gap-2">
+          <input
+            type="range" min={-180} max={180}
+            value={layer.rotation}
+            onChange={(e) => onLayer({ rotation: Number(e.target.value) })}
+            className="flex-1"
+          />
+          <span className="font-mono text-[10px] text-zinc-500 w-8 text-right">{Math.round(layer.rotation)}°</span>
+        </div>
+      </Row>
 
-      {/* Z-Index */}
-      <div>
-        <label className="text-xs text-zinc-400">Z-Index: {layer.zIndex}</label>
-        <input
+      <Row label="Opacity">
+        <div className="flex items-center gap-2">
+          <input
+            type="range" min={0} max={1} step={0.01}
+            value={layer.opacity}
+            onChange={(e) => onLayer({ opacity: Number(e.target.value) })}
+            className="flex-1"
+          />
+          <span className="font-mono text-[10px] text-zinc-500 w-8 text-right">{Math.round(layer.opacity * 100)}%</span>
+        </div>
+      </Row>
+
+      <Row label="Z">
+        <Input
           type="number"
           value={layer.zIndex}
-          onChange={(e) => onUpdateLayer({ zIndex: Number(e.target.value) })}
-          className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-white"
+          onChange={(v) => onLayer({ zIndex: Number(v) })}
         />
-      </div>
-    </div>
+      </Row>
+    </>
   );
 }

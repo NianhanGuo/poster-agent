@@ -1,12 +1,16 @@
+// ─── Primitive types ──────────────────────────────────────────────────────────
+
 export type PosterType = "film" | "exhibition";
-export type Language = "english" | "chinese" | "bilingual";
-export type StylePreset =
-  | "cinematic"
+export type Language = "en" | "zh" | "mixed";
+
+export type StyleRecipe =
+  | "cinematic-rain"
   | "gallery-minimal"
-  | "brutalist"
-  | "editorial"
-  | "surreal"
-  | "experimental";
+  | "brutalist-wall"
+  | "soft-editorial"
+  | "surreal-film"
+  | "archive-museum"
+  | "experimental-type";
 
 export type CanvasSize =
   | "instagram-post"
@@ -16,21 +20,15 @@ export type CanvasSize =
   | "a3"
   | "custom";
 
-export interface CanvasConfig {
-  size: CanvasSize;
-  width: number;
-  height: number;
-}
+export type ImageSource = "generate" | "upload" | "reference";
 
-export type LayerType =
-  | "background-image"
-  | "title-text"
-  | "subtitle-text"
-  | "date-location-text"
-  | "credits-text"
-  | "foreground-cutout"
-  | "user-text"
-  | "user-image";
+export type ImageStyle =
+  | "cinematic-photography"
+  | "abstract"
+  | "collage"
+  | "minimal-graphic"
+  | "painterly"
+  | "custom";
 
 export type ImageInputMode =
   | "background"
@@ -39,11 +37,40 @@ export type ImageInputMode =
   | "style-reference"
   | "no-modify";
 
+// ─── Canvas ───────────────────────────────────────────────────────────────────
+
+export interface CanvasConfig {
+  size: CanvasSize;
+  width: number;
+  height: number;
+}
+
+// ─── Layers ───────────────────────────────────────────────────────────────────
+
+export type LayerType =
+  | "backgroundImage"
+  | "subjectImage"
+  | "titleText"
+  | "subtitleText"
+  | "metaText"
+  | "bodyText"
+  | "foregroundCutout"
+  | "userText"
+  | "userImage";
+
+export function isTextLayer(type: LayerType): boolean {
+  return type.endsWith("Text");
+}
+
+export function isImageLayer(type: LayerType): boolean {
+  return !type.endsWith("Text");
+}
+
 export interface TextLayerData {
   text: string;
   fontSize: number;
   fontFamily: string;
-  fontStyle: string; // "normal", "bold", "italic", "bold italic"
+  fontStyle: string;
   fill: string;
   align: "left" | "center" | "right";
   letterSpacing?: number;
@@ -73,13 +100,18 @@ export interface Layer {
   imageData?: ImageLayerData;
 }
 
+// ─── Setup config ─────────────────────────────────────────────────────────────
+
 export interface PosterSetupConfig {
   posterType: PosterType;
   canvasSize: CanvasSize;
   customWidth?: number;
   customHeight?: number;
   language: Language;
-  stylePreset: StylePreset;
+  styleRecipe: StyleRecipe;
+  imageSource: ImageSource;
+  imageStyle: ImageStyle;
+  customImagePrompt?: string;
   prompt: string;
   aiWriteCopy: boolean;
   userTitle?: string;
@@ -88,13 +120,15 @@ export interface PosterSetupConfig {
   userCredits?: string;
 }
 
+// ─── Project ──────────────────────────────────────────────────────────────────
+
 export interface PosterProject {
   id: string;
   userId: string;
   title: string;
   canvas: CanvasConfig;
   layers: Layer[];
-  stylePreset: StylePreset;
+  styleRecipe: StyleRecipe;
   posterType: PosterType;
   language: Language;
   promptHistory: string[];
@@ -105,13 +139,15 @@ export interface PosterProject {
   updatedAt: string;
 }
 
-export const CANVAS_SIZES: Record<Exclude<CanvasSize, "custom">, CanvasConfig> =
-  {
-    "instagram-post": { size: "instagram-post", width: 1080, height: 1080 },
-    "instagram-story": { size: "instagram-story", width: 1080, height: 1920 },
-    square: { size: "square", width: 800, height: 800 },
-    a4: { size: "a4", width: 794, height: 1123 },
-    a3: { size: "a3", width: 1123, height: 1587 },
-  };
+// ─── Constants ────────────────────────────────────────────────────────────────
 
-export const DISPLAY_SCALE = 0.5;
+export const CANVAS_PRESETS: Record<Exclude<CanvasSize, "custom">, CanvasConfig> = {
+  "instagram-post":  { size: "instagram-post",  width: 1080, height: 1080 },
+  "instagram-story": { size: "instagram-story", width: 1080, height: 1920 },
+  square:            { size: "square",           width: 800,  height: 800  },
+  a4:                { size: "a4",               width: 794,  height: 1123 },
+  a3:                { size: "a3",               width: 1123, height: 1587 },
+};
+
+// Keep old name for backward compat in existing route that imports it
+export const CANVAS_SIZES = CANVAS_PRESETS;

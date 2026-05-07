@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Layer } from "@/types/poster";
 
 export async function POST(req: NextRequest) {
-  const { layers, style, posterType, language, lockedLayers } =
+  const { layers, styleRecipe, style, posterType, language, lockedLayers } =
     await req.json();
+  const recipe = styleRecipe ?? style ?? "cinematic-rain";
 
   // Demo mode: return layers unchanged
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -19,7 +20,7 @@ export async function POST(req: NextRequest) {
   }
 
   const prompt = `You are a typography expert improving poster text layers.
-Style: ${style}, Poster type: ${posterType}, Language: ${language}
+Style recipe: ${recipe}, Poster type: ${posterType}, Language: ${language}
 
 Current text layers (JSON):
 ${JSON.stringify(textLayers, null, 2)}

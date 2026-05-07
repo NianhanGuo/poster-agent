@@ -46,8 +46,7 @@ async function generateWithReplicate(
   return null;
 }
 
-async function enhancePrompt(rawPrompt: string, style: string): Promise<string> {
-  // Only runs when ANTHROPIC_API_KEY is present
+async function enhancePrompt(rawPrompt: string, styleRecipe: string): Promise<string> {
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const msg = await anthropic.messages.create({
@@ -56,9 +55,9 @@ async function enhancePrompt(rawPrompt: string, style: string): Promise<string> 
     messages: [
       {
         role: "user",
-        content: `Create a detailed Stable Diffusion image generation prompt for a ${style} style poster background.
-Base concept: ${rawPrompt}
-Output ONLY the prompt text, no explanation. Make it vivid and specific.`,
+        content: `Create a Stable Diffusion prompt for a "${styleRecipe}" style poster background image. No text or typography in the image.
+Concept: ${rawPrompt}
+Output ONLY the prompt text. Be specific about lighting, mood, composition, and visual style.`,
       },
     ],
   });
@@ -66,12 +65,12 @@ Output ONLY the prompt text, no explanation. Make it vivid and specific.`,
 }
 
 export async function POST(req: NextRequest) {
-  const { prompt, style, width, height } = await req.json();
+  const { prompt, styleRecipe, style, width, height } = await req.json();
+  const recipe = styleRecipe ?? style ?? "cinematic-rain";
 
   try {
-    // Enhance prompt only when Anthropic key is present
     const finalPrompt = process.env.ANTHROPIC_API_KEY
-      ? await enhancePrompt(prompt, style)
+      ? await enhancePrompt(prompt, recipe)
       : prompt;
 
     const imageUrl = await generateWithReplicate(finalPrompt, width, height);
@@ -80,13 +79,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ url: imageUrl, prompt: finalPrompt, demo: false });
     }
 
-    // No Replicate token — return a gradient SVG data URL as the background
-    const gradientUrl = mockGradientDataUrl(style, width, height);
+    const gradientUrl = mockGradientDataUrl(recipe, width, height);
     return NextResponse.json({ url: gradientUrl, prompt: finalPrompt, demo: true });
   } catch (err) {
     console.error("Image generation error:", err);
-    // Even on error, return a gradient so the editor still opens
-    const gradientUrl = mockGradientDataUrl(style ?? "cinematic", width ?? 800, height ?? 600);
+    const gradientUrl = mockGradientDataUrl(recipe, width ?? 800, height ?? 1200);
     return NextResponse.json({ url: gradientUrl, demo: true });
   }
 }

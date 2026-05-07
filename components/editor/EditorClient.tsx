@@ -5,17 +5,15 @@ import { PosterCanvas } from "./PosterCanvas";
 import { LayerPanel } from "./LayerPanel";
 import { ToolPanel } from "./ToolPanel";
 import { AIToolbar } from "./AIToolbar";
-import { PosterSetupModal } from "@/components/setup/PosterSetupModal";
+import { PromptComposer } from "@/components/setup/PromptComposer";
 
 export function EditorClient() {
   const { project, isGenerating, generatingStep } = usePosterStore();
-  const isDemo = project?.isDemo ?? false;
 
   const handleExport = useCallback(() => {
     (window as Window & { __posterExport?: () => void }).__posterExport?.();
   }, []);
 
-  // Undo/Redo keyboard shortcuts
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "z") {
@@ -31,48 +29,44 @@ export function EditorClient() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // No project yet — show setup wizard
   if (!project) {
-    return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-        <PosterSetupModal />
-      </div>
-    );
+    return <PromptComposer />;
   }
 
+  const isDemo = project.isDemo ?? false;
+
   return (
-    <div className="h-screen bg-zinc-950 flex flex-col overflow-hidden">
+    <div className="h-screen bg-black flex flex-col overflow-hidden">
       {/* Top bar */}
-      <header className="flex-none border-b border-zinc-800 bg-zinc-900 px-4 h-12 flex items-center justify-between z-10">
-        <div className="flex items-center gap-3">
+      <header className="flex-none border-b border-zinc-900 px-5 h-10 flex items-center justify-between z-10">
+        <div className="flex items-center gap-4">
           <button
             onClick={() => usePosterStore.getState().clearProject()}
-            className="text-zinc-500 hover:text-zinc-300 transition-colors text-sm"
-            title="Start over"
+            className="font-mono text-[10px] tracking-[0.15em] uppercase text-zinc-600 hover:text-zinc-400 transition-colors"
           >
-            ← New Poster
+            ← New
           </button>
-          <span className="text-zinc-600">|</span>
+          <span className="text-zinc-800">|</span>
           <TitleEditor />
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-5">
           {isDemo && (
-            <span className="text-xs bg-amber-900/40 text-amber-400 border border-amber-800/60 px-2 py-0.5 rounded-md">
-              Demo mode — add ANTHROPIC_API_KEY for AI
+            <span className="font-mono text-[10px] tracking-[0.1em] text-zinc-700">
+              ○ demo
             </span>
           )}
           {isGenerating && (
-            <span className="text-xs text-violet-400 flex items-center gap-1.5">
-              <span className="w-3 h-3 border border-violet-400 border-t-transparent rounded-full animate-spin inline-block" />
-              {generatingStep || "Generating…"}
+            <span className="font-mono text-[10px] tracking-widest text-zinc-500 flex items-center gap-2">
+              <span className="w-2.5 h-2.5 border border-zinc-600 border-t-zinc-300 rounded-full animate-spin inline-block" />
+              {generatingStep || "working…"}
             </span>
           )}
           <button
             onClick={handleExport}
-            className="text-sm bg-violet-600 hover:bg-violet-500 text-white px-3 py-1.5 rounded-lg transition-colors font-medium"
+            className="font-mono text-[10px] tracking-[0.2em] uppercase text-zinc-500 hover:text-zinc-200 transition-colors"
           >
-            Export PNG
+            Export →
           </button>
         </div>
       </header>
@@ -80,11 +74,11 @@ export function EditorClient() {
       {/* Main layout */}
       <div className="flex-1 flex min-h-0">
         {/* Left: Layer Panel */}
-        <div className="w-56 flex-none border-r border-zinc-800 bg-zinc-900 overflow-y-auto">
+        <div className="w-52 flex-none border-r border-zinc-900 overflow-y-auto">
           <LayerPanel />
         </div>
 
-        {/* Center: Canvas */}
+        {/* Center: Canvas + AI bar */}
         <div className="flex-1 flex flex-col min-w-0">
           <AIToolbar />
           <div className="flex-1 overflow-auto bg-zinc-950 flex items-center justify-center p-8">
@@ -92,8 +86,8 @@ export function EditorClient() {
           </div>
         </div>
 
-        {/* Right: Tool Panel */}
-        <div className="w-64 flex-none border-l border-zinc-800 bg-zinc-900 overflow-y-auto">
+        {/* Right: Inspector */}
+        <div className="w-60 flex-none border-l border-zinc-900 overflow-y-auto">
           <ToolPanel />
         </div>
       </div>
@@ -114,7 +108,7 @@ function TitleEditor() {
           if (s.project) s.project.title = e.target.value;
         });
       }}
-      className="bg-transparent text-sm font-medium text-white border-none outline-none focus:bg-zinc-800 px-2 py-1 rounded"
+      className="bg-transparent font-mono text-[11px] tracking-wide text-zinc-400 border-none outline-none focus:text-zinc-200 transition-colors w-48 truncate"
     />
   );
 }

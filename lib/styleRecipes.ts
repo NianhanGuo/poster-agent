@@ -1,0 +1,236 @@
+import type { StyleRecipe } from "@/types/poster";
+
+export interface RecipeDef {
+  id: StyleRecipe;
+  name: string;
+  tagline: string;
+  // Image generation directives
+  imageKeywords: string;
+  imageAvoid: string;
+  // Color palette for gradients and mock
+  palette: { bg: string; surface: string; text: string; accent: string };
+  // Typography defaults
+  type: {
+    titleFamily: string;
+    bodyFamily: string;
+    titleWeight: string;
+    titleAlign: "left" | "center" | "right";
+    titleLetterSpacing: number;
+    titleColor: string;
+    bodyColor: string;
+  };
+  // Layout behavior
+  layout: {
+    titlePosition: "top" | "bottom" | "center" | "off-center";
+    align: "left" | "center" | "right";
+    density: "sparse" | "moderate" | "dense";
+  };
+}
+
+export const RECIPES: Record<StyleRecipe, RecipeDef> = {
+  "cinematic-rain": {
+    id: "cinematic-rain",
+    name: "Cinematic Rain",
+    tagline: "Dark atmosphere, dramatic light",
+    imageKeywords:
+      "cinematic, anamorphic lens, rain, fog, dramatic lighting, dark atmosphere, film grain, 35mm, shallow depth of field, chiaroscuro",
+    imageAvoid: "text, watermarks, logos, bright colors, flat lighting",
+    palette: {
+      bg: "#05050a",
+      surface: "#0d0d1a",
+      text: "#f5f0e8",
+      accent: "#c8a96e",
+    },
+    type: {
+      titleFamily: "Impact",
+      bodyFamily: "Helvetica Neue",
+      titleWeight: "normal",
+      titleAlign: "center",
+      titleLetterSpacing: 12,
+      titleColor: "#ffffff",
+      bodyColor: "#999999",
+    },
+    layout: {
+      titlePosition: "bottom",
+      align: "center",
+      density: "sparse",
+    },
+  },
+
+  "gallery-minimal": {
+    id: "gallery-minimal",
+    name: "Gallery Minimal",
+    tagline: "White space is the statement",
+    imageKeywords:
+      "minimal, architectural, abstract geometry, clean lines, neutral tones, gallery photography, sculptural, monochrome",
+    imageAvoid:
+      "text, busy compositions, bright colors, noise, people, objects",
+    palette: {
+      bg: "#f2f0eb",
+      surface: "#e8e5de",
+      text: "#1a1a1a",
+      accent: "#888880",
+    },
+    type: {
+      titleFamily: "Georgia",
+      bodyFamily: "Arial",
+      titleWeight: "normal",
+      titleAlign: "left",
+      titleLetterSpacing: 0,
+      titleColor: "#111111",
+      bodyColor: "#555555",
+    },
+    layout: {
+      titlePosition: "top",
+      align: "left",
+      density: "sparse",
+    },
+  },
+
+  "brutalist-wall": {
+    id: "brutalist-wall",
+    name: "Brutalist Wall",
+    tagline: "Raw force, maximum contrast",
+    imageKeywords:
+      "concrete, brutalist architecture, raw texture, industrial, high contrast, black and white, gritty, urban",
+    imageAvoid: "soft light, pastel, decorative, ornate",
+    palette: {
+      bg: "#0a0a0a",
+      surface: "#111111",
+      text: "#f0f0f0",
+      accent: "#cc2200",
+    },
+    type: {
+      titleFamily: "Impact",
+      bodyFamily: "Courier New",
+      titleWeight: "bold",
+      titleAlign: "left",
+      titleLetterSpacing: -2,
+      titleColor: "#ffffff",
+      bodyColor: "#aaaaaa",
+    },
+    layout: {
+      titlePosition: "top",
+      align: "left",
+      density: "dense",
+    },
+  },
+
+  "soft-editorial": {
+    id: "soft-editorial",
+    name: "Soft Editorial",
+    tagline: "Restrained warmth, literary tone",
+    imageKeywords:
+      "editorial photography, warm tones, analog, grain, soft focus, contemplative, still life, intimate",
+    imageAvoid: "harsh contrast, digital sharpness, bright neon, action",
+    palette: {
+      bg: "#1a1714",
+      surface: "#211e1a",
+      text: "#e8dcc8",
+      accent: "#b8a080",
+    },
+    type: {
+      titleFamily: "Palatino",
+      bodyFamily: "Georgia",
+      titleWeight: "normal",
+      titleAlign: "center",
+      titleLetterSpacing: 3,
+      titleColor: "#f0e8d8",
+      bodyColor: "#888070",
+    },
+    layout: {
+      titlePosition: "center",
+      align: "center",
+      density: "moderate",
+    },
+  },
+
+  "surreal-film": {
+    id: "surreal-film",
+    name: "Surreal Film",
+    tagline: "Between waking and dream",
+    imageKeywords:
+      "surreal, dreamlike, double exposure, ethereal light, mist, otherworldly, symbolic, Magritte, Tarkovsky",
+    imageAvoid: "realistic documentary, mundane, flat, literal",
+    palette: {
+      bg: "#0e0a1e",
+      surface: "#160d28",
+      text: "#d8c8f0",
+      accent: "#9060c0",
+    },
+    type: {
+      titleFamily: "Palatino",
+      bodyFamily: "Arial",
+      titleWeight: "normal",
+      titleAlign: "center",
+      titleLetterSpacing: 6,
+      titleColor: "#e8d8ff",
+      bodyColor: "#8868aa",
+    },
+    layout: {
+      titlePosition: "off-center",
+      align: "center",
+      density: "sparse",
+    },
+  },
+
+  "archive-museum": {
+    id: "archive-museum",
+    name: "Archive Museum",
+    tagline: "Institutional, authoritative",
+    imageKeywords:
+      "archival documentary, museum quality, historical, desaturated, formal composition, artifact, institutional",
+    imageAvoid: "modern digital, bright colors, casual, experimental",
+    palette: {
+      bg: "#f5f2ec",
+      surface: "#ece8e0",
+      text: "#1e1c18",
+      accent: "#1a3a6e",
+    },
+    type: {
+      titleFamily: "Georgia",
+      bodyFamily: "Times New Roman",
+      titleWeight: "normal",
+      titleAlign: "left",
+      titleLetterSpacing: 4,
+      titleColor: "#1a1814",
+      bodyColor: "#4a4640",
+    },
+    layout: {
+      titlePosition: "top",
+      align: "left",
+      density: "dense",
+    },
+  },
+
+  "experimental-type": {
+    id: "experimental-type",
+    name: "Experimental Type",
+    tagline: "Typography is the image",
+    imageKeywords:
+      "minimal abstract, texture, typographic, graphic, flat plane, geometric, high contrast pattern",
+    imageAvoid: "photographic realism, people, narrative",
+    palette: {
+      bg: "#080808",
+      surface: "#111111",
+      text: "#f8f8f8",
+      accent: "#e8e800",
+    },
+    type: {
+      titleFamily: "Courier New",
+      bodyFamily: "Courier New",
+      titleWeight: "bold",
+      titleAlign: "right",
+      titleLetterSpacing: -3,
+      titleColor: "#ffffff",
+      bodyColor: "#666666",
+    },
+    layout: {
+      titlePosition: "off-center",
+      align: "right",
+      density: "moderate",
+    },
+  },
+};
+
+export const RECIPE_LIST = Object.values(RECIPES);
