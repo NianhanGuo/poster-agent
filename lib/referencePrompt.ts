@@ -61,7 +61,7 @@ function colorLines(mode: ReferenceMode, palette: PaletteColor[], analysis?: Ref
   const visionPalette = analysis?.palette?.join(", ");
 
   if (mode === "strict") {
-    const lines = [`• COLOR PALETTE — use ONLY these colors, no exceptions:`];
+    const lines = [`• COLOR PALETTE — ~95% fidelity required. Use ONLY these colors, no exceptions:`];
     lines.push(`  Swatches: ${swatches}`);
     if (dominant) lines.push(`  Background / dominant field MUST be: ${dominant}`);
     if (accent)   lines.push(`  Accent / title fill MUST be: ${accent}`);
@@ -84,10 +84,10 @@ function colorLines(mode: ReferenceMode, palette: PaletteColor[], analysis?: Ref
 function compositionLines(mode: ReferenceMode, composition: string, purpose: string): string[] {
   if (mode === "strict") {
     return [
-      `• COMPOSITION — follow this exact spatial structure:`,
+      `• COMPOSITION — ~90% spatial fidelity required. Follow this exact zone structure:`,
       `  "${composition}"`,
-      `  Maintain spatial relationships and proportional layout. Do not significantly alter.`,
-      purpose === "image" ? `  Leave negative space in matching areas of the frame.` : `  Mirror this hierarchy in layer placement and text positioning.`,
+      `  Reproduce zone occupancy and negative-space distribution closely. Minor proportional adjustments only.`,
+      purpose === "image" ? `  Leave negative space in the same zones of the frame as the reference.` : `  Mirror this zone hierarchy in layer placement and text positioning.`,
     ].filter(Boolean) as string[];
   }
   if (mode === "balanced") {
@@ -118,13 +118,26 @@ function lightingLine(mode: ReferenceMode, lighting: string): string {
 }
 
 function backgroundLine(mode: ReferenceMode, analysis: ReferenceAnalysis, purpose: string): string[] {
+  if (mode === "strict") {
+    const lines = [
+      `• SHAPES/GEOMETRY — ~80% shape primitive fidelity required:`,
+      `  "${analysis.shapes}"`,
+      `  Reproduce these specific shape primitives (circles, blobs, gradient fields) at similar scale and position.`,
+    ];
+    if (analysis.blurMap) {
+      lines.push(`• BLUR MAP — match depth and blur distribution zone by zone:`);
+      lines.push(`  "${analysis.blurMap}"`);
+    }
+    if (analysis.texture) lines.push(`  Surface: ${analysis.texture}.`);
+    if (purpose === "image") {
+      lines.push(`  Generate a background matching this shape and blur structure exactly — do NOT copy subject matter.`);
+    }
+    return lines;
+  }
   const lines = [`• Background treatment: ${analysis.shapes}. Surface: ${analysis.texture}.`];
+  if (analysis.blurMap) lines.push(`  Blur distribution: ${analysis.blurMap}`);
   if (purpose === "image") {
-    lines.push(
-      mode === "strict"
-        ? `  Generate a background that matches this treatment exactly — do NOT copy subject matter.`
-        : `  Generate a background inspired by this abstract treatment.`
-    );
+    lines.push(`  Generate a background inspired by this abstract treatment.`);
   }
   return lines;
 }
@@ -442,9 +455,10 @@ export function buildImageConstraintPrefix(ref: EnrichedRefCtx, subject: string)
     }
   }
 
-  if (analysis?.mood)    lines.push(`MOOD: ${analysis.mood}`);
-  if (analysis?.texture) lines.push(`TEXTURE/SURFACE: ${analysis.texture}`);
-  if (analysis?.shapes)  lines.push(`GEOMETRY/SHAPES: ${analysis.shapes}`);
+  if (analysis?.mood)        lines.push(`MOOD: ${analysis.mood}`);
+  if (analysis?.texture)     lines.push(`TEXTURE/SURFACE: ${analysis.texture}`);
+  if (analysis?.shapes)      lines.push(`GEOMETRY/SHAPES (~80% fidelity): ${analysis.shapes}`);
+  if (analysis?.blurMap)     lines.push(`BLUR MAP: ${analysis.blurMap}`);
 
   // Forbidden block
   const forbidden = buildAutoForbidden(analysis, palette);

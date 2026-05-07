@@ -124,6 +124,30 @@ function AnalysisDebug({ image }: { image: ReferenceImage }) {
             <span className="text-zinc-700">style </span>
             <span className="text-zinc-400">{a.styleClass ?? "—"}</span>
           </div>
+          {a.composition && (
+            <div>
+              <span className="text-zinc-700">composition </span>
+              <span className="text-zinc-500">{a.composition}</span>
+            </div>
+          )}
+          {a.shapes && (
+            <div>
+              <span className="text-zinc-700">shapes </span>
+              <span className="text-zinc-500">{a.shapes}</span>
+            </div>
+          )}
+          {a.blurMap && (
+            <div>
+              <span className="text-zinc-700">blur map </span>
+              <span className="text-zinc-500">{a.blurMap}</span>
+            </div>
+          )}
+          {a.typographyStyle && a.typographyStyle !== "no text visible" && (
+            <div>
+              <span className="text-zinc-700">typography </span>
+              <span className="text-zinc-500">{a.typographyStyle}</span>
+            </div>
+          )}
           {a.visualSummary && (
             <div>
               <span className="text-zinc-700">summary </span>

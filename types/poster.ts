@@ -214,9 +214,10 @@ export type { PaletteColor } from "@/lib/colorExtract";
 export interface ReferenceAnalysis {
   palette: string[];        // hex values ordered dominant → least
   mood: string;
-  composition: string;
-  typographyStyle: string;
-  shapes: string;
+  composition: string;      // spatial layout zones (top/center/bottom + focal hierarchy)
+  typographyStyle: string;  // text placement, weight, size, spacing, rotation
+  shapes: string;           // shape primitives: circles, gradients, blobs, geometry
+  blurMap: string;          // blur distribution across spatial zones
   texture: string;
   lighting: string;
   visualSummary: string;
