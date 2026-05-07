@@ -6,7 +6,7 @@ import { PosterCanvas } from "./PosterCanvas";
 import { LayerPanel } from "./LayerPanel";
 import { ToolPanel } from "./ToolPanel";
 import { AssetLibrary } from "./AssetLibrary";
-import { ReferencePanel } from "./ReferencePanel";
+import { ReferencePanel, buildEditorRefCtx } from "./ReferencePanel";
 import { VersionStrip } from "./VersionStrip";
 import { AlignmentBar } from "./AlignmentBar";
 import { QuickPanel } from "./QuickPanel";
@@ -38,6 +38,7 @@ export function EditorClient() {
   const [command, setCommand] = useState("");
   const [genError, setGenError] = useState("");
   const [showGuides, setShowGuides] = useState(false);
+  const [aiUsedLabel, setAiUsedLabel] = useState("");
 
   const handleExport = useCallback(() => {
     (window as Window & { __posterExport?: () => void }).__posterExport?.();
@@ -70,13 +71,8 @@ export function EditorClient() {
 
   const isDemo = project.isDemo ?? false;
   const lockedLayers = getSortedLayers().filter((l) => l.locked);
-  const refCtx = {
-    strength: reference.strength,
-    targets: reference.targets,
-    instruction: reference.instruction,
-    hasImage: !!reference.imageUrl,
-    palette: reference.palette,
-  };
+  // Build enriched ref context — includes multi-ref images + vision analysis
+  const refCtx = buildEditorRefCtx(reference);
 
   // ── 2-step generation: brief → layout + image ──────────────────────────────
 
@@ -141,14 +137,6 @@ export function EditorClient() {
 
     // Step 3: Image
     setGenerating(true, "generating image…");
-    console.info("[Reference debug — image generation]", {
-      hasImage: !!reference.imageUrl,
-      targets: Object.fromEntries(Object.entries(reference.targets).filter(([, v]) => v)),
-      strength: reference.strength,
-      palette: reference.palette,
-      paletteActive: reference.targets.color && reference.palette.length > 0,
-      imagePrompt,
-    });
     try {
       const imgRes = await fetch("/api/generate/image", {
         method: "POST",
@@ -184,19 +172,28 @@ export function EditorClient() {
     pushVersion(newProject, brief);
     setProject(newProject);
     setGenerating(false);
+
+    // Build AI usage feedback label
+    const refImages = reference.images;
+    const refParts: string[] = [];
+    if (refImages.length > 0) {
+      const activeTargets = Object.entries(reference.targets).filter(([, v]) => v).map(([k]) => k);
+      const strictCount = refImages.filter((i) => i.mode === "strict").length;
+      if (activeTargets.length > 0)
+        refParts.push(`ref: ${activeTargets.slice(0, 3).join(", ")}${strictCount > 0 ? ` (${strictCount} strict)` : ""}`);
+    } else if (reference.imageUrl && Object.values(reference.targets).some(Boolean)) {
+      const activeTargets = Object.entries(reference.targets).filter(([, v]) => v).map(([k]) => k);
+      refParts.push(`ref: ${activeTargets.slice(0, 3).join(", ")}`);
+    }
+    if (brief?.mood) refParts.push(`mood: ${brief.mood}`);
+    setAiUsedLabel(refParts.join(" · "));
+    setTimeout(() => setAiUsedLabel(""), 8000);
   }
 
   async function regenerateImage() {
     if (!project) return;
     setGenerating(true, "generating image…");
     setGenError("");
-    console.info("[Reference debug — regenerate image]", {
-      hasImage: !!reference.imageUrl,
-      targets: Object.fromEntries(Object.entries(reference.targets).filter(([, v]) => v)),
-      strength: reference.strength,
-      palette: reference.palette,
-      paletteActive: reference.targets.color && reference.palette.length > 0,
-    });
     try {
       const res = await fetch("/api/generate/image", {
         method: "POST",
@@ -358,32 +355,58 @@ export function EditorClient() {
         </div>
       </header>
 
+      {/* ── AI usage feedback strip ──────────────────────────────────────────── */}
+      {aiUsedLabel && (
+        <div
+          className="flex-none h-6 flex items-center px-4 gap-2"
+          style={{ background: "rgba(74,222,128,0.04)", borderBottom: "1px solid rgba(74,222,128,0.12)" }}
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-green-400/60 flex-none" />
+          <span className="font-mono text-[8px] text-green-400/70 tracking-wide">AI used: {aiUsedLabel}</span>
+        </div>
+      )}
+
+
       {/* ── Body ────────────────────────────────────────────────────────────── */}
       <div className="flex-1 flex min-h-0">
 
         {/* Left sidebar */}
         <aside
-          className="w-52 flex-none flex flex-col"
+          className="w-56 flex-none flex flex-col"
           style={{ background: PANEL_BG, borderRight: `1px solid ${BORDER}` }}
         >
           <div className="flex-none flex" style={{ borderBottom: `1px solid ${BORDER}` }}>
-            {LEFT_TABS.map(({ id, label }) => (
-              <button
-                key={id}
-                onClick={() => setLeftTab(id)}
-                className={`flex-1 py-2.5 font-mono text-[9px] tracking-[0.18em] uppercase transition-colors relative ${
-                  leftTab === id ? "text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
-                }`}
-              >
-                {label}
-                {leftTab === id && (
-                  <span
-                    className="absolute bottom-0 left-1/2 -translate-x-1/2 w-5 h-px"
-                    style={{ background: "rgba(161,161,170,0.7)" }}
-                  />
-                )}
-              </button>
-            ))}
+            {LEFT_TABS.map(({ id, label }) => {
+              const isRef = id === "reference";
+              const refCount = isRef ? reference.images.length : 0;
+              return (
+                <button
+                  key={id}
+                  onClick={() => setLeftTab(id)}
+                  className={`flex-1 py-2.5 font-mono text-[9px] tracking-[0.18em] uppercase transition-colors relative ${
+                    leftTab === id ? "text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
+                  }`}
+                >
+                  <span className="flex items-center justify-center gap-1">
+                    {label}
+                    {isRef && refCount > 0 && (
+                      <span
+                        className="w-3.5 h-3.5 rounded-full font-mono text-[7px] flex items-center justify-center"
+                        style={{ background: "rgba(74,222,128,0.15)", color: "#4ade80", border: "1px solid rgba(74,222,128,0.3)" }}
+                      >
+                        {refCount}
+                      </span>
+                    )}
+                  </span>
+                  {leftTab === id && (
+                    <span
+                      className="absolute bottom-0 left-1/2 -translate-x-1/2 w-5 h-px"
+                      style={{ background: "rgba(161,161,170,0.7)" }}
+                    />
+                  )}
+                </button>
+              );
+            })}
           </div>
           <div className="flex-1 overflow-y-auto">
             {leftTab === "layers"    && <LayerPanel />}
@@ -455,6 +478,55 @@ export function EditorClient() {
           <ToolPanel onTypography={runTypography} />
         </aside>
       </div>
+
+      {/* ── Floating undo / redo ────────────────────────────────────────────── */}
+      <UndoRedoWidget />
+    </div>
+  );
+}
+
+// ─── Undo / redo widget ────────────────────────────────────────────────────────
+
+function UndoRedoWidget() {
+  const { history, historyIndex, undo, redo } = usePosterStore((s) => ({
+    history: s.history,
+    historyIndex: s.historyIndex,
+    undo: s.undo,
+    redo: s.redo,
+  }));
+  const canUndo = historyIndex > 0;
+  const canRedo = historyIndex < history.length - 1;
+  if (!canUndo && !canRedo) return null;
+
+  return (
+    <div
+      className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-0.5 px-1.5 py-1 rounded-md"
+      style={{
+        background: "rgba(12,12,14,0.82)",
+        border: "1px solid rgba(255,255,255,0.1)",
+        backdropFilter: "blur(16px)",
+        boxShadow: "0 4px 20px rgba(0,0,0,0.5)",
+      }}
+    >
+      <button
+        onClick={undo}
+        disabled={!canUndo}
+        title="Undo (⌘Z)"
+        className="w-6 h-6 flex items-center justify-center font-mono text-[11px] text-zinc-400 hover:text-zinc-100 disabled:opacity-20 transition-colors rounded"
+      >
+        ↩
+      </button>
+      <span className="font-mono text-[8px] text-zinc-700 px-1">
+        {historyIndex}/{history.length - 1}
+      </span>
+      <button
+        onClick={redo}
+        disabled={!canRedo}
+        title="Redo (⌘⇧Z)"
+        className="w-6 h-6 flex items-center justify-center font-mono text-[11px] text-zinc-400 hover:text-zinc-100 disabled:opacity-20 transition-colors rounded"
+      >
+        ↪
+      </button>
     </div>
   );
 }

@@ -200,23 +200,48 @@ export interface ReferenceAnalysis {
   visualSummary: string;
 }
 
+export type ReferenceMode = "loose" | "balanced" | "strict";
+export type ReferenceRole = "primary" | "secondary" | "accent";
+
+export type ReferenceTargets = {
+  mood: boolean;
+  color: boolean;
+  backgroundStyle: boolean;
+  typography: boolean;
+  layout: boolean;
+  texture: boolean;
+  lighting: boolean;
+};
+
+// A single reference image in the multi-reference system
+export interface ReferenceImage {
+  id: string;
+  imageUrl: string;
+  label: string;
+  mode: ReferenceMode;
+  role: ReferenceRole;
+  strength: number;   // 0–100 fine-tune within mode
+  palette: import("@/lib/colorExtract").PaletteColor[];
+  paletteError: string;
+  analysis: ReferenceAnalysis | null;
+  analysisError: string;
+  analyzing: boolean;
+}
+
 export interface ReferenceConfig {
+  // Legacy single-image (backward compat for existing code)
   imageUrl: string | null;
-  strength: number; // 0–100
-  targets: {
-    mood: boolean;
-    color: boolean;
-    backgroundStyle: boolean;
-    typography: boolean;
-    layout: boolean;
-    texture: boolean;
-    lighting: boolean;
-  };
+  strength: number;
+  targets: ReferenceTargets;
   instruction: string;
   palette: import("@/lib/colorExtract").PaletteColor[];
   paletteError: string;
   analysis: ReferenceAnalysis | null;
   analysisError: string;
+
+  // Multi-reference (new)
+  images: ReferenceImage[];
+  globalInstruction: string;
 }
 
 export const DEFAULT_REFERENCE: ReferenceConfig = {
@@ -236,6 +261,8 @@ export const DEFAULT_REFERENCE: ReferenceConfig = {
   paletteError: "",
   analysis: null,
   analysisError: "",
+  images: [],
+  globalInstruction: "",
 };
 
 // ─── Asset library ────────────────────────────────────────────────────────────

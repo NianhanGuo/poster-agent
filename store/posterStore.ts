@@ -7,6 +7,7 @@ import type {
   TextLayerData,
   ImageLayerData,
   ReferenceConfig,
+  ReferenceImage,
   AssetItem,
   DesignBrief,
   ProjectVersion,
@@ -59,6 +60,10 @@ interface PosterState {
   setReference: (updates: Partial<ReferenceConfig>) => void;
   setReferenceImage: (url: string | null) => void;
   setReferencePalette: (palette: PaletteColor[], error?: string) => void;
+  // Multi-reference
+  addReferenceImage: (image: ReferenceImage) => void;
+  removeReferenceImage: (id: string) => void;
+  updateReferenceImage: (id: string, updates: Partial<ReferenceImage>) => void;
 
   // Asset library
   assets: AssetItem[];
@@ -302,6 +307,22 @@ export const usePosterStore = create<PosterState>()(
       set((state) => {
         state.reference.palette = palette;
         state.reference.paletteError = error;
+      }),
+
+    addReferenceImage: (image) =>
+      set((state) => {
+        state.reference.images.push(image);
+      }),
+
+    removeReferenceImage: (id) =>
+      set((state) => {
+        state.reference.images = state.reference.images.filter((img) => img.id !== id);
+      }),
+
+    updateReferenceImage: (id, updates) =>
+      set((state) => {
+        const img = state.reference.images.find((i) => i.id === id);
+        if (img) Object.assign(img, updates);
       }),
 
     setBrushActive: (active) => set((state) => { state.brushActive = active; }),
