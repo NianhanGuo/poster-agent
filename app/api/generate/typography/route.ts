@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { Layer } from "@/types/poster";
+import type { PosterLayer } from "@/types/poster";
 
 export async function POST(req: NextRequest) {
   const { layers, styleRecipe, style, posterType, language, lockedLayers } = await req.json();
@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ layers, demo: true });
   }
 
-  const textLayers = (layers as Layer[]).filter(
+  const textLayers = (layers as PosterLayer[]).filter(
     (l) => l.type.endsWith("Text") && !lockedLayers.includes(l.id)
   );
 
@@ -53,10 +53,10 @@ Rules:
     });
 
     const text = completion.choices[0]?.message?.content ?? "{}";
-    const parsed: { layers: Layer[] } = JSON.parse(text);
-    const improved: Layer[] = Array.isArray(parsed.layers) ? parsed.layers : [];
+    const parsed: { layers: PosterLayer[] } = JSON.parse(text);
+    const improved: PosterLayer[] = Array.isArray(parsed.layers) ? parsed.layers : [];
 
-    const mergedLayers = (layers as Layer[]).map((l) => {
+    const mergedLayers = (layers as PosterLayer[]).map((l) => {
       const updated = improved.find((u) => u.id === l.id);
       if (!updated) return l;
       return {

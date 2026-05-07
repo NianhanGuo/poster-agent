@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from "uuid";
-import type { Layer, CanvasConfig, PosterSetupConfig } from "@/types/poster";
+import type { PosterLayer, CanvasConfig, PosterSetupConfig } from "@/types/poster";
 import { RECIPES } from "@/lib/styleRecipes";
 
 // Opinionated, design-forward mock layouts — one per style recipe.
@@ -9,7 +9,7 @@ function p(canvas: CanvasConfig, rx: number, ry: number) {
   return { x: Math.round(canvas.width * rx), y: Math.round(canvas.height * ry) };
 }
 
-function bg(canvas: CanvasConfig): Layer {
+function bg(canvas: CanvasConfig): PosterLayer {
   return {
     id: uuidv4(),
     type: "backgroundImage",
@@ -23,7 +23,7 @@ function bg(canvas: CanvasConfig): Layer {
 }
 
 function textLayer(
-  type: Layer["type"],
+  type: PosterLayer["type"],
   label: string,
   text: string,
   x: number, y: number,
@@ -37,7 +37,7 @@ function textLayer(
   zIndex: number,
   opacity = 1,
   rotation = 0,
-): Layer {
+): PosterLayer {
   return {
     id: uuidv4(), type, label,
     x, y, width,
@@ -54,7 +54,7 @@ function textLayer(
 export function mockLayout(
   setup: PosterSetupConfig,
   canvas: CanvasConfig,
-): { layers: Layer[]; imagePrompt: string; designNotes: string } {
+): { layers: PosterLayer[]; imagePrompt: string; designNotes: string } {
   const recipe = RECIPES[setup.styleRecipe] ?? RECIPES["cinematic-rain"];
   const t = recipe.type;
   const pad = Math.round(canvas.width * 0.05);
@@ -70,7 +70,7 @@ export function mockLayout(
   const metaSize   = Math.round(canvas.width * 0.022);
   const creditSize = Math.round(canvas.width * 0.017);
 
-  let layers: Layer[];
+  let layers: PosterLayer[];
 
   switch (setup.styleRecipe) {
     case "cinematic-rain":

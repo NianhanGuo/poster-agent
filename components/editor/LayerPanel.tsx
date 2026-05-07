@@ -1,6 +1,6 @@
 "use client";
 import { usePosterStore } from "@/store/posterStore";
-import type { Layer } from "@/types/poster";
+import type { PosterLayer } from "@/types/poster";
 
 const TYPE_LABEL: Record<string, string> = {
   backgroundImage: "bg",
@@ -60,7 +60,7 @@ function LayerRow({
   layer, selected, onSelect, onToggleLock, onToggleVisibility,
   onDelete, onDuplicate, onMoveUp, onMoveDown,
 }: {
-  layer: Layer;
+  layer: PosterLayer;
   selected: boolean;
   onSelect: () => void;
   onToggleLock: () => void;

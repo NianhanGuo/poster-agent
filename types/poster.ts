@@ -83,7 +83,7 @@ export interface ImageLayerData {
   fit?: "fill" | "contain" | "cover";
 }
 
-export interface Layer {
+export interface PosterLayer {
   id: string;
   type: LayerType;
   label: string;
@@ -99,6 +99,9 @@ export interface Layer {
   textData?: TextLayerData;
   imageData?: ImageLayerData;
 }
+
+/** @deprecated Use PosterLayer */
+export type Layer = PosterLayer;
 
 // ─── Setup config ─────────────────────────────────────────────────────────────
 
@@ -127,7 +130,7 @@ export interface PosterProject {
   userId: string;
   title: string;
   canvas: CanvasConfig;
-  layers: Layer[];
+  layers: PosterLayer[];
   styleRecipe: StyleRecipe;
   posterType: PosterType;
   language: Language;

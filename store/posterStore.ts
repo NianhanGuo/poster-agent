@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { immer } from "zustand/middleware/immer";
 import { v4 as uuidv4 } from "uuid";
 import type {
-  Layer,
+  PosterLayer,
   PosterProject,
   TextLayerData,
   ImageLayerData,
@@ -13,7 +13,7 @@ interface PosterState {
   selectedLayerId: string | null;
   isGenerating: boolean;
   generatingStep: string;
-  history: Layer[][];
+  history: PosterLayer[][];
   historyIndex: number;
 
   // Project actions
@@ -24,17 +24,17 @@ interface PosterState {
   selectLayer: (id: string | null) => void;
 
   // Layer mutations
-  addLayer: (layer: Layer) => void;
+  addLayer: (layer: PosterLayer) => void;
   removeLayer: (id: string) => void;
   duplicateLayer: (id: string) => void;
-  updateLayer: (id: string, updates: Partial<Layer>) => void;
+  updateLayer: (id: string, updates: Partial<PosterLayer>) => void;
   updateTextData: (id: string, updates: Partial<TextLayerData>) => void;
   updateImageData: (id: string, updates: Partial<ImageLayerData>) => void;
   moveLayerUp: (id: string) => void;
   moveLayerDown: (id: string) => void;
   toggleLock: (id: string) => void;
   toggleVisibility: (id: string) => void;
-  reorderLayers: (layers: Layer[]) => void;
+  reorderLayers: (layers: PosterLayer[]) => void;
 
   // AI state
   setGenerating: (generating: boolean, step?: string) => void;
@@ -44,8 +44,8 @@ interface PosterState {
   redo: () => void;
 
   // Derived
-  getLayerById: (id: string) => Layer | undefined;
-  getSortedLayers: () => Layer[];
+  getLayerById: (id: string) => PosterLayer | undefined;
+  getSortedLayers: () => PosterLayer[];
 }
 
 const MAX_HISTORY = 30;
@@ -103,7 +103,7 @@ export const usePosterStore = create<PosterState>()(
         if (!layer) return;
         get().pushHistory();
         const maxZ = Math.max(0, ...state.project.layers.map((l) => l.zIndex));
-        const clone: Layer = {
+        const clone: PosterLayer = {
           ...JSON.parse(JSON.stringify(layer)),
           id: uuidv4(),
           x: layer.x + 20,

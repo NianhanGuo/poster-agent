@@ -2,7 +2,7 @@
 import { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import { usePosterStore } from "@/store/posterStore";
-import type { Layer, ImageInputMode } from "@/types/poster";
+import type { PosterLayer, ImageInputMode } from "@/types/poster";
 
 const MODES: { value: ImageInputMode; label: string }[] = [
   { value: "background",       label: "Background" },
@@ -43,7 +43,7 @@ export function ImageUploadPanel({ onClose }: Props) {
           const { url: cutoutUrl, message } = await extractRes.json();
 
           const canvas = project.canvas;
-          const newLayer: Layer = {
+          const newLayer: PosterLayer = {
             id: crypto.randomUUID(),
             type: "foregroundCutout",
             label: "Subject Cutout",
@@ -63,7 +63,7 @@ export function ImageUploadPanel({ onClose }: Props) {
             updateLayer(bgLayer.id, { imageData: { src: url, fit: "fill" } });
             setStatus("background updated");
           } else {
-            const newLayer: Layer = {
+            const newLayer: PosterLayer = {
               id: crypto.randomUUID(),
               type: mode === "background" ? "backgroundImage" : "userImage",
               label: mode === "background" ? "Background" : "Image",

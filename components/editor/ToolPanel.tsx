@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { usePosterStore } from "@/store/posterStore";
 import { ImageUploadPanel } from "./ImageUploadPanel";
-import type { Layer } from "@/types/poster";
+import type { PosterLayer } from "@/types/poster";
 import { isTextLayer, isImageLayer } from "@/types/poster";
 
 const FONT_FAMILIES = [
@@ -23,7 +23,7 @@ export function ToolPanel() {
 
   function addTextLayer() {
     const canvas = project!.canvas;
-    const newLayer: Layer = {
+    const newLayer: PosterLayer = {
       id: crypto.randomUUID(),
       type: "userText",
       label: "Text",
@@ -140,9 +140,9 @@ function Section({ label }: { label: string }) {
 function TextProps({
   layer, onText, onLayer,
 }: {
-  layer: Layer;
-  onText: (u: Partial<NonNullable<Layer["textData"]>>) => void;
-  onLayer: (u: Partial<Layer>) => void;
+  layer: PosterLayer;
+  onText: (u: Partial<NonNullable<PosterLayer["textData"]>>) => void;
+  onLayer: (u: Partial<PosterLayer>) => void;
 }) {
   const td = layer.textData!;
   return (
@@ -260,8 +260,8 @@ function TextProps({
 }
 
 function ImageProps({ layer, onLayer }: {
-  layer: Layer;
-  onLayer: (u: Partial<Layer>) => void;
+  layer: PosterLayer;
+  onLayer: (u: Partial<PosterLayer>) => void;
 }) {
   return (
     <>
@@ -278,8 +278,8 @@ function ImageProps({ layer, onLayer }: {
 }
 
 function TransformProps({ layer, onLayer }: {
-  layer: Layer;
-  onLayer: (u: Partial<Layer>) => void;
+  layer: PosterLayer;
+  onLayer: (u: Partial<PosterLayer>) => void;
 }) {
   return (
     <>

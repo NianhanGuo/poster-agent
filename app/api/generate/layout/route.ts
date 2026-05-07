@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { PosterSetupConfig, Layer, CanvasConfig, CanvasSize } from "@/types/poster";
+import type { PosterSetupConfig, PosterLayer, CanvasConfig, CanvasSize } from "@/types/poster";
 import { CANVAS_SIZES } from "@/types/poster";
 import { RECIPES } from "@/lib/styleRecipes";
 import { v4 as uuidv4 } from "uuid";
@@ -96,7 +96,7 @@ Rules:
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const setup: PosterSetupConfig = body.setup;
-  const lockedLayers: Layer[] = body.lockedLayers ?? [];
+  const lockedLayers: PosterLayer[] = body.lockedLayers ?? [];
 
   const canvas = getCanvasConfig(setup);
 
@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
     });
 
     const text = completion.choices[0]?.message?.content ?? "{}";
-    const parsed: { layers: Layer[]; imagePrompt: string; designNotes: string } = JSON.parse(text);
+    const parsed: { layers: PosterLayer[]; imagePrompt: string; designNotes: string } = JSON.parse(text);
 
     const newLayers = parsed.layers.map((l) => ({
       ...l,
