@@ -83,7 +83,7 @@ function AnalysisDebug({ image }: { image: ReferenceImage }) {
 
   const forbidden = getAutoForbiddenTerms({
     strength: image.strength,
-    targets: {},
+    targets: { mood: false, color: false, backgroundStyle: false, typography: false, layout: false, texture: false, lighting: false },
     palette: image.palette.length > 0 ? image.palette : undefined,
     analysis: a,
   });

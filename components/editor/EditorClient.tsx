@@ -13,8 +13,19 @@ import { AlignmentBar } from "./AlignmentBar";
 import { QuickPanel } from "./QuickPanel";
 import { ImageEditModal } from "./ImageEditModal";
 import { PromptComposer } from "@/components/setup/PromptComposer";
-import type { DesignBrief } from "@/types/poster";
+import type { DesignBrief, ReferenceTargets } from "@/types/poster";
+import type { EnrichedRefCtx } from "@/lib/referencePrompt";
 import type { Session } from "next-auth";
+
+const DEFAULT_TARGETS: ReferenceTargets = {
+  mood: false,
+  color: false,
+  backgroundStyle: false,
+  typography: false,
+  layout: false,
+  texture: false,
+  lighting: false,
+};
 
 type LeftTab = "layers" | "assets" | "reference";
 
@@ -74,12 +85,12 @@ export function EditorClient() {
 
   const isDemo = project.isDemo ?? false;
   const lockedLayers = getSortedLayers().filter((l) => l.locked);
-  let refCtx: ReturnType<typeof buildEditorRefCtx>;
+  let refCtx: EnrichedRefCtx;
   try {
     refCtx = buildEditorRefCtx(reference);
   } catch (err) {
     console.error("[EditorClient] buildEditorRefCtx crashed:", err, "\nreference state:", reference);
-    refCtx = { strength: 50, targets: {} };
+    refCtx = { strength: 50, targets: DEFAULT_TARGETS };
   }
 
   // ── 2-step generation: brief → layout + image ──────────────────────────────
