@@ -15,7 +15,6 @@ import { ImageEditModal } from "./ImageEditModal";
 import { PromptComposer } from "@/components/setup/PromptComposer";
 import type { DesignBrief, ReferenceTargets } from "@/types/poster";
 import type { EnrichedRefCtx } from "@/lib/referencePrompt";
-import type { Session } from "next-auth";
 
 const DEFAULT_TARGETS: ReferenceTargets = {
   mood: false,
@@ -46,7 +45,6 @@ export function EditorClient() {
     pushVersion,
   } = usePosterStore();
 
-  const { data: session } = useSession();
   const [leftTab, setLeftTab] = useState<LeftTab>("layers");
   const [command, setCommand] = useState("");
   const [genError, setGenError] = useState("");
@@ -370,7 +368,7 @@ export function EditorClient() {
           {/* Export dropdown */}
           <ExportMenu onPng={handleExport} onJson={exportJSON} />
 
-          <UserMenu session={session} />
+          <PanelErrorBoundary name="UserMenu"><UserMenu /></PanelErrorBoundary>
         </div>
       </header>
 
@@ -429,8 +427,8 @@ export function EditorClient() {
           </div>
           <div className="flex-1 overflow-y-auto">
             {leftTab === "layers"    && <LayerPanel />}
-            {leftTab === "assets"    && <AssetLibrary />}
-            {leftTab === "reference" && <ReferencePanel />}
+            {leftTab === "assets"    && <PanelErrorBoundary name="AssetLibrary"><AssetLibrary /></PanelErrorBoundary>}
+            {leftTab === "reference" && <PanelErrorBoundary name="ReferencePanel"><ReferencePanel /></PanelErrorBoundary>}
           </div>
         </aside>
 
@@ -491,7 +489,7 @@ export function EditorClient() {
           className="w-60 flex-none overflow-y-auto"
           style={{ background: PANEL_BG, borderLeft: `1px solid ${BORDER}` }}
         >
-          <ToolPanel onTypography={runTypography} onEditImage={setEditImageLayerId} />
+          <PanelErrorBoundary name="ToolPanel"><ToolPanel onTypography={runTypography} onEditImage={setEditImageLayerId} /></PanelErrorBoundary>
         </aside>
       </div>
 
@@ -512,12 +510,10 @@ export function EditorClient() {
 // ─── Undo / redo widget ────────────────────────────────────────────────────────
 
 function UndoRedoWidget() {
-  const { history, historyIndex, undo, redo } = usePosterStore((s) => ({
-    history: s.history,
-    historyIndex: s.historyIndex,
-    undo: s.undo,
-    redo: s.redo,
-  }));
+  const history = usePosterStore((s) => s.history);
+  const historyIndex = usePosterStore((s) => s.historyIndex);
+  const undo = usePosterStore((s) => s.undo);
+  const redo = usePosterStore((s) => s.redo);
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
   if (!canUndo && !canRedo) return null;
@@ -615,9 +611,8 @@ function ExportMenu({ onPng, onJson }: { onPng: () => void; onJson: () => void }
 
 // ─── User menu ────────────────────────────────────────────────────────────────
 
-type NextSession = Session | null;
-
-function UserMenu({ session }: { session: NextSession }) {
+function UserMenu() {
+  const { data: session } = useSession();
   const [open, setOpen] = useState(false);
 
   if (!session?.user) {
@@ -670,6 +665,43 @@ function UserMenu({ session }: { session: NextSession }) {
       )}
     </div>
   );
+}
+
+// ─── Panel-level error boundary ───────────────────────────────────────────────
+
+class PanelErrorBoundary extends Component<
+  { children: ReactNode; name: string },
+  { error: Error | null }
+> {
+  constructor(props: { children: ReactNode; name: string }) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error(`=== ${this.props.name} panel crash ===`, error, info.componentStack);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-3 flex flex-col gap-2">
+          <p className="font-mono text-[9px] text-red-500/70">{this.props.name} error</p>
+          <button
+            onClick={() => this.setState({ error: null })}
+            className="font-mono text-[8px] text-zinc-600 hover:text-zinc-400 transition-colors text-left"
+          >
+            Retry
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 // ─── Editor-level error boundary ─────────────────────────────────────────────
