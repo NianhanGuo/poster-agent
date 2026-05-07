@@ -74,7 +74,7 @@ export interface TextLayerData {
   fontWeight?: number;     // 100–900; used to build fontStyle and load Google Font variant
   italic?: boolean;
   fill: string;
-  align: "left" | "center" | "right";
+  align: "left" | "center" | "right" | "justify";
   letterSpacing?: number;
   lineHeight?: number;
   // Decoration
@@ -157,6 +157,50 @@ export interface PosterProject {
   isDemo?: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+// ─── Reference image ──────────────────────────────────────────────────────────
+
+export interface ReferenceConfig {
+  imageUrl: string | null;
+  strength: number; // 0–100
+  targets: {
+    mood: boolean;
+    color: boolean;
+    backgroundStyle: boolean;
+    typography: boolean;
+    layout: boolean;
+    texture: boolean;
+    lighting: boolean;
+  };
+  instruction: string;
+}
+
+export const DEFAULT_REFERENCE: ReferenceConfig = {
+  imageUrl: null,
+  strength: 50,
+  targets: {
+    mood: true,
+    color: true,
+    backgroundStyle: false,
+    typography: false,
+    layout: false,
+    texture: false,
+    lighting: false,
+  },
+  instruction: "",
+};
+
+// ─── Asset library ────────────────────────────────────────────────────────────
+
+export interface AssetItem {
+  id: string;
+  userId: string;
+  imageUrl: string;
+  fileName: string;
+  createdAt: string;
+  tags?: string[];
+  usageType?: "background" | "subject" | "reference" | "texture";
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────

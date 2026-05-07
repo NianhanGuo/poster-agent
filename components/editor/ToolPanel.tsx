@@ -225,29 +225,52 @@ function TextInspector({
         </div>
       </Row>
 
+      {/* ── Alignment — segmented control ── */}
+      <Section label="Align" />
+      <div className="px-4 pb-1">
+        <div
+          className="flex overflow-hidden rounded-sm"
+          style={{ border: "1px solid rgba(255,255,255,0.08)" }}
+        >
+          {(["left", "center", "right", "justify"] as const).map((a, i) => {
+            const labels: Record<string, string> = {
+              left: "Left", center: "Center", right: "Right", justify: "Justify",
+            };
+            const active = td.align === a;
+            return (
+              <button
+                key={a}
+                onClick={() => onText({ align: a })}
+                title={labels[a]}
+                className="flex-1 py-1.5 font-mono text-[9px] tracking-wide transition-colors"
+                style={{
+                  background: active ? "rgba(255,255,255,0.10)" : "transparent",
+                  color: active ? "#e4e4e7" : "#52525b",
+                  borderLeft: i > 0 ? "1px solid rgba(255,255,255,0.08)" : "none",
+                }}
+                onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.color = "#a1a1aa"; }}
+                onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.color = "#52525b"; }}
+              >
+                {a === "left" ? "L" : a === "center" ? "C" : a === "right" ? "R" : "J"}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Italic / Style ── */}
       <Row label="Style">
         <div className="flex items-center gap-2">
-          {/* Italic toggle */}
           <button
             onClick={() => setItalic(!italic)}
-            className={`border px-2 py-0.5 font-mono text-[9px] italic transition-colors ${
-              italic ? "border-zinc-500 text-zinc-200" : "border-zinc-800 text-zinc-600 hover:border-zinc-600"
-            }`}
+            className="border px-2 py-0.5 font-mono text-[9px] italic transition-colors"
+            style={{
+              borderColor: italic ? "rgba(161,161,170,0.5)" : "rgba(255,255,255,0.1)",
+              color: italic ? "#e4e4e7" : "#52525b",
+            }}
           >
             I
           </button>
-          {/* Alignment */}
-          {(["left", "center", "right"] as const).map((a) => (
-            <button
-              key={a}
-              onClick={() => onText({ align: a })}
-              className={`border px-2 py-0.5 font-mono text-[9px] transition-colors ${
-                td.align === a ? "border-zinc-500 text-zinc-200" : "border-zinc-800 text-zinc-600 hover:border-zinc-600"
-              }`}
-            >
-              {a === "left" ? "L" : a === "center" ? "C" : "R"}
-            </button>
-          ))}
         </div>
       </Row>
 

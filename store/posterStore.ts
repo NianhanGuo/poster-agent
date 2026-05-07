@@ -6,7 +6,10 @@ import type {
   PosterProject,
   TextLayerData,
   ImageLayerData,
+  ReferenceConfig,
+  AssetItem,
 } from "@/types/poster";
+import { DEFAULT_REFERENCE } from "@/types/poster";
 
 interface PosterState {
   project: PosterProject | null;
@@ -38,6 +41,16 @@ interface PosterState {
 
   // AI state
   setGenerating: (generating: boolean, step?: string) => void;
+  // Reference image
+  reference: ReferenceConfig;
+  setReference: (updates: Partial<ReferenceConfig>) => void;
+  setReferenceImage: (url: string | null) => void;
+
+  // Asset library
+  assets: AssetItem[];
+  addAsset: (asset: AssetItem) => void;
+  removeAsset: (id: string) => void;
+
   // History
   pushHistory: () => void;
   undo: () => void;
@@ -58,6 +71,8 @@ export const usePosterStore = create<PosterState>()(
     generatingStep: "",
     history: [],
     historyIndex: -1,
+    reference: { ...DEFAULT_REFERENCE },
+    assets: [],
 
     setProject: (project) =>
       set((state) => {
@@ -200,6 +215,26 @@ export const usePosterStore = create<PosterState>()(
       set((state) => {
         state.isGenerating = generating;
         state.generatingStep = step;
+      }),
+
+    setReference: (updates) =>
+      set((state) => {
+        Object.assign(state.reference, updates);
+      }),
+
+    setReferenceImage: (url) =>
+      set((state) => {
+        state.reference.imageUrl = url;
+      }),
+
+    addAsset: (asset) =>
+      set((state) => {
+        state.assets.push(asset);
+      }),
+
+    removeAsset: (id) =>
+      set((state) => {
+        state.assets = state.assets.filter((a) => a.id !== id);
       }),
 
     pushHistory: () => {
