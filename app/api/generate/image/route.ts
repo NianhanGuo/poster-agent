@@ -1,16 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mockGradientDataUrl } from "@/lib/mockGradient";
-import { buildPalettePrompt } from "@/lib/colorExtract";
 import type { DesignBrief } from "@/types/poster";
-import type { PaletteColor } from "@/lib/colorExtract";
-
-interface ReferenceContext {
-  strength: number;
-  targets: Record<string, boolean>;
-  instruction?: string;
-  hasImage?: boolean;
-  palette?: PaletteColor[];
-}
+import { buildReferenceSection } from "@/lib/referencePrompt";
+import type { EnrichedRefCtx } from "@/lib/referencePrompt";
 
 function pickDallE3Size(width: number, height: number): "1024x1024" | "1024x1792" | "1792x1024" {
   const ratio = width / height;
@@ -22,7 +14,7 @@ function pickDallE3Size(width: number, height: number): "1024x1024" | "1024x1792
 function buildImagePrompt(
   basePrompt: string,
   brief?: DesignBrief,
-  reference?: ReferenceContext,
+  reference?: EnrichedRefCtx,
 ): string {
   const parts: string[] = [basePrompt];
 
@@ -54,31 +46,17 @@ function buildImagePrompt(
     }
   }
 
-  // Extracted palette enforcement (hex-level, strength-tiered)
-  if (reference?.palette && reference.palette.length > 0) {
-    const paletteSection = buildPalettePrompt(
-      reference.palette,
-      reference.strength,
-      !!reference.targets.color,
-    );
-    if (paletteSection) parts.push(paletteSection);
+  // Enriched reference guidance — replaces old buildPalettePrompt
+  if (reference) {
+    const refSection = buildReferenceSection(reference, "image");
+    if (refSection) parts.push(refSection);
   }
 
-  // Additional reference instruction for non-color targets
-  if (reference?.instruction && reference.strength > 30) {
-    const targets = reference.targets;
-    const nonColorTarget =
-      targets.mood || targets.backgroundStyle || targets.texture || targets.lighting;
-    if (nonColorTarget) {
-      parts.push(`Reference guidance: ${reference.instruction}`);
-    }
-  }
-
-  // Hard rules
+  // Hard rules (always appended)
   parts.push(
     "No text, no letters, no typography, no words, no captions, no watermarks, no UI elements.",
     "Leave intentional negative space for title overlay.",
-    "Photographic quality. Cinematic composition.",
+    "Photographic quality or painterly illustration — no AI artifacts.",
   );
 
   return parts.join(" ");
@@ -98,7 +76,20 @@ export async function POST(req: NextRequest) {
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const size = pickDallE3Size(width ?? 800, height ?? 1200);
-    const finalPrompt = buildImagePrompt(prompt ?? "", brief, reference);
+    const finalPrompt = buildImagePrompt(
+      prompt ?? "",
+      brief as DesignBrief | undefined,
+      reference as EnrichedRefCtx | undefined,
+    );
+
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[image/route] Final DALL-E prompt length:", finalPrompt.length);
+      console.log("[image/route] Reference targets:", reference?.targets);
+      console.log("[image/route] Reference strength:", reference?.strength);
+      if (reference?.analysis?.visualSummary) {
+        console.log("[image/route] Analysis summary:", reference.analysis.visualSummary);
+      }
+    }
 
     const response = await openai.images.generate({
       model: "dall-e-3",

@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import { usePosterStore } from "@/store/posterStore";
-import type { ReferenceConfig, AssetItem, PosterLayer } from "@/types/poster";
+import type { ReferenceConfig, ReferenceAnalysis, AssetItem, PosterLayer } from "@/types/poster";
 import { extractPaletteFromUrl } from "@/lib/colorExtract";
 
 type TargetKey = keyof ReferenceConfig["targets"];
@@ -33,29 +33,61 @@ export function ReferencePanel() {
 
   const [busy, setBusy] = useState(false);
   const [extracting, setExtracting] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [genLoading, setGenLoading] = useState(false);
   const [genToast, setGenToast] = useState("");
   const [generatedAssets, setGeneratedAssets] = useState<AssetItem[]>([]);
+  const [showDebug, setShowDebug] = useState(false);
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!reference.imageUrl) {
       setExtracting(false);
+      setAnalyzing(false);
       return;
     }
     setExtracting(true);
-    extractPaletteFromUrl(reference.imageUrl)
-      .then((palette) => {
-        if (palette.length > 0) {
-          setReferencePalette(palette, "");
-        } else {
-          setReferencePalette([], "Could not extract palette from reference image");
-        }
+    setAnalyzing(true);
+
+    const imageUrl = reference.imageUrl;
+
+    Promise.all([
+      extractPaletteFromUrl(imageUrl).catch(() => []),
+      fetch("/api/analyze/reference", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl }),
       })
-      .catch(() => {
-        setReferencePalette([], "Could not extract palette from reference image");
-      })
-      .finally(() => setExtracting(false));
+        .then(
+          (r) =>
+            r.json() as Promise<{
+              analysis: ReferenceAnalysis | null;
+              error?: string;
+              demo?: boolean;
+            }>,
+        )
+        .catch(() => ({ analysis: null as ReferenceAnalysis | null, error: "Network error", demo: undefined as boolean | undefined })),
+    ]).then(([palette, analysisResult]) => {
+      // Palette
+      setReferencePalette(
+        palette.length > 0 ? palette : [],
+        palette.length === 0 ? "Could not extract palette from reference image" : "",
+      );
+
+      // Vision analysis
+      const analysisError = analysisResult.demo
+        ? "Vision analysis requires API key — using palette only"
+        : (analysisResult.error ?? "");
+      setReference({ analysis: analysisResult.analysis, analysisError });
+
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[ReferencePanel] Analysis:", analysisResult.analysis);
+        console.log("[ReferencePanel] Palette:", palette.map((p) => p.hex));
+      }
+    }).finally(() => {
+      setExtracting(false);
+      setAnalyzing(false);
+    });
   }, [reference.imageUrl]); // eslint-disable-line react-hooks/exhaustive-deps
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -113,17 +145,33 @@ export function ReferencePanel() {
     setGenToast("");
     setGeneratedAssets([]);
 
+    const anyTarget = Object.values(reference.targets).some(Boolean);
+    if (!anyTarget) {
+      setGenToast("⚠ No targets selected — select at least one target to apply reference.");
+      setGenLoading(false);
+      return;
+    }
+
     const imagePrompt = project.promptHistory.at(-1) ?? "";
     const refCtx = {
       strength: reference.strength,
       targets: reference.targets,
-      palette: reference.palette,
-      instruction: reference.instruction,
-      hasImage: !!reference.imageUrl,
+      palette: reference.palette.length > 0 ? reference.palette : undefined,
+      analysis: reference.analysis ?? undefined,
+      instruction: reference.instruction || undefined,
     };
 
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[ReferencePanel] generateFromReference context:", {
+        strength: refCtx.strength,
+        targets: refCtx.targets,
+        hasAnalysis: !!refCtx.analysis,
+        analysisSummary: refCtx.analysis?.visualSummary,
+        paletteColors: refCtx.palette?.map((p) => p.hex),
+      });
+    }
+
     try {
-      // Two variations in parallel
       const results = await Promise.all(
         [1, 2].map(() =>
           fetch("/api/generate/image", {
@@ -208,6 +256,9 @@ export function ReferencePanel() {
   }
 
   const hasReference = !!reference.imageUrl || reference.palette.length > 0;
+  const noTargetsSelected = hasReference && !Object.values(reference.targets).some(Boolean);
+  const analysisReady = !!reference.analysis;
+  const analysisLoading = analyzing && !analysisReady;
 
   return (
     <div className="p-3 space-y-4">
@@ -236,7 +287,11 @@ export function ReferencePanel() {
               </button>
             </div>
             <button
-              onClick={() => { setReferenceImage(null); setGeneratedAssets([]); }}
+              onClick={() => {
+                setReferenceImage(null);
+                setReference({ analysis: null, analysisError: "" });
+                setGeneratedAssets([]);
+              }}
               className="font-mono text-[9px] tracking-wide uppercase text-zinc-500 px-2 py-1 transition-colors hover:text-red-400 rounded-sm"
               style={{ border: "1px solid rgba(255,255,255,0.1)" }}
             >
@@ -263,17 +318,41 @@ export function ReferencePanel() {
         </div>
       )}
 
-      {/* Palette swatches */}
+      {/* Analysis status + palette */}
       {reference.imageUrl && (
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <span className="font-mono text-[9px] tracking-[0.15em] uppercase text-zinc-600">
-              Extracted palette
+              {analysisLoading
+                ? "Analyzing…"
+                : analysisReady
+                ? "Vision analysis ✓"
+                : reference.analysisError
+                ? "Palette only"
+                : "Extracted palette"}
             </span>
-            {extracting && (
-              <span className="font-mono text-[8px] text-zinc-700">extracting…</span>
-            )}
+            <div className="flex items-center gap-2">
+              {(extracting || analyzing) && (
+                <span className="font-mono text-[8px] text-zinc-700">
+                  {extracting ? "extracting…" : ""}
+                  {analyzing ? "analyzing…" : ""}
+                </span>
+              )}
+              <button
+                onClick={() => setShowDebug((v) => !v)}
+                className="font-mono text-[8px] text-zinc-800 hover:text-zinc-600 transition-colors"
+              >
+                {showDebug ? "hide" : "debug"}
+              </button>
+            </div>
           </div>
+
+          {/* Analysis error / warning */}
+          {reference.analysisError && !analysisReady && (
+            <p className="font-mono text-[8px] text-amber-600/70">{reference.analysisError}</p>
+          )}
+
+          {/* Palette swatches */}
           {reference.paletteError ? (
             <p className="font-mono text-[8px] text-red-500/70">{reference.paletteError}</p>
           ) : reference.palette.length > 0 ? (
@@ -301,6 +380,44 @@ export function ReferencePanel() {
           ) : !extracting ? (
             <p className="font-mono text-[8px] text-zinc-700">no palette extracted yet</p>
           ) : null}
+
+          {/* Debug panel */}
+          {showDebug && (
+            <div
+              className="rounded-sm p-2 space-y-1 font-mono text-[8px] text-zinc-600"
+              style={{ border: "1px solid rgba(255,255,255,0.06)", background: "rgba(0,0,0,0.4)" }}
+            >
+              <div>Strength: {reference.strength}% · Targets: {Object.entries(reference.targets).filter(([,v])=>v).map(([k])=>k).join(", ") || "none"}</div>
+              {reference.palette.length > 0 && (
+                <div>Palette: {reference.palette.map((p) => p.hex).join(", ")}</div>
+              )}
+              {reference.analysis ? (
+                <>
+                  <div className="text-zinc-500">── Vision analysis ──</div>
+                  <div>Summary: {reference.analysis.visualSummary}</div>
+                  <div>Mood: {reference.analysis.mood}</div>
+                  <div>Composition: {reference.analysis.composition}</div>
+                  <div>Shapes: {reference.analysis.shapes}</div>
+                  <div>Texture: {reference.analysis.texture}</div>
+                  <div>Lighting: {reference.analysis.lighting}</div>
+                  <div>Typography: {reference.analysis.typographyStyle}</div>
+                  <div>Colors: {reference.analysis.palette.join(", ")}</div>
+                </>
+              ) : (
+                <div className="text-amber-600/70">
+                  {reference.analysisError || "No analysis yet"}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Warning: image but no targets */}
+      {noTargetsSelected && (
+        <div className="flex items-center gap-2 font-mono text-[9px] text-amber-600/80">
+          <span>⚠</span>
+          <span>Reference not applied — select at least one target below</span>
         </div>
       )}
 
@@ -392,7 +509,7 @@ export function ReferencePanel() {
                 generating 2 variations…
               </span>
             ) : (
-              "Generate Image from Reference →"
+              `Generate Image from Reference${analysisReady ? " ✓" : ""} →`
             )}
           </button>
 
@@ -452,7 +569,7 @@ export function ReferencePanel() {
 
       {!reference.imageUrl && generatedAssets.length === 0 && (
         <p className="font-mono text-[8px] text-zinc-700 text-center pt-1">
-          Reference metadata and palette are sent to AI even without an image
+          Upload a reference image — vision analysis will run automatically
         </p>
       )}
     </div>

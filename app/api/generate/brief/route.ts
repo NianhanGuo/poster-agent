@@ -3,7 +3,8 @@ import type { DesignBrief } from "@/types/poster";
 import { RECIPES } from "@/lib/styleRecipes";
 import type { RecipeDef } from "@/lib/styleRecipes";
 import type { StyleRecipe } from "@/types/poster";
-import type { PaletteColor } from "@/lib/colorExtract";
+import { buildReferenceSection } from "@/lib/referencePrompt";
+import type { EnrichedRefCtx } from "@/lib/referencePrompt";
 
 const SYSTEM_PROMPT = `You are a world-class art director and design strategist.
 You create concise, opinionated design briefs that push beyond safe defaults.
@@ -37,40 +38,23 @@ function buildDemoBrief(recipe: RecipeDef): DesignBrief {
 export async function POST(req: NextRequest) {
   const { prompt, posterType, styleRecipe, language, reference } = await req.json();
   const recipe = RECIPES[(styleRecipe as StyleRecipe)] ?? RECIPES["cinematic-rain"];
-
-  const refNotes: string[] = [];
-  if (reference?.instruction) refNotes.push(`Reference instruction: "${reference.instruction}"`);
-
-  // Include extracted palette so the brief can specify matching colorStrategy
-  const palette: PaletteColor[] = reference?.palette ?? [];
-  if (reference?.targets?.color && palette.length > 0) {
-    const hexList = palette.map((p: PaletteColor) => p.hex).join(", ");
-    const dominant = palette[0]?.hex;
-    refNotes.push(
-      `Extracted reference color palette: ${hexList}`,
-      `Dominant color: ${dominant}. The colorStrategy in your brief MUST reflect this palette.`,
-      `Do NOT suggest "high-contrast" if the palette is muted, and vice versa.`,
-    );
-  }
-
-  if (reference?.strength > 50) {
-    const targets = Object.entries(reference.targets ?? {})
-      .filter(([, v]) => v).map(([k]) => k).join(", ");
-    if (targets) refNotes.push(`Strong influence (strength ${reference.strength}/100) on: ${targets}`);
-  }
+  const ref = reference as EnrichedRefCtx | undefined;
 
   if (!process.env.OPENAI_API_KEY) {
     return NextResponse.json({ brief: buildDemoBrief(recipe), demo: true });
   }
+
+  const refSection = ref ? buildReferenceSection(ref, "brief") : "";
 
   const userPrompt = `Create an opinionated design brief for a ${posterType} poster.
 
 Concept: ${prompt || `a ${posterType} poster`}
 Style recipe: "${recipe.name}" — ${recipe.tagline}
 Language: ${language === "zh" ? "Chinese" : language === "mixed" ? "bilingual EN/ZH" : "English"}
-${refNotes.length ? refNotes.join("\n") : ""}
+${refSection}
 
 Be deliberately opinionated. Avoid safe, average outputs. Push the concept.
+${ref?.analysis?.visualSummary ? `The reference image shows: ${ref.analysis.visualSummary} — let this inform your mood and colorStrategy.` : ""}
 
 Return exactly this JSON (no other keys):
 {

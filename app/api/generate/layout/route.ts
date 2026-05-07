@@ -4,15 +4,8 @@ import { CANVAS_SIZES } from "@/types/poster";
 import { RECIPES } from "@/lib/styleRecipes";
 import { v4 as uuidv4 } from "uuid";
 import { mockLayout } from "@/lib/mockLayout";
-import type { PaletteColor } from "@/lib/colorExtract";
-
-interface ReferenceContext {
-  strength: number;
-  targets: Record<string, boolean>;
-  instruction?: string;
-  hasImage?: boolean;
-  palette?: PaletteColor[];
-}
+import { buildReferenceSection } from "@/lib/referencePrompt";
+import type { EnrichedRefCtx } from "@/lib/referencePrompt";
 
 function getCanvasConfig(setup: PosterSetupConfig): CanvasConfig {
   if (setup.canvasSize === "custom") {
@@ -42,48 +35,6 @@ Negative space guide:
   - "low": dense, elements fill most of canvas`;
 }
 
-function buildReferenceSection(ref: ReferenceContext): string {
-  const parts: string[] = [];
-
-  if (ref.instruction) parts.push(`Reference instruction: "${ref.instruction}"`);
-
-  // Extracted palette — specify exact hex colors for text fills
-  if (ref.targets.color && ref.palette && ref.palette.length > 0 && ref.strength > 20) {
-    const swatches = ref.palette.map((p) => `${p.hex}(${p.role})`).join(", ");
-    const textColor =
-      ref.palette.find((p) => p.role === "accent")?.hex ??
-      ref.palette.find((p) => p.role === "highlight")?.hex ??
-      ref.palette[1]?.hex ??
-      "#ffffff";
-    const bodyColor =
-      ref.palette.find((p) => p.role === "highlight")?.hex ??
-      ref.palette[2]?.hex ??
-      "#aaaaaa";
-    const bgColor = ref.palette[0]?.hex ?? "#000000";
-
-    const enforcement = ref.strength >= 71
-      ? "STRICT — use these exact hex values for all fill colors"
-      : ref.strength >= 31
-      ? "NOTICEABLE — let these colors dominate fills"
-      : "LOOSE — draw inspiration from this palette";
-
-    parts.push(
-      `Reference color palette (${enforcement}): ${swatches}`,
-      `  → Title/accent text fill: ${textColor}`,
-      `  → Body/meta text fill: ${bodyColor}`,
-      `  → Background atmosphere: ${bgColor} (only if no image)`,
-    );
-  }
-
-  const activeNonColorTargets = Object.entries(ref.targets)
-    .filter(([k, v]) => v && k !== "color").map(([k]) => k).join(", ");
-  if (activeNonColorTargets && ref.strength > 20) {
-    parts.push(`Other reference influence (strength ${ref.strength}/100) on: ${activeNonColorTargets}`);
-  }
-
-  return parts.length ? `\nREFERENCE GUIDANCE:\n${parts.join("\n")}` : "";
-}
-
 function buildSystemPrompt(): string {
   return `You are a world-class graphic designer specializing in film and exhibition posters.
 Your aesthetic references: A24, Criterion Collection, MoMA, Tate, ICA, Taschen.
@@ -95,7 +46,7 @@ function buildUserPrompt(
   setup: PosterSetupConfig,
   canvas: CanvasConfig,
   brief?: DesignBrief,
-  reference?: ReferenceContext,
+  reference?: EnrichedRefCtx,
 ): string {
   const recipe = RECIPES[setup.styleRecipe] ?? RECIPES["cinematic-rain"];
 
@@ -114,8 +65,8 @@ function buildUserPrompt(
     setup.language === "zh"    ? "Use Chinese text only." :
                                   "Use English text.";
 
-  const briefSection  = brief     ? buildBriefSection(brief)         : "";
-  const refSection    = reference ? buildReferenceSection(reference)  : "";
+  const briefSection = brief ? buildBriefSection(brief) : "";
+  const refSection   = reference ? buildReferenceSection(reference, "layout") : "";
 
   return `Create a poster layout JSON.
 
@@ -127,7 +78,7 @@ Concept: ${setup.prompt || `a ${setup.posterType} poster`}
 ${briefSection}
 ${refSection}
 
-Typography from recipe (use as baseline, adjust to match brief):
+Typography from recipe (use as baseline, adjust to match brief and reference):
   Title font: ${recipe.type.titleFamily}, weight ${recipe.type.titleWeight}, letter-spacing ${recipe.type.titleLetterSpacing}
   Body font: ${recipe.type.bodyFamily}
   Title color: ${recipe.type.titleColor} | Body color: ${recipe.type.bodyColor}
@@ -174,7 +125,7 @@ export async function POST(req: NextRequest) {
   const setup: PosterSetupConfig = body.setup;
   const lockedLayers: PosterLayer[] = body.lockedLayers ?? [];
   const brief: DesignBrief | undefined = body.brief;
-  const reference: ReferenceContext | undefined = body.reference;
+  const reference: EnrichedRefCtx | undefined = body.reference;
 
   const canvas = getCanvasConfig(setup);
 

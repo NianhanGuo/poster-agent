@@ -1,15 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { PosterLayer } from "@/types/poster";
-import type { PaletteColor } from "@/lib/colorExtract";
+import { buildReferenceSection } from "@/lib/referencePrompt";
+import type { EnrichedRefCtx } from "@/lib/referencePrompt";
 
 type StyleHint = "cinematic" | "editorial" | "brutalist" | "fit-to-canvas" | "improve" | undefined;
-
-interface ReferenceContext {
-  strength: number;
-  targets: Record<string, boolean>;
-  instruction?: string;
-  palette?: PaletteColor[];
-}
 
 function buildStyleDirective(hint: StyleHint, recipe: string): string {
   switch (hint) {
@@ -68,12 +62,12 @@ export async function POST(req: NextRequest) {
   } = await req.json();
 
   const recipe = styleRecipe ?? style ?? "cinematic-rain";
+  const ref = reference as EnrichedRefCtx | undefined;
 
   if (!process.env.OPENAI_API_KEY) {
     return NextResponse.json({ layers, demo: true });
   }
 
-  // Filter to unlocked text layers only
   const textLayers = (layers as PosterLayer[]).filter(
     (l) => l.type.endsWith("Text") && !lockedLayers?.includes(l.id),
   );
@@ -87,33 +81,7 @@ export async function POST(req: NextRequest) {
     language === "zh"    ? "Chinese" : "English";
 
   const styleDirective = buildStyleDirective(styleHint as StyleHint, recipe);
-
-  const ref = reference as ReferenceContext | undefined;
-
-  // Palette color guidance for text fills
-  let refNote = "";
-  if (ref?.palette && ref.palette.length > 0) {
-    const colorActive   = ref.targets?.color;
-    const typoActive    = ref.targets?.typography;
-    if (colorActive || typoActive) {
-      const titleColor =
-        ref.palette.find((p) => p.role === "accent")?.hex ??
-        ref.palette.find((p) => p.role === "highlight")?.hex ??
-        ref.palette[1]?.hex;
-      const bodyColor =
-        ref.palette.find((p) => p.role === "highlight")?.hex ??
-        ref.palette[2]?.hex;
-      const enforcement = (ref.strength ?? 50) >= 71 ? "STRICT — use exactly" : "preferred";
-
-      refNote += `\nReference color palette (${enforcement}): ${ref.palette.map((p) => `${p.hex}(${p.role})`).join(", ")}`;
-      if (titleColor) refNote += `\n  → Title text fill: ${titleColor}`;
-      if (bodyColor)  refNote += `\n  → Body/meta text fill: ${bodyColor}`;
-      refNote += "\n  → Do NOT use colors outside this palette for text fills.";
-    }
-  }
-  if (ref?.instruction && ref.targets?.typography) {
-    refNote += `\nReference typography guidance: ${ref.instruction}`;
-  }
+  const refSection = ref ? buildReferenceSection(ref, "typography") : "";
 
   const systemPrompt = `You are a typography expert and art director specializing in ${posterType === "film" ? "film" : "exhibition"} posters.
 You make bold, intentional typographic decisions — never safe or average.
@@ -121,7 +89,8 @@ You output ONLY valid JSON — no markdown, no prose.`;
 
   const userPrompt = `Upgrade the typography for a "${recipe}" poster. Language: ${langNote}.
 Canvas: ${canvasWidth ?? 800} × ${canvasHeight ?? 1200}px
-${styleDirective}${refNote}
+${styleDirective}
+${refSection}
 
 Current text layers (improve these — do NOT change "text" or "id" values):
 ${JSON.stringify(textLayers, null, 2)}
@@ -151,7 +120,6 @@ Rules:
     const improved: PosterLayer[] = Array.isArray(parsed.layers) ? parsed.layers : [];
 
     const mergedLayers = (layers as PosterLayer[]).map((l) => {
-      // Never touch locked layers
       if (lockedLayers?.includes(l.id)) return l;
       const updated = improved.find((u) => u.id === l.id);
       if (!updated) return l;

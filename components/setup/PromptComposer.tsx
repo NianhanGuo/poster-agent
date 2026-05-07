@@ -6,6 +6,7 @@ import { usePosterStore } from "@/store/posterStore";
 import { RECIPE_LIST } from "@/lib/styleRecipes";
 import { extractPaletteFromUrl } from "@/lib/colorExtract";
 import type { PaletteColor } from "@/lib/colorExtract";
+import type { ReferenceAnalysis } from "@/types/poster";
 import type {
   PosterType,
   Language,
@@ -21,6 +22,8 @@ interface RefImage {
   id: string;
   url: string;
   palette: PaletteColor[];
+  analysis: ReferenceAnalysis | null;
+  analysisError: string;
 }
 
 type Setter = (p: Partial<PosterSetupConfig>) => void;
@@ -45,8 +48,11 @@ const CANVAS_OPTIONS: { value: CanvasSize; label: string; dim: string }[] = [
 const REF_TARGET_OPTIONS: { key: keyof RefTargets; label: string }[] = [
   { key: "mood",            label: "Mood" },
   { key: "color",           label: "Color" },
-  { key: "layout",          label: "Layout" },
+  { key: "layout",          label: "Composition" },
   { key: "backgroundStyle", label: "Background" },
+  { key: "typography",      label: "Typography" },
+  { key: "texture",         label: "Texture" },
+  { key: "lighting",        label: "Lighting" },
 ];
 
 interface RefTargets {
@@ -54,6 +60,9 @@ interface RefTargets {
   color: boolean;
   layout: boolean;
   backgroundStyle: boolean;
+  typography: boolean;
+  texture: boolean;
+  lighting: boolean;
 }
 
 export function PromptComposer() {
@@ -74,8 +83,12 @@ export function PromptComposer() {
 
   const [refImages, setRefImages] = useState<RefImage[]>([]);
   const [refStrength, setRefStrength] = useState(55);
-  const [refTargets, setRefTargets] = useState<RefTargets>({ mood: true, color: true, layout: false, backgroundStyle: false });
+  const [refTargets, setRefTargets] = useState<RefTargets>({
+    mood: true, color: true, layout: false,
+    backgroundStyle: false, typography: false, texture: false, lighting: false,
+  });
   const [refExtracting, setRefExtracting] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
 
   const set: Setter = (p) => setCfg((c) => ({ ...c, ...p }));
 
@@ -84,12 +97,40 @@ export function PromptComposer() {
     for (const file of files) {
       const url = await new Promise<string>((res) => {
         const reader = new FileReader();
-        reader.onload = (e) => res(e.target?.result as string ?? "");
+        reader.onload = (e) => res((e.target?.result as string) ?? "");
         reader.readAsDataURL(file);
       });
       if (!url) continue;
-      const palette = await extractPaletteFromUrl(url);
-      setRefImages((prev) => [...prev, { id: uuidv4(), url, palette }]);
+
+      // Run palette extraction and vision analysis in parallel
+      const [palette, analysisResult] = await Promise.all([
+        extractPaletteFromUrl(url).catch(() => [] as PaletteColor[]),
+        fetch("/api/analyze/reference", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageUrl: url }),
+        })
+          .then((r) => r.json() as Promise<{ analysis: ReferenceAnalysis | null; error?: string; demo?: boolean }>)
+          .catch(() => ({ analysis: null as ReferenceAnalysis | null, error: "Network error", demo: undefined as boolean | undefined })),
+      ]);
+
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[PromptComposer] Reference analysis:", analysisResult.analysis);
+        console.log("[PromptComposer] Palette:", palette.map((p) => p.hex));
+      }
+
+      setRefImages((prev) => [
+        ...prev,
+        {
+          id: uuidv4(),
+          url,
+          palette,
+          analysis: analysisResult.analysis,
+          analysisError: analysisResult.demo
+            ? "Vision analysis requires API key — using palette only"
+            : (analysisResult.error ?? ""),
+        },
+      ]);
     }
     setRefExtracting(false);
   }, []);
@@ -106,36 +147,58 @@ export function PromptComposer() {
 
   function buildRefCtx() {
     if (refImages.length === 0) return undefined;
-    // Merge palettes from all reference images, deduplicate
+
+    // Merge palettes from all reference images, deduplicate by Euclidean distance
     const merged: PaletteColor[] = [];
     for (const img of refImages) {
       for (const color of img.palette) {
         const r = parseInt(color.hex.slice(1, 3), 16);
         const g = parseInt(color.hex.slice(3, 5), 16);
         const b = parseInt(color.hex.slice(5, 7), 16);
-        if (merged.length < 8 && merged.every((s) => {
-          const sr = parseInt(s.hex.slice(1, 3), 16);
-          const sg = parseInt(s.hex.slice(3, 5), 16);
-          const sb = parseInt(s.hex.slice(5, 7), 16);
-          return Math.sqrt((r - sr) ** 2 + (g - sg) ** 2 + (b - sb) ** 2) > 45;
-        })) {
+        if (
+          merged.length < 8 &&
+          merged.every((s) => {
+            const sr = parseInt(s.hex.slice(1, 3), 16);
+            const sg = parseInt(s.hex.slice(3, 5), 16);
+            const sb = parseInt(s.hex.slice(5, 7), 16);
+            return Math.sqrt((r - sr) ** 2 + (g - sg) ** 2 + (b - sb) ** 2) > 45;
+          })
+        ) {
           merged.push(color);
         }
       }
     }
+
+    // Use first image's analysis (most recent single-image reference is most reliable)
+    const analysis = refImages[0]?.analysis ?? null;
+
     return {
       strength: refStrength,
       targets: refTargets,
       palette: merged,
-      hasImage: false,
+      analysis,
       instruction: `${refImages.length} reference image${refImages.length > 1 ? "s" : ""} provided`,
     };
   }
+
+  const noTargetsSelected = refImages.length > 0 && !Object.values(refTargets).some(Boolean);
+  const analysisAvailable = refImages.some((r) => r.analysis !== null);
 
   async function generate() {
     setBusy(true);
     setError("");
     const refCtx = buildRefCtx();
+
+    if (process.env.NODE_ENV !== "production" && refCtx) {
+      console.log("[PromptComposer] Reference context sent to generation:", {
+        strength: refCtx.strength,
+        targets: refCtx.targets,
+        paletteColors: refCtx.palette.map((p) => p.hex),
+        hasAnalysis: !!refCtx.analysis,
+        analysisSummary: refCtx.analysis?.visualSummary,
+      });
+    }
+
     try {
       const layoutRes = await fetch("/api/generate/layout", {
         method: "POST",
@@ -299,9 +362,21 @@ export function PromptComposer() {
             >
               <input {...getRefInputProps()} />
               <span className="font-mono text-[10px] text-zinc-700">
-                {refExtracting ? "extracting palette…" : isRefDragActive ? "drop" : "drop images here, or click to browse"}
+                {refExtracting
+                  ? "analyzing…"
+                  : isRefDragActive
+                  ? "drop"
+                  : "drop images here, or click to browse"}
               </span>
             </div>
+
+            {/* Warning: image uploaded but no targets selected */}
+            {noTargetsSelected && (
+              <div className="flex items-center gap-2 font-mono text-[9px] text-amber-600/80">
+                <span>⚠</span>
+                <span>Reference image not applied — select at least one target below</span>
+              </div>
+            )}
 
             {refImages.length > 0 && (
               <>
@@ -314,6 +389,14 @@ export function PromptComposer() {
                         alt="reference"
                         className="w-full h-full object-cover rounded-sm"
                         style={{ border: "1px solid rgba(255,255,255,0.07)" }}
+                      />
+                      {/* Analysis status badge */}
+                      <span
+                        className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full"
+                        style={{
+                          background: img.analysis ? "#4ade80" : img.analysisError ? "#f59e0b" : "#52525b",
+                        }}
+                        title={img.analysis ? "Vision analysis complete" : (img.analysisError || "Analyzing…")}
                       />
                       <button
                         onClick={() => removeRefImage(img.id)}
@@ -330,10 +413,60 @@ export function PromptComposer() {
                   ))}
                 </div>
 
+                {/* Analysis status line */}
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[9px] text-zinc-700">
+                    {analysisAvailable
+                      ? `● Vision analysis complete — ${Object.values(refTargets).filter(Boolean).length} target${Object.values(refTargets).filter(Boolean).length !== 1 ? "s" : ""} active`
+                      : refImages[0]?.analysisError
+                      ? `⚠ ${refImages[0].analysisError}`
+                      : "Analyzing…"}
+                  </span>
+                  <button
+                    onClick={() => setShowDebug((v) => !v)}
+                    className="font-mono text-[8px] text-zinc-800 hover:text-zinc-600 transition-colors"
+                  >
+                    {showDebug ? "hide debug" : "debug"}
+                  </button>
+                </div>
+
+                {/* Debug panel */}
+                {showDebug && (
+                  <div
+                    className="rounded-sm p-2 space-y-1.5 font-mono text-[8px] text-zinc-600"
+                    style={{ border: "1px solid rgba(255,255,255,0.06)", background: "rgba(0,0,0,0.4)" }}
+                  >
+                    <div>Images: {refImages.length} · Strength: {refStrength}%</div>
+                    <div>Targets: {Object.entries(refTargets).filter(([,v])=>v).map(([k])=>k).join(", ") || "none"}</div>
+                    {refImages[0]?.palette.length > 0 && (
+                      <div>Palette: {refImages[0].palette.map((p) => p.hex).join(", ")}</div>
+                    )}
+                    {refImages[0]?.analysis && (
+                      <>
+                        <div className="text-zinc-500">── Vision analysis ──</div>
+                        <div>Summary: {refImages[0].analysis.visualSummary}</div>
+                        <div>Mood: {refImages[0].analysis.mood}</div>
+                        <div>Composition: {refImages[0].analysis.composition}</div>
+                        <div>Shapes: {refImages[0].analysis.shapes}</div>
+                        <div>Texture: {refImages[0].analysis.texture}</div>
+                        <div>Lighting: {refImages[0].analysis.lighting}</div>
+                        <div>Typography: {refImages[0].analysis.typographyStyle}</div>
+                        <div>Colors: {refImages[0].analysis.palette.join(", ")}</div>
+                      </>
+                    )}
+                    {refImages[0]?.analysisError && (
+                      <div className="text-amber-600/70">⚠ {refImages[0].analysisError}</div>
+                    )}
+                  </div>
+                )}
+
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="font-mono text-[9px] text-zinc-600 uppercase tracking-[0.15em]">Influence</label>
-                    <span className="font-mono text-[9px] text-zinc-500">{refStrength}%</span>
+                    <span className="font-mono text-[9px] text-zinc-500">
+                      {refStrength}%
+                      {refStrength >= 71 ? " strict" : refStrength >= 31 ? " noticeable" : " loose"}
+                    </span>
                   </div>
                   <input
                     type="range"

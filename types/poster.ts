@@ -188,6 +188,18 @@ export interface ProjectVersion {
 
 export type { PaletteColor } from "@/lib/colorExtract";
 
+// Structured result from GPT-4o vision analysis of a reference image
+export interface ReferenceAnalysis {
+  palette: string[];        // hex values ordered dominant → least
+  mood: string;
+  composition: string;
+  typographyStyle: string;
+  shapes: string;
+  texture: string;
+  lighting: string;
+  visualSummary: string;
+}
+
 export interface ReferenceConfig {
   imageUrl: string | null;
   strength: number; // 0–100
@@ -203,6 +215,8 @@ export interface ReferenceConfig {
   instruction: string;
   palette: import("@/lib/colorExtract").PaletteColor[];
   paletteError: string;
+  analysis: ReferenceAnalysis | null;
+  analysisError: string;
 }
 
 export const DEFAULT_REFERENCE: ReferenceConfig = {
@@ -220,6 +234,8 @@ export const DEFAULT_REFERENCE: ReferenceConfig = {
   instruction: "",
   palette: [],
   paletteError: "",
+  analysis: null,
+  analysisError: "",
 };
 
 // ─── Asset library ────────────────────────────────────────────────────────────

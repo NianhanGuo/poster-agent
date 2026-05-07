@@ -3,8 +3,14 @@ import { useState } from "react";
 import { usePosterStore } from "@/store/posterStore";
 
 export function AIToolbar() {
-  const { project, setProject, setGenerating, isGenerating, getSortedLayers } =
-    usePosterStore();
+  const {
+    project,
+    setProject,
+    setGenerating,
+    isGenerating,
+    getSortedLayers,
+    reference,
+  } = usePosterStore();
   const [command, setCommand] = useState("");
   const [error, setError] = useState("");
 
@@ -12,10 +18,24 @@ export function AIToolbar() {
 
   const lockedLayers = getSortedLayers().filter((l) => l.locked);
 
+  // Build reference context from store — passed to every AI call
+  function buildRefCtx() {
+    const anyTarget = Object.values(reference.targets).some(Boolean);
+    if (!anyTarget && !reference.instruction) return undefined;
+    return {
+      strength: reference.strength,
+      targets: reference.targets,
+      palette: reference.palette.length > 0 ? reference.palette : undefined,
+      analysis: reference.analysis ?? undefined,
+      instruction: reference.instruction || undefined,
+    };
+  }
+
   async function runLayout(promptOverride?: string) {
     if (!project) return;
     setGenerating(true, "regenerating…");
     setError("");
+    const refCtx = buildRefCtx();
     try {
       const res = await fetch("/api/generate/layout", {
         method: "POST",
@@ -30,6 +50,7 @@ export function AIToolbar() {
             aiWriteCopy: true,
           },
           lockedLayers,
+          reference: refCtx,
         }),
       });
       if (!res.ok) throw new Error();
@@ -44,6 +65,7 @@ export function AIToolbar() {
           styleRecipe: project.styleRecipe,
           width: project.canvas.width,
           height: project.canvas.height,
+          reference: refCtx,
         }),
       });
       const imgData = await imgRes.json();
@@ -66,6 +88,7 @@ export function AIToolbar() {
     if (!project) return;
     setGenerating(true, "generating image…");
     setError("");
+    const refCtx = buildRefCtx();
     try {
       const res = await fetch("/api/generate/image", {
         method: "POST",
@@ -75,6 +98,7 @@ export function AIToolbar() {
           styleRecipe: project.styleRecipe,
           width: project.canvas.width,
           height: project.canvas.height,
+          reference: refCtx,
         }),
       });
       const { url } = await res.json();
@@ -96,6 +120,7 @@ export function AIToolbar() {
     if (!project) return;
     setGenerating(true, "refining type…");
     setError("");
+    const refCtx = buildRefCtx();
     try {
       const res = await fetch("/api/generate/typography", {
         method: "POST",
@@ -106,6 +131,7 @@ export function AIToolbar() {
           posterType: project.posterType,
           language: project.language,
           lockedLayers: lockedLayers.map((l) => l.id),
+          reference: refCtx,
         }),
       });
       if (!res.ok) throw new Error();
@@ -132,6 +158,8 @@ export function AIToolbar() {
     { label: "Variation", fn: () => runLayout(`Create a different composition: ${project.promptHistory[project.promptHistory.length - 1] ?? ""}`) },
   ];
 
+  const hasRef = !!reference.imageUrl || reference.analysis != null;
+
   return (
     <div className="flex-none border-b border-zinc-900 px-5 h-9 flex items-center gap-4">
       {/* Natural language command */}
@@ -143,6 +171,16 @@ export function AIToolbar() {
         placeholder="Describe a change…"
         className="flex-1 bg-transparent font-mono text-[10px] tracking-wide text-zinc-400 placeholder:text-zinc-700 outline-none"
       />
+
+      {/* Reference active indicator */}
+      {hasRef && (
+        <span
+          className="font-mono text-[8px] tracking-wide uppercase text-zinc-600 flex-none"
+          title={`Reference active — ${Object.entries(reference.targets).filter(([,v])=>v).map(([k])=>k).join(", ")}`}
+        >
+          ref ●
+        </span>
+      )}
 
       {/* Action links */}
       <div className="flex items-center gap-0">
