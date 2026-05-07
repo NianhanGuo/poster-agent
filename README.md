@@ -1,111 +1,93 @@
-# Poster Agent — AI-Powered Poster Design Studio
+# Poster Agent
 
-A layer-based poster editor where AI creates the initial design and you control every element. Build personalized film and exhibition posters with full manual override.
+A layer-based AI poster design studio for film and exhibition posters. Built for designers who want full control — AI generates the initial layout and image, you edit every element.
 
 ## Features
 
-- **Google Authentication** — sign in with Google, all projects are saved to your account
-- **AI Layout Generation** — Claude generates a complete structured poster layout (not a flat image) as editable layers
-- **Layer-Based Editor** — built with React-Konva; every element is a draggable, resizable, rotatable layer
-- **Full Layer Controls** — lock, hide, duplicate, delete, reorder, change opacity, rotate, resize
-- **Text Editing** — change font, size, color, style, letter-spacing, alignment inline
-- **Image Input Modes** — upload as background, crop to fit, extract subject (transparent cutout), or style reference only
-- **Text-Behind-Subject Effect** — foreground cutout layer sits above text, above background — enabling the cinematic text-behind-subject look
-- **AI Edit Buttons** — Regenerate All, New Image Only, Improve Typography, Improve Layout, Create Variation (respects locked layers)
-- **AI Copy Mode** — toggle "AI Write Copy" to let Claude generate title/subtitle/credits, or provide your own
-- **PNG Export** — export the full-resolution poster
-- **Project Saving** — projects saved as JSON with full layer state, prompt history, and locked layer tracking
+- **AI Layout Generation** — GPT-4o generates a complete structured poster layout as editable layers (positions, typography, hierarchy)
+- **AI Image Generation** — DALL-E 3 generates the background image with intentional negative space for typography
+- **7 Style Recipes** — Cinematic Rain, Gallery Minimal, Brutalist Wall, Soft Editorial, Surreal Film, Archive Museum, Experimental Type
+- **Layer-Based Editor** — React-Konva canvas; every element is draggable, resizable, and rotatable
+- **Full Layer Controls** — lock, hide, duplicate, delete, reorder, change opacity
+- **Text Editing** — font, size, color, style, letter-spacing, alignment
+- **Image Upload** — background, crop-to-fit, subject extraction, or as-is
+- **AI Refinement Bar** — natural language commands + one-click Regenerate / Image / Type / Variation
+- **PNG Export** — full-resolution canvas export
+- **Demo Mode** — runs with zero environment variables (mock layouts + gradient placeholders)
 
 ## Tech Stack
 
-- **Next.js 16** (App Router)
-- **React-Konva** for the canvas editor
-- **NextAuth v5** with Google provider
-- **Prisma v7** + SQLite (via libsql adapter)
-- **Zustand** + Immer for editor state
-- **Claude (Anthropic API)** for layout and typography generation
-- **Replicate** (optional) for AI image generation
-- **Remove.bg** (optional) for subject extraction
+- **Next.js 16** (App Router, Turbopack)
+- **React-Konva** — canvas editor
+- **OpenAI** — GPT-4o for layout + typography, DALL-E 3 for images
+- **Zustand** + Immer — editor state
+- **Remove.bg** (optional) — subject background removal
 
-## Setup
-
-### 1. Clone and install
+## Quick Start
 
 ```bash
 git clone https://github.com/NianhanGuo/poster-agent.git
 cd poster-agent
 npm install
-```
-
-### 2. Environment variables
-
-Copy `.env.local.example` to `.env.local` and fill in your keys:
-
-```bash
-cp .env.local .env.local
-```
-
-Required:
-- `NEXTAUTH_SECRET` — any random string (run `openssl rand -base64 32`)
-- `NEXTAUTH_URL` — `http://localhost:3000` for local dev
-- `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` — from [Google Cloud Console](https://console.cloud.google.com) (OAuth 2.0)
-- `ANTHROPIC_API_KEY` — from [Anthropic Console](https://console.anthropic.com)
-
-Optional (for AI image generation):
-- `REPLICATE_API_TOKEN` — from [Replicate](https://replicate.com)
-- `REMOVE_BG_API_KEY` — from [Remove.bg](https://remove.bg/api)
-
-### 3. Database
-
-```bash
-npx prisma migrate dev
-```
-
-### 4. Run
-
-```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000). The app runs in demo mode with no API keys.
+
+## Environment Variables
+
+Create `.env.local`:
+
+```bash
+# Required for AI features
+OPENAI_API_KEY=sk-...
+
+# Optional — for subject background removal
+REMOVE_BG_API_KEY=...
+```
+
+### Vercel Deployment
+
+1. Push to GitHub
+2. Import the repo in [Vercel](https://vercel.com)
+3. Add `OPENAI_API_KEY` in **Project → Settings → Environment Variables**
+4. Deploy
+
+No database or auth setup required.
 
 ## How It Works
 
-1. **Sign in** with Google
-2. **Create a new poster** — choose type (film/exhibition), canvas size, language, style preset, and prompt
-3. **One-click generate** — Claude generates a structured JSON layout with text layers and an image prompt; if Replicate is configured, the background image is generated too
-4. **Edit in the canvas** — drag layers, resize, rotate, edit text inline, change fonts/colors
-5. **Use the layer panel** — reorder, lock, hide, duplicate, or delete any layer
-6. **AI edit buttons** — iterate: regenerate the whole design, just the image, just the typography, or create a variation; locked layers are always preserved
-7. **Upload images** — drop an image and choose how to use it: as background, crop to fit, extract the subject, or style reference
-8. **Export** — click "Export PNG" on the canvas for the full-resolution output
+1. **Compose** — choose poster type (film / exhibition), canvas size, style recipe, and describe the concept
+2. **Generate** — GPT-4o builds a structured JSON layout; DALL-E 3 generates the background image
+3. **Edit** — drag layers, resize, rotate, edit text, change fonts and colors in the inspector
+4. **Refine** — use the AI bar to regenerate, swap the image, improve typography, or create a variation; locked layers are always preserved
+5. **Export** — Export PNG for full-resolution output
 
-## Project JSON Schema
+## Demo Mode
 
-Projects are stored as JSON with this shape:
+When `OPENAI_API_KEY` is not set:
+- `/api/generate/layout` returns a mock layout (one per style recipe)
+- `/api/generate/image` returns an SVG gradient matching the recipe's color palette
+- The editor is fully usable — drag, resize, edit text, upload images, export
+
+## Layer Schema
 
 ```json
 {
-  "id": "cuid",
-  "userId": "cuid",
-  "title": "Elysium",
-  "canvas": { "size": "a4", "width": 794, "height": 1123 },
-  "layers": [
-    {
-      "id": "uuid",
-      "type": "background-image | title-text | subtitle-text | date-location-text | credits-text | foreground-cutout | user-text | user-image",
-      "label": "Background",
-      "x": 0, "y": 0, "width": 794, "height": 1123,
-      "rotation": 0, "opacity": 1,
-      "visible": true, "locked": false, "zIndex": 1,
-      "imageData": { "src": "/uploads/...", "fit": "fill" },
-      "textData": { "text": "ELYSIUM", "fontSize": 120, "fontFamily": "Helvetica", "fontStyle": "bold", "fill": "#ffffff", "align": "center" }
-    }
-  ],
-  "stylePreset": "cinematic",
-  "posterType": "film",
-  "language": "english",
-  "promptHistory": ["A noir thriller in 1940s Shanghai"],
-  "lockedLayers": []
+  "id": "uuid",
+  "type": "backgroundImage | titleText | subtitleText | metaText | bodyText | foregroundCutout | userText | userImage",
+  "label": "Title",
+  "x": 40, "y": 700, "width": 714, "height": 120,
+  "rotation": 0, "opacity": 1, "visible": true, "locked": false, "zIndex": 4,
+  "textData": {
+    "text": "MEMORIA",
+    "fontSize": 120,
+    "fontFamily": "Impact",
+    "fontStyle": "normal",
+    "fill": "#ffffff",
+    "align": "center",
+    "letterSpacing": 14,
+    "lineHeight": 1.1
+  }
 }
 ```

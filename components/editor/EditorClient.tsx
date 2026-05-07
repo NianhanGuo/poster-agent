@@ -52,7 +52,10 @@ export function EditorClient() {
 
         <div className="flex items-center gap-5">
           {isDemo && (
-            <span className="font-mono text-[10px] tracking-[0.1em] text-zinc-700">
+            <span
+              className="font-mono text-[10px] tracking-[0.1em] text-zinc-700"
+              title="Add OPENAI_API_KEY for AI generation"
+            >
               ○ demo
             </span>
           )}

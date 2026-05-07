@@ -2,65 +2,76 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Layer } from "@/types/poster";
 
 export async function POST(req: NextRequest) {
-  const { layers, styleRecipe, style, posterType, language, lockedLayers } =
-    await req.json();
+  const { layers, styleRecipe, style, posterType, language, lockedLayers } = await req.json();
   const recipe = styleRecipe ?? style ?? "cinematic-rain";
 
-  // Demo mode: return layers unchanged
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!process.env.OPENAI_API_KEY) {
     return NextResponse.json({ layers, demo: true });
   }
 
   const textLayers = (layers as Layer[]).filter(
-    (l) => l.type.includes("text") && !lockedLayers.includes(l.id)
+    (l) => l.type.endsWith("Text") && !lockedLayers.includes(l.id)
   );
 
   if (textLayers.length === 0) {
     return NextResponse.json({ layers, demo: false });
   }
 
-  const prompt = `You are a typography expert improving poster text layers.
-Style recipe: ${recipe}, Poster type: ${posterType}, Language: ${language}
+  const langNote =
+    language === "mixed" ? "bilingual English/Chinese" :
+    language === "zh"    ? "Chinese" :
+                            "English";
 
-Current text layers (JSON):
+  const systemPrompt = `You are a typography expert specializing in ${posterType === "film" ? "film" : "exhibition"} posters. You output ONLY valid JSON arrays — no markdown, no prose.`;
+
+  const userPrompt = `Improve the typography for a "${recipe}" style poster. Language: ${langNote}.
+
+Current text layers:
 ${JSON.stringify(textLayers, null, 2)}
 
-Improve ONLY the typography properties (fontSize, fontFamily, fontStyle, fill, align, letterSpacing, lineHeight, x, y, width, height).
-Do NOT change the text content.
-Return ONLY a JSON array of the improved layers with the same IDs.
-Ensure visual hierarchy — vary sizes dramatically.`;
+Rules:
+- Improve ONLY these properties: fontSize, fontFamily, fontStyle, fill, align, letterSpacing, lineHeight, x, y, width, height
+- Do NOT change the "text" content or "id" fields
+- Create clear visual hierarchy: title should be 3–5× larger than body text
+- Font choices must match the recipe aesthetic
+- For Chinese text: prefer system CJK fonts (e.g. "Noto Serif SC", "Source Han Sans")
+- Return ONLY a JSON array of the improved layer objects with the same IDs, matching this shape:
+  [{ "id": "...", "textData": { "fontSize": ..., "fontFamily": "...", ... }, "x": ..., "y": ..., "width": ..., "height": ... }]`;
 
   try {
-    const { default: Anthropic } = await import("@anthropic-ai/sdk");
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const { default: OpenAI } = await import("openai");
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    const message = await anthropic.messages.create({
-      model: "claude-opus-4-7",
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
       max_tokens: 2048,
-      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user",   content: userPrompt + '\n\nReturn as: { "layers": [ ... ] }' },
+      ],
     });
 
-    const text =
-      message.content[0].type === "text" ? message.content[0].text : "[]";
-    let improved: Layer[];
-    try {
-      improved = JSON.parse(text);
-    } catch {
-      const match = text.match(/\[[\s\S]*\]/);
-      improved = match ? JSON.parse(match[0]) : textLayers;
-    }
+    const text = completion.choices[0]?.message?.content ?? "{}";
+    const parsed: { layers: Layer[] } = JSON.parse(text);
+    const improved: Layer[] = Array.isArray(parsed.layers) ? parsed.layers : [];
 
     const mergedLayers = (layers as Layer[]).map((l) => {
       const updated = improved.find((u) => u.id === l.id);
-      return updated ? { ...l, ...updated } : l;
+      if (!updated) return l;
+      return {
+        ...l,
+        x: updated.x ?? l.x,
+        y: updated.y ?? l.y,
+        width: updated.width ?? l.width,
+        height: updated.height ?? l.height,
+        textData: updated.textData ? { ...l.textData, ...updated.textData } : l.textData,
+      };
     });
 
     return NextResponse.json({ layers: mergedLayers, demo: false });
   } catch (err) {
     console.error("Typography improvement error:", err);
-    return NextResponse.json(
-      { error: "Failed to improve typography" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to improve typography" }, { status: 500 });
   }
 }
