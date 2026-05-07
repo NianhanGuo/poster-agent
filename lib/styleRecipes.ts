@@ -231,6 +231,36 @@ export const RECIPES: Record<StyleRecipe, RecipeDef> = {
       density: "moderate",
     },
   },
+
+  "blur-field": {
+    id: "blur-field",
+    name: "Blur Field",
+    tagline: "Soft light, airy geometry, gallery calm",
+    imageKeywords:
+      "abstract color field, blurred translucent geometric shapes, soft overlapping circles and rectangles, pastel gradients, diffused light, muted lavender cyan pink cream, paper texture, subtle grain, large negative space, contemporary gallery poster, atmospheric",
+    imageAvoid:
+      "realistic landscapes, characters, faces, literal objects, sharp icons, text, logos, AI fantasy scenes, saturated neon, hard edges",
+    palette: {
+      bg: "#f0eff8",
+      surface: "#e4dff0",
+      text: "#2a2630",
+      accent: "#7b6ea6",
+    },
+    type: {
+      titleFamily: "Helvetica Neue",
+      bodyFamily: "Helvetica Neue",
+      titleWeight: "300",
+      titleAlign: "left",
+      titleLetterSpacing: 8,
+      titleColor: "#2a2630",
+      bodyColor: "#7b7490",
+    },
+    layout: {
+      titlePosition: "off-center",
+      align: "left",
+      density: "sparse",
+    },
+  },
 };
 
 export const RECIPE_LIST = Object.values(RECIPES);

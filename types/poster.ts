@@ -10,7 +10,8 @@ export type StyleRecipe =
   | "soft-editorial"
   | "surreal-film"
   | "archive-museum"
-  | "experimental-type";
+  | "experimental-type"
+  | "blur-field";
 
 export type CanvasSize =
   | "instagram-post"

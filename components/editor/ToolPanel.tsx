@@ -510,7 +510,34 @@ function TransformInspector({ layer, onLayer }: {
             onChange={(e) => onLayer({ rotation: Number(e.target.value) })}
             className="flex-1 h-0.5 accent-zinc-400"
           />
-          <span className="font-mono text-[9px] text-zinc-600 w-8 text-right flex-none">{Math.round(layer.rotation)}°</span>
+          <input
+            type="number"
+            min={-180} max={180}
+            value={Math.round(layer.rotation)}
+            onChange={(e) => onLayer({ rotation: Number(e.target.value) })}
+            className="w-10 bg-transparent border-b border-zinc-800 text-zinc-300 font-mono text-[9px] outline-none pb-0.5 text-right"
+          />
+          <span className="font-mono text-[9px] text-zinc-700 flex-none">°</span>
+        </div>
+      </Row>
+      <Row label="">
+        <div className="flex items-center gap-1">
+          {([0, 90, -90] as const).map((deg) => (
+            <button
+              key={deg}
+              onClick={() => onLayer({ rotation: deg })}
+              className="font-mono text-[9px] px-1.5 py-0.5 border border-zinc-800 hover:border-zinc-600 text-zinc-600 hover:text-zinc-300 transition-colors"
+            >
+              {deg}°
+            </button>
+          ))}
+          <button
+            onClick={() => onLayer({ rotation: 0 })}
+            title="Reset rotation"
+            className="font-mono text-[9px] px-1.5 py-0.5 border border-zinc-800 hover:border-zinc-600 text-zinc-600 hover:text-zinc-300 transition-colors ml-1"
+          >
+            ↺
+          </button>
         </div>
       </Row>
 

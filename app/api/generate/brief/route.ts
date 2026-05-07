@@ -20,6 +20,7 @@ function buildDemoBrief(recipe: RecipeDef): DesignBrief {
     "surreal-film":      { mood: "uncanny tension",   composition: "asymmetric", typographyStrategy: "layered-type",   colorStrategy: "duotone",        imageStrategy: "abstract",         negativeSpace: "medium" },
     "archive-museum":    { mood: "austere authority", composition: "grid",       typographyStrategy: "subtle-type",    colorStrategy: "muted",          imageStrategy: "background-hero",  negativeSpace: "medium" },
     "experimental-type": { mood: "typographic noise", composition: "edge-heavy", typographyStrategy: "dominant-title", colorStrategy: "high-contrast",  imageStrategy: "texture",          negativeSpace: "low"    },
+    "blur-field":        { mood: "atmospheric stillness", composition: "asymmetric", typographyStrategy: "subtle-type", colorStrategy: "muted",          imageStrategy: "abstract",         negativeSpace: "high"   },
   };
   return {
     mood: "considered ambiguity",

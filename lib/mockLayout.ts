@@ -183,6 +183,25 @@ export function mockLayout(
       ];
       break;
 
+    case "blur-field":
+      // Airy gallery layout — sparse, light bg, left-aligned, wide tracking
+      layers = [
+        bg(canvas),
+        textLayer("subtitleText", "Subtitle", sub,
+          pad, Math.round(canvas.height * 0.08), Math.round(inner * 0.55),
+          Math.round(metaSize * 1.1), "Helvetica Neue", "normal", "#7b7490", "left", 6, 3),
+        textLayer("titleText", "Title", title,
+          pad, Math.round(canvas.height * 0.55), Math.round(inner * 0.7),
+          Math.round(titleSize * 0.55), "Helvetica Neue", "300", "#2a2630", "left", 8, 4),
+        textLayer("metaText", "Date / Venue", meta,
+          pad, Math.round(canvas.height * 0.85), Math.round(inner * 0.6),
+          metaSize, "Helvetica Neue", "normal", "#9990b0", "left", 4, 2),
+        textLayer("bodyText", "Credits", credits,
+          pad, Math.round(canvas.height * 0.91), inner,
+          creditSize, "Helvetica Neue", "normal", "#b0a8c0", "left", 3, 2),
+      ];
+      break;
+
     case "experimental-type":
     default:
       // Type as composition — large rotated title, extreme contrast
