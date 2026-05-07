@@ -1,35 +1,31 @@
 "use client";
 import { useState } from "react";
+import { v4 as uuidv4 } from "uuid";
+import { usePosterStore } from "@/store/posterStore";
 import type {
   PosterType,
   CanvasSize,
   Language,
   StylePreset,
   PosterSetupConfig,
+  PosterProject,
 } from "@/types/poster";
-
-interface Props {
-  onClose: () => void;
-  onCreate: (projectId: string) => void;
-}
+import { CANVAS_SIZES } from "@/types/poster";
 
 const POSTER_TYPES: { value: PosterType; label: string; icon: string }[] = [
   { value: "film", label: "Film Poster", icon: "🎬" },
   { value: "exhibition", label: "Exhibition Poster", icon: "🖼" },
 ];
 
-const CANVAS_SIZES_LIST: {
-  value: CanvasSize;
-  label: string;
-  dims: string;
-}[] = [
-  { value: "instagram-post", label: "Instagram Post", dims: "1080×1080" },
-  { value: "instagram-story", label: "Instagram Story", dims: "1080×1920" },
-  { value: "square", label: "Square", dims: "800×800" },
-  { value: "a4", label: "A4", dims: "794×1123" },
-  { value: "a3", label: "A3", dims: "1123×1587" },
-  { value: "custom", label: "Custom", dims: "custom" },
-];
+const CANVAS_SIZES_LIST: { value: CanvasSize; label: string; dims: string }[] =
+  [
+    { value: "instagram-post", label: "Instagram Post", dims: "1080×1080" },
+    { value: "instagram-story", label: "Instagram Story", dims: "1080×1920" },
+    { value: "square", label: "Square", dims: "800×800" },
+    { value: "a4", label: "A4", dims: "794×1123" },
+    { value: "a3", label: "A3", dims: "1123×1587" },
+    { value: "custom", label: "Custom", dims: "custom" },
+  ];
 
 const LANGUAGES: { value: Language; label: string }[] = [
   { value: "english", label: "English" },
@@ -37,32 +33,17 @@ const LANGUAGES: { value: Language; label: string }[] = [
   { value: "bilingual", label: "Bilingual" },
 ];
 
-const STYLE_PRESETS: {
-  value: StylePreset;
-  label: string;
-  desc: string;
-}[] = [
+const STYLE_PRESETS: { value: StylePreset; label: string; desc: string }[] = [
   { value: "cinematic", label: "Cinematic", desc: "Dark, moody, high contrast" },
-  {
-    value: "gallery-minimal",
-    label: "Gallery Minimal",
-    desc: "White space, refined typography",
-  },
+  { value: "gallery-minimal", label: "Gallery Minimal", desc: "White space, refined typography" },
   { value: "brutalist", label: "Brutalist", desc: "Raw, unconventional, bold" },
-  {
-    value: "editorial",
-    label: "Editorial",
-    desc: "Magazine-like, strong hierarchy",
-  },
+  { value: "editorial", label: "Editorial", desc: "Magazine-like, strong hierarchy" },
   { value: "surreal", label: "Surreal", desc: "Dreamy, unexpected compositions" },
-  {
-    value: "experimental",
-    label: "Experimental",
-    desc: "Convention-breaking layouts",
-  },
+  { value: "experimental", label: "Experimental", desc: "Convention-breaking layouts" },
 ];
 
-export function PosterSetupModal({ onClose, onCreate }: Props) {
+export function PosterSetupModal() {
+  const { setProject } = usePosterStore();
   const [step, setStep] = useState(1);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState("");
@@ -94,11 +75,10 @@ export function PosterSetupModal({ onClose, onCreate }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ setup: config, lockedLayers: [] }),
       });
-
       if (!layoutRes.ok) throw new Error("Layout generation failed");
       const { layers, canvas, imagePrompt } = await layoutRes.json();
 
-      // 2. Generate image (non-blocking, placeholder if unavailable)
+      // 2. Generate background image (optional — placeholder if unavailable)
       const imgRes = await fetch("/api/generate/image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -111,7 +91,6 @@ export function PosterSetupModal({ onClose, onCreate }: Props) {
       });
       const imgData = await imgRes.json();
 
-      // Inject image URL into background layer if available
       const finalLayers = layers.map(
         (l: { type: string; imageData?: Record<string, unknown> }) => {
           if (l.type === "background-image" && imgData.url) {
@@ -121,92 +100,71 @@ export function PosterSetupModal({ onClose, onCreate }: Props) {
         }
       );
 
-      // 3. Create project
-      const projectRes = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: config.userTitle || config.prompt || "Untitled Poster",
-          canvas,
-          layers: finalLayers,
-          stylePreset: config.stylePreset,
-          posterType: config.posterType,
-          language: config.language,
-          promptHistory: [config.prompt],
-          lockedLayers: [],
-        }),
-      });
-
-      const { project } = await projectRes.json();
-      onCreate(project.id);
+      // 3. Set project directly in Zustand — no DB
+      const now = new Date().toISOString();
+      const project: PosterProject = {
+        id: uuidv4(),
+        userId: "local",
+        title: config.userTitle || config.prompt || "Untitled Poster",
+        canvas,
+        layers: finalLayers,
+        stylePreset: config.stylePreset,
+        posterType: config.posterType,
+        language: config.language,
+        promptHistory: [config.prompt],
+        lockedLayers: [],
+        createdAt: now,
+        updatedAt: now,
+      };
+      setProject(project);
     } catch (e) {
       console.error(e);
-      setError("Generation failed. Please check your API keys and try again.");
+      setError("Generation failed. Check your ANTHROPIC_API_KEY and try again.");
     } finally {
       setIsGenerating(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-zinc-800">
-          <div>
-            <h2 className="text-lg font-semibold text-white">New Poster</h2>
-            <div className="flex gap-1 mt-2">
-              {[1, 2, 3].map((s) => (
-                <div
-                  key={s}
-                  className={`h-1 w-10 rounded-full transition-colors ${s <= step ? "bg-violet-500" : "bg-zinc-700"}`}
-                />
-              ))}
-            </div>
+    <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
+      {/* Header */}
+      <div className="flex items-center justify-between p-6 border-b border-zinc-800">
+        <div>
+          <h1 className="text-lg font-semibold text-white">
+            Poster Agent
+          </h1>
+          <div className="flex gap-1 mt-2">
+            {[1, 2, 3].map((s) => (
+              <div
+                key={s}
+                className={`h-1 w-10 rounded-full transition-colors ${s <= step ? "bg-violet-500" : "bg-zinc-700"}`}
+              />
+            ))}
           </div>
-          <button
-            onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 text-xl"
-          >
-            ×
-          </button>
         </div>
+        <p className="text-xs text-zinc-500">AI poster editor — local only, no account needed</p>
+      </div>
 
-        <div className="p-6 space-y-6">
-          {step === 1 && (
-            <Step1
-              config={config}
-              update={update}
-              onNext={() => setStep(2)}
-            />
-          )}
-          {step === 2 && (
-            <Step2
-              config={config}
-              update={update}
-              onBack={() => setStep(1)}
-              onNext={() => setStep(3)}
-            />
-          )}
-          {step === 3 && (
-            <Step3
-              config={config}
-              update={update}
-              onBack={() => setStep(2)}
-              onGenerate={handleGenerate}
-              isGenerating={isGenerating}
-              error={error}
-            />
-          )}
-        </div>
+      <div className="p-6 space-y-6">
+        {step === 1 && <Step1 config={config} update={update} onNext={() => setStep(2)} />}
+        {step === 2 && <Step2 config={config} update={update} onBack={() => setStep(1)} onNext={() => setStep(3)} />}
+        {step === 3 && (
+          <Step3
+            config={config}
+            update={update}
+            onBack={() => setStep(2)}
+            onGenerate={handleGenerate}
+            isGenerating={isGenerating}
+            error={error}
+          />
+        )}
       </div>
     </div>
   );
 }
 
 function Step1({
-  config,
-  update,
-  onNext,
+  config, update, onNext,
 }: {
   config: PosterSetupConfig;
   update: (p: Partial<PosterSetupConfig>) => void;
@@ -259,9 +217,7 @@ function Step1({
               <input
                 type="number"
                 value={config.customWidth ?? 800}
-                onChange={(e) =>
-                  update({ customWidth: Number(e.target.value) })
-                }
+                onChange={(e) => update({ customWidth: Number(e.target.value) })}
                 className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm"
               />
             </div>
@@ -270,9 +226,7 @@ function Step1({
               <input
                 type="number"
                 value={config.customHeight ?? 600}
-                onChange={(e) =>
-                  update({ customHeight: Number(e.target.value) })
-                }
+                onChange={(e) => update({ customHeight: Number(e.target.value) })}
                 className="w-full mt-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm"
               />
             </div>
@@ -291,10 +245,7 @@ function Step1({
 }
 
 function Step2({
-  config,
-  update,
-  onBack,
-  onNext,
+  config, update, onBack, onNext,
 }: {
   config: PosterSetupConfig;
   update: (p: Partial<PosterSetupConfig>) => void;
@@ -361,12 +312,7 @@ function Step2({
 }
 
 function Step3({
-  config,
-  update,
-  onBack,
-  onGenerate,
-  isGenerating,
-  error,
+  config, update, onBack, onGenerate, isGenerating, error,
 }: {
   config: PosterSetupConfig;
   update: (p: Partial<PosterSetupConfig>) => void;
@@ -378,9 +324,7 @@ function Step3({
   return (
     <div className="space-y-5">
       <div>
-        <label className="text-sm font-medium text-zinc-300">
-          Describe your poster
-        </label>
+        <label className="text-sm font-medium text-zinc-300">Describe your poster</label>
         <textarea
           value={config.prompt}
           onChange={(e) => update({ prompt: e.target.value })}
@@ -389,13 +333,10 @@ function Step3({
         />
       </div>
 
-      {/* AI Write Copy toggle */}
       <div className="flex items-center justify-between p-4 bg-zinc-800 rounded-xl">
         <div>
           <div className="text-sm font-medium text-white">AI Write Copy</div>
-          <div className="text-xs text-zinc-500 mt-0.5">
-            Let AI generate title, tagline, and credits text
-          </div>
+          <div className="text-xs text-zinc-500 mt-0.5">Let AI generate title, tagline, and credits</div>
         </div>
         <button
           onClick={() => update({ aiWriteCopy: !config.aiWriteCopy })}
@@ -407,33 +348,14 @@ function Step3({
         </button>
       </div>
 
-      {/* User-provided text */}
       {!config.aiWriteCopy && (
         <div className="space-y-3">
-          <p className="text-xs text-zinc-500">
-            Provide your own text (leave blank to omit)
-          </p>
+          <p className="text-xs text-zinc-500">Your text (leave blank to omit)</p>
           {[
-            {
-              key: "userTitle",
-              label: "Title",
-              placeholder: "ELYSIUM",
-            },
-            {
-              key: "userSubtitle",
-              label: "Subtitle / Tagline",
-              placeholder: "There will be no mercy",
-            },
-            {
-              key: "userDateLocation",
-              label: "Date / Location",
-              placeholder: "March 14 — April 30, 2025 · Shanghai",
-            },
-            {
-              key: "userCredits",
-              label: "Credits / Body",
-              placeholder: "Directed by...",
-            },
+            { key: "userTitle", label: "Title", placeholder: "ELYSIUM" },
+            { key: "userSubtitle", label: "Subtitle / Tagline", placeholder: "There will be no mercy" },
+            { key: "userDateLocation", label: "Date / Location", placeholder: "March 14 — April 30, 2025 · Shanghai" },
+            { key: "userCredits", label: "Credits / Body", placeholder: "Directed by..." },
           ].map(({ key, label, placeholder }) => (
             <div key={key}>
               <label className="text-xs text-zinc-400">{label}</label>
@@ -472,8 +394,8 @@ function Step3({
         >
           {isGenerating ? (
             <>
-              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              Generating...
+              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              Generating…
             </>
           ) : (
             "Generate Poster ✨"

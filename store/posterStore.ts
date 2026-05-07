@@ -3,11 +3,7 @@ import { immer } from "zustand/middleware/immer";
 import { v4 as uuidv4 } from "uuid";
 import type {
   Layer,
-  CanvasConfig,
   PosterProject,
-  StylePreset,
-  PosterType,
-  Language,
   TextLayerData,
   ImageLayerData,
 } from "@/types/poster";
@@ -16,7 +12,6 @@ interface PosterState {
   project: PosterProject | null;
   selectedLayerId: string | null;
   isGenerating: boolean;
-  isSaving: boolean;
   generatingStep: string;
   history: Layer[][];
   historyIndex: number;
@@ -43,8 +38,6 @@ interface PosterState {
 
   // AI state
   setGenerating: (generating: boolean, step?: string) => void;
-  setSaving: (saving: boolean) => void;
-
   // History
   pushHistory: () => void;
   undo: () => void;
@@ -62,7 +55,6 @@ export const usePosterStore = create<PosterState>()(
     project: null,
     selectedLayerId: null,
     isGenerating: false,
-    isSaving: false,
     generatingStep: "",
     history: [],
     historyIndex: -1,
@@ -208,11 +200,6 @@ export const usePosterStore = create<PosterState>()(
       set((state) => {
         state.isGenerating = generating;
         state.generatingStep = step;
-      }),
-
-    setSaving: (saving) =>
-      set((state) => {
-        state.isSaving = saving;
       }),
 
     pushHistory: () => {

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { auth } from "@/lib/auth";
 import type {
   PosterSetupConfig,
   Layer,
@@ -127,11 +126,6 @@ function getStyleGuidelines(style: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const body = await req.json();
   const setup: PosterSetupConfig = body.setup;
   const lockedLayers: Layer[] = body.lockedLayers ?? [];
