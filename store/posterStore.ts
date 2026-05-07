@@ -70,6 +70,16 @@ interface PosterState {
   undo: () => void;
   redo: () => void;
 
+  // Brush tool
+  brushActive: boolean;
+  brushColor: string;
+  brushSize: number;
+  brushOpacity: number;
+  setBrushActive: (active: boolean) => void;
+  setBrushColor: (color: string) => void;
+  setBrushSize: (size: number) => void;
+  setBrushOpacity: (opacity: number) => void;
+
   // Derived
   getLayerById: (id: string) => PosterLayer | undefined;
   getSortedLayers: () => PosterLayer[];
@@ -90,6 +100,10 @@ export const usePosterStore = create<PosterState>()(
     currentVersionIndex: -1,
     reference: { ...DEFAULT_REFERENCE },
     assets: [],
+    brushActive: false,
+    brushColor: "#ffffff",
+    brushSize: 8,
+    brushOpacity: 0.9,
 
     setProject: (project) =>
       set((state) => {
@@ -176,6 +190,7 @@ export const usePosterStore = create<PosterState>()(
     moveLayerUp: (id) =>
       set((state) => {
         if (!state.project) return;
+        get().pushHistory();
         const layer = state.project.layers.find((l) => l.id === id);
         if (!layer) return;
         const sorted = [...state.project.layers].sort(
@@ -196,6 +211,7 @@ export const usePosterStore = create<PosterState>()(
     moveLayerDown: (id) =>
       set((state) => {
         if (!state.project) return;
+        get().pushHistory();
         const layer = state.project.layers.find((l) => l.id === id);
         if (!layer) return;
         const sorted = [...state.project.layers].sort(
@@ -287,6 +303,11 @@ export const usePosterStore = create<PosterState>()(
         state.reference.palette = palette;
         state.reference.paletteError = error;
       }),
+
+    setBrushActive: (active) => set((state) => { state.brushActive = active; }),
+    setBrushColor: (color) => set((state) => { state.brushColor = color; }),
+    setBrushSize: (size) => set((state) => { state.brushSize = size; }),
+    setBrushOpacity: (opacity) => set((state) => { state.brushOpacity = opacity; }),
 
     addAsset: (asset) =>
       set((state) => {

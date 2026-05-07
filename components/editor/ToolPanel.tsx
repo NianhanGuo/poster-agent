@@ -33,7 +33,7 @@ export function ToolPanel({ onTypography }: ToolPanelProps) {
       y: Math.round(canvas.height * 0.5),
       width: Math.round(canvas.width * 0.8),
       height: 120,
-      rotation: 0, opacity: 1, visible: true, locked: false, zIndex: 10,
+      rotation: 0, opacity: 1, visible: true, locked: false, zIndex: 0,
       textData: {
         text: "New Text",
         fontSize: 64,

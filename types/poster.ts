@@ -60,7 +60,8 @@ export type LayerType =
   | "bodyText"
   | "foregroundCutout"
   | "userText"
-  | "userImage";
+  | "userImage"
+  | "drawingLayer";
 
 export function isTextLayer(type: LayerType): boolean {
   return type.endsWith("Text");

@@ -117,9 +117,17 @@ export function PosterCanvas({ showGuides = false }: { showGuides?: boolean }) {
           </KonvaLayer>
         </Stage>
 
+        <DrawingOverlay
+          displayW={displayW}
+          displayH={displayH}
+          canvasW={project.canvas.width}
+          canvasH={project.canvas.height}
+        />
+
         <button
           onClick={handleExport}
           className="absolute bottom-3 right-3 bg-zinc-800/90 hover:bg-zinc-700 text-zinc-200 text-xs px-3 py-1.5 rounded-lg backdrop-blur transition-colors"
+          style={{ zIndex: 10 }}
         >
           Export PNG
         </button>
@@ -162,8 +170,10 @@ function PosterLayerNode({
     draggable: !layer.locked,
     onClick: onSelect,
     onTap: onSelect,
+    onDragStart: () => usePosterStore.getState().pushHistory(),
     onDragEnd: (e: { target: { x: () => number; y: () => number } }) =>
       onChange({ x: e.target.x(), y: e.target.y() }),
+    onTransformStart: () => usePosterStore.getState().pushHistory(),
     onTransformEnd: (e: {
       target: {
         x: () => number; y: () => number;
@@ -190,7 +200,8 @@ function PosterLayerNode({
     layer.type === "backgroundImage" ||
     layer.type === "subjectImage" ||
     layer.type === "foregroundCutout" ||
-    layer.type === "userImage";
+    layer.type === "userImage" ||
+    layer.type === "drawingLayer";
 
   if (isImageType) {
     return (
@@ -251,6 +262,7 @@ function PosterLayerNode({
         onDblClick={() => {
           const newText = prompt("Edit text:", td.text);
           if (newText !== null) {
+            usePosterStore.getState().pushHistory();
             usePosterStore.getState().updateTextData(layer.id, { text: newText });
           }
         }}
@@ -341,5 +353,123 @@ function KonvaImageNode({
       />
       {selected && <KonvaTransformer ref={transformerRef} rotateEnabled keepRatio={false} />}
     </>
+  );
+}
+
+// ─── Drawing overlay ──────────────────────────────────────────────────────────
+
+function DrawingOverlay({
+  displayW,
+  displayH,
+  canvasW,
+  canvasH,
+}: {
+  displayW: number;
+  displayH: number;
+  canvasW: number;
+  canvasH: number;
+}) {
+  const { brushActive, brushColor, brushSize, brushOpacity, getSortedLayers } = usePosterStore();
+
+  const liveCanvasRef = useRef<HTMLCanvasElement>(null);
+  const isDrawingRef = useRef(false);
+  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+
+  function handlePointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    isDrawingRef.current = true;
+    const rect = e.currentTarget.getBoundingClientRect();
+    lastPointRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  function handlePointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (!isDrawingRef.current || !lastPointRef.current) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const curr = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const ctx = liveCanvasRef.current?.getContext("2d");
+    if (ctx) {
+      ctx.globalAlpha = brushOpacity;
+      ctx.strokeStyle = brushColor;
+      ctx.lineWidth = brushSize;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+      ctx.moveTo(lastPointRef.current.x, lastPointRef.current.y);
+      ctx.lineTo(curr.x, curr.y);
+      ctx.stroke();
+    }
+    lastPointRef.current = curr;
+  }
+
+  function handlePointerUp() {
+    if (!isDrawingRef.current) return;
+    isDrawingRef.current = false;
+    lastPointRef.current = null;
+    void commitStroke();
+  }
+
+  async function commitStroke() {
+    const liveCanvas = liveCanvasRef.current;
+    if (!liveCanvas) return;
+
+    // Snapshot current strokes and immediately clear so user can draw again
+    const snapshot = document.createElement("canvas");
+    snapshot.width = liveCanvas.width;
+    snapshot.height = liveCanvas.height;
+    snapshot.getContext("2d")?.drawImage(liveCanvas, 0, 0);
+    liveCanvas.getContext("2d")?.clearRect(0, 0, liveCanvas.width, liveCanvas.height);
+
+    const drawingLayer = getSortedLayers().find((l) => l.type === "drawingLayer");
+    if (!drawingLayer) return;
+
+    const existingSrc = drawingLayer.imageData?.src ?? "";
+
+    // Full-resolution canvas for committed strokes
+    const offscreen = document.createElement("canvas");
+    offscreen.width = canvasW;
+    offscreen.height = canvasH;
+    const offCtx = offscreen.getContext("2d");
+    if (!offCtx) return;
+
+    // Paint existing committed strokes first
+    if (existingSrc) {
+      await new Promise<void>((resolve) => {
+        const img = new window.Image();
+        img.onload = () => { offCtx.drawImage(img, 0, 0); resolve(); };
+        img.onerror = () => resolve();
+        img.src = existingSrc;
+      });
+    }
+
+    // Scale snapshot (display res) up to full canvas resolution
+    offCtx.drawImage(snapshot, 0, 0, canvasW, canvasH);
+
+    const dataUrl = offscreen.toDataURL("image/png");
+    const store = usePosterStore.getState();
+    store.pushHistory();
+    store.updateLayer(drawingLayer.id, { imageData: { src: dataUrl, fit: "fill" } });
+  }
+
+  if (!brushActive) return null;
+
+  return (
+    <canvas
+      ref={liveCanvasRef}
+      width={displayW}
+      height={displayH}
+      style={{
+        position: "absolute",
+        top: 0, left: 0,
+        width: displayW,
+        height: displayH,
+        cursor: "crosshair",
+        touchAction: "none",
+        zIndex: 5,
+      }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerLeave={handlePointerUp}
+    />
   );
 }

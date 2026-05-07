@@ -9,6 +9,7 @@ import { AssetLibrary } from "./AssetLibrary";
 import { ReferencePanel } from "./ReferencePanel";
 import { VersionStrip } from "./VersionStrip";
 import { AlignmentBar } from "./AlignmentBar";
+import { QuickPanel } from "./QuickPanel";
 import { PromptComposer } from "@/components/setup/PromptComposer";
 import type { DesignBrief } from "@/types/poster";
 import type { Session } from "next-auth";
@@ -436,7 +437,10 @@ export function EditorClient() {
             className="flex-1 overflow-auto flex items-center justify-center p-8"
             style={{ background: "#050507" }}
           >
-            <PosterCanvas showGuides={showGuides} />
+            <div className="flex items-start gap-3">
+              <QuickPanel />
+              <PosterCanvas showGuides={showGuides} />
+            </div>
           </div>
 
           {/* Version strip */}

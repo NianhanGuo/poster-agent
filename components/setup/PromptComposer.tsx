@@ -1,8 +1,11 @@
 "use client";
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import { useDropzone } from "react-dropzone";
 import { v4 as uuidv4 } from "uuid";
 import { usePosterStore } from "@/store/posterStore";
 import { RECIPE_LIST } from "@/lib/styleRecipes";
+import { extractPaletteFromUrl } from "@/lib/colorExtract";
+import type { PaletteColor } from "@/lib/colorExtract";
 import type {
   PosterType,
   Language,
@@ -13,6 +16,12 @@ import type {
   PosterSetupConfig,
   PosterProject,
 } from "@/types/poster";
+
+interface RefImage {
+  id: string;
+  url: string;
+  palette: PaletteColor[];
+}
 
 type Setter = (p: Partial<PosterSetupConfig>) => void;
 
@@ -33,6 +42,20 @@ const CANVAS_OPTIONS: { value: CanvasSize; label: string; dim: string }[] = [
   { value: "custom",         label: "Custom",  dim: "" },
 ];
 
+const REF_TARGET_OPTIONS: { key: keyof RefTargets; label: string }[] = [
+  { key: "mood",            label: "Mood" },
+  { key: "color",           label: "Color" },
+  { key: "layout",          label: "Layout" },
+  { key: "backgroundStyle", label: "Background" },
+];
+
+interface RefTargets {
+  mood: boolean;
+  color: boolean;
+  layout: boolean;
+  backgroundStyle: boolean;
+}
+
 export function PromptComposer() {
   const { setProject } = usePosterStore();
   const [busy, setBusy] = useState(false);
@@ -49,16 +72,75 @@ export function PromptComposer() {
     aiWriteCopy:  false,
   });
 
+  const [refImages, setRefImages] = useState<RefImage[]>([]);
+  const [refStrength, setRefStrength] = useState(55);
+  const [refTargets, setRefTargets] = useState<RefTargets>({ mood: true, color: true, layout: false, backgroundStyle: false });
+  const [refExtracting, setRefExtracting] = useState(false);
+
   const set: Setter = (p) => setCfg((c) => ({ ...c, ...p }));
+
+  const onRefDrop = useCallback(async (files: File[]) => {
+    setRefExtracting(true);
+    for (const file of files) {
+      const url = await new Promise<string>((res) => {
+        const reader = new FileReader();
+        reader.onload = (e) => res(e.target?.result as string ?? "");
+        reader.readAsDataURL(file);
+      });
+      if (!url) continue;
+      const palette = await extractPaletteFromUrl(url);
+      setRefImages((prev) => [...prev, { id: uuidv4(), url, palette }]);
+    }
+    setRefExtracting(false);
+  }, []);
+
+  const { getRootProps: getRefRootProps, getInputProps: getRefInputProps, isDragActive: isRefDragActive } = useDropzone({
+    onDrop: onRefDrop,
+    accept: { "image/*": [] },
+    disabled: busy || refExtracting,
+  });
+
+  function removeRefImage(id: string) {
+    setRefImages((prev) => prev.filter((r) => r.id !== id));
+  }
+
+  function buildRefCtx() {
+    if (refImages.length === 0) return undefined;
+    // Merge palettes from all reference images, deduplicate
+    const merged: PaletteColor[] = [];
+    for (const img of refImages) {
+      for (const color of img.palette) {
+        const r = parseInt(color.hex.slice(1, 3), 16);
+        const g = parseInt(color.hex.slice(3, 5), 16);
+        const b = parseInt(color.hex.slice(5, 7), 16);
+        if (merged.length < 8 && merged.every((s) => {
+          const sr = parseInt(s.hex.slice(1, 3), 16);
+          const sg = parseInt(s.hex.slice(3, 5), 16);
+          const sb = parseInt(s.hex.slice(5, 7), 16);
+          return Math.sqrt((r - sr) ** 2 + (g - sg) ** 2 + (b - sb) ** 2) > 45;
+        })) {
+          merged.push(color);
+        }
+      }
+    }
+    return {
+      strength: refStrength,
+      targets: refTargets,
+      palette: merged,
+      hasImage: false,
+      instruction: `${refImages.length} reference image${refImages.length > 1 ? "s" : ""} provided`,
+    };
+  }
 
   async function generate() {
     setBusy(true);
     setError("");
+    const refCtx = buildRefCtx();
     try {
       const layoutRes = await fetch("/api/generate/layout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ setup: cfg, lockedLayers: [] }),
+        body: JSON.stringify({ setup: cfg, lockedLayers: [], reference: refCtx }),
       });
       if (!layoutRes.ok) throw new Error();
       const { layers, canvas, imagePrompt, demo: layoutDemo } = await layoutRes.json();
@@ -76,6 +158,7 @@ export function PromptComposer() {
             customImagePrompt: cfg.customImagePrompt,
             width: canvas.width,
             height: canvas.height,
+            reference: refCtx,
           }),
         });
         const { url } = await imgRes.json();
@@ -196,6 +279,85 @@ export function PromptComposer() {
                 placeholder="Describe the image style…"
                 className="w-full bg-transparent border-b border-zinc-800 focus:border-zinc-500 outline-none text-zinc-200 text-xs pb-1.5 placeholder:text-zinc-700 transition-colors"
               />
+            )}
+          </div>
+
+          {/* Reference images */}
+          <div className="space-y-3">
+            <label className="block font-mono text-[10px] tracking-[0.2em] text-zinc-600 uppercase">
+              Reference Images
+              <span className="text-zinc-800 normal-case tracking-normal font-sans ml-1">— optional</span>
+            </label>
+
+            <div
+              {...getRefRootProps()}
+              className={`py-4 text-center border border-dashed transition-colors cursor-pointer ${
+                isRefDragActive
+                  ? "border-zinc-500 bg-zinc-900/50"
+                  : "border-zinc-900 hover:border-zinc-700"
+              }`}
+            >
+              <input {...getRefInputProps()} />
+              <span className="font-mono text-[10px] text-zinc-700">
+                {refExtracting ? "extracting palette…" : isRefDragActive ? "drop" : "drop images here, or click to browse"}
+              </span>
+            </div>
+
+            {refImages.length > 0 && (
+              <>
+                <div className="flex gap-1.5 flex-wrap">
+                  {refImages.map((img) => (
+                    <div key={img.id} className="relative group w-14 h-14 flex-none">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={img.url}
+                        alt="reference"
+                        className="w-full h-full object-cover rounded-sm"
+                        style={{ border: "1px solid rgba(255,255,255,0.07)" }}
+                      />
+                      <button
+                        onClick={() => removeRefImage(img.id)}
+                        className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-zinc-800 text-zinc-400 font-mono text-[9px] items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity flex"
+                      >×</button>
+                      {img.palette.length > 0 && (
+                        <div className="absolute bottom-0 left-0 right-0 flex">
+                          {img.palette.slice(0, 5).map((c, i) => (
+                            <div key={i} className="flex-1 h-1" style={{ background: c.hex }} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="font-mono text-[9px] text-zinc-600 uppercase tracking-[0.15em]">Influence</label>
+                    <span className="font-mono text-[9px] text-zinc-500">{refStrength}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0} max={100}
+                    value={refStrength}
+                    onChange={(e) => setRefStrength(Number(e.target.value))}
+                    className="w-full cursor-pointer"
+                    style={{ accentColor: "#a1a1aa" }}
+                  />
+                </div>
+
+                <div className="flex flex-wrap gap-1.5">
+                  {REF_TARGET_OPTIONS.map((t) => (
+                    <Chip
+                      key={t.key}
+                      active={refTargets[t.key]}
+                      onClick={() => setRefTargets((prev) => ({ ...prev, [t.key]: !prev[t.key] }))}
+                      small
+                    >
+                      {t.label}
+                    </Chip>
+                  ))}
+                </div>
+              </>
             )}
           </div>
 
