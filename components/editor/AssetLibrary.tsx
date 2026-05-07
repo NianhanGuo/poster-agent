@@ -188,6 +188,17 @@ function AssetThumbnail({
         className="w-full h-full object-cover rounded-sm"
         style={{ border: "1px solid rgba(255,255,255,0.06)" }}
       />
+
+      {/* AI-generated badge */}
+      {asset.generatedTag && (
+        <span
+          className="absolute top-0.5 left-0.5 font-mono text-[6px] uppercase tracking-wide px-1 py-0.5 rounded-sm pointer-events-none select-none"
+          style={{ background: "rgba(0,0,0,0.75)", color: "#71717a", border: "1px solid rgba(255,255,255,0.1)" }}
+        >
+          AI
+        </span>
+      )}
+
       <div className="absolute inset-0 bg-black/75 opacity-0 group-hover:opacity-100 transition-opacity rounded-sm flex flex-col items-center justify-center gap-0.5 p-1">
         {ACTIONS.map(({ value, label }) => (
           <button

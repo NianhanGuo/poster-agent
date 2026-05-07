@@ -231,6 +231,7 @@ export interface AssetItem {
   createdAt: string;
   tags?: string[];
   usageType?: "background" | "subject" | "reference" | "texture";
+  generatedTag?: string; // "from reference" | "variation" etc.
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────

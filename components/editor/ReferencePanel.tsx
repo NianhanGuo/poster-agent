@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import { usePosterStore } from "@/store/posterStore";
-import type { ReferenceConfig } from "@/types/poster";
+import type { ReferenceConfig, AssetItem, PosterLayer } from "@/types/poster";
 import { extractPaletteFromUrl } from "@/lib/colorExtract";
 
 type TargetKey = keyof ReferenceConfig["targets"];
@@ -25,15 +25,18 @@ export function ReferencePanel() {
     setReferencePalette,
     getSortedLayers,
     updateTextData,
+    updateLayer,
+    addLayer,
+    addAsset,
     project,
   } = usePosterStore();
 
   const [busy, setBusy] = useState(false);
   const [extracting, setExtracting] = useState(false);
+  const [genLoading, setGenLoading] = useState(false);
+  const [genToast, setGenToast] = useState("");
+  const [generatedAssets, setGeneratedAssets] = useState<AssetItem[]>([]);
 
-  // Re-extract palette whenever the reference image URL changes.
-  // This covers both the dropzone upload path AND "Use as reference"
-  // from the asset library (which calls setReferenceImage directly).
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!reference.imageUrl) {
@@ -86,32 +89,125 @@ export function ReferencePanel() {
     });
   }
 
-  // Apply extracted palette colors to unlocked text layers.
   function applyPaletteToCanvas() {
     if (!project || reference.palette.length === 0) return;
     const { palette } = reference;
-
     const accentColor =
       palette.find((p) => p.role === "accent")?.hex ??
       palette.find((p) => p.role === "highlight")?.hex ??
-      palette[1]?.hex ??
-      "#ffffff";
-
+      palette[1]?.hex ?? "#ffffff";
     const bodyColor =
       palette.find((p) => p.role === "highlight")?.hex ??
-      palette[2]?.hex ??
-      "#aaaaaa";
-
+      palette[2]?.hex ?? "#aaaaaa";
     getSortedLayers()
       .filter((l) => l.type.endsWith("Text") && !l.locked && l.textData)
       .forEach((l) => {
         const isTitle = l.type === "titleText" || l.type === "userText";
-        updateTextData(l.id, {
-          fill: isTitle ? accentColor : bodyColor,
-          fillGradient: undefined,
-        });
+        updateTextData(l.id, { fill: isTitle ? accentColor : bodyColor, fillGradient: undefined });
       });
   }
+
+  async function generateFromReference() {
+    if (!project) return;
+    setGenLoading(true);
+    setGenToast("");
+    setGeneratedAssets([]);
+
+    const imagePrompt = project.promptHistory.at(-1) ?? "";
+    const refCtx = {
+      strength: reference.strength,
+      targets: reference.targets,
+      palette: reference.palette,
+      instruction: reference.instruction,
+      hasImage: !!reference.imageUrl,
+    };
+
+    try {
+      // Two variations in parallel
+      const results = await Promise.all(
+        [1, 2].map(() =>
+          fetch("/api/generate/image", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              prompt: imagePrompt,
+              styleRecipe: project.styleRecipe,
+              width: project.canvas.width,
+              height: project.canvas.height,
+              reference: refCtx,
+            }),
+          }).then((r) => r.json() as Promise<{ url?: string; demo?: boolean }>),
+        ),
+      );
+
+      const newAssets: AssetItem[] = [];
+      for (const { url } of results) {
+        if (!url) continue;
+        const asset: AssetItem = {
+          id: crypto.randomUUID(),
+          userId: "local",
+          imageUrl: url,
+          fileName: `ref-generated-${Date.now()}`,
+          createdAt: new Date().toISOString(),
+          generatedTag: "from reference",
+        };
+        addAsset(asset);
+        newAssets.push(asset);
+      }
+
+      setGeneratedAssets(newAssets);
+      const n = newAssets.length;
+      setGenToast(n > 0 ? `${n} image${n > 1 ? "s" : ""} added to Assets` : "No images returned");
+      setTimeout(() => setGenToast(""), 5000);
+    } catch {
+      setGenToast("Generation failed — check API key");
+      setTimeout(() => setGenToast(""), 4000);
+    } finally {
+      setGenLoading(false);
+    }
+  }
+
+  function applyToCanvas(asset: AssetItem, action: "background" | "layer") {
+    if (!project) return;
+    const canvas = project.canvas;
+    const layers = getSortedLayers();
+
+    if (action === "background") {
+      const bgLayer = layers.find((l) => l.type === "backgroundImage");
+      if (bgLayer) {
+        updateLayer(bgLayer.id, { imageData: { src: asset.imageUrl, fit: "fill" } });
+      } else {
+        const newLayer: PosterLayer = {
+          id: crypto.randomUUID(),
+          type: "backgroundImage",
+          label: "Background",
+          x: 0, y: 0,
+          width: canvas.width, height: canvas.height,
+          rotation: 0, opacity: 1,
+          visible: true, locked: false, zIndex: 1,
+          imageData: { src: asset.imageUrl, fit: "fill" },
+        };
+        addLayer(newLayer);
+      }
+    } else {
+      const userImgCount = layers.filter((l) => l.type === "userImage").length;
+      const newLayer: PosterLayer = {
+        id: crypto.randomUUID(),
+        type: "userImage",
+        label: `generated ${userImgCount + 1}`,
+        x: Math.round(canvas.width * 0.05),
+        y: Math.round(canvas.height * 0.05),
+        width: Math.round(canvas.width * 0.9),
+        height: Math.round(canvas.height * 0.9),
+        rotation: 0, opacity: 1,
+        visible: true, locked: false, zIndex: 0,
+        imageData: { src: asset.imageUrl, fit: "contain" },
+      };
+      addLayer(newLayer);
+    }
+  }
+
+  const hasReference = !!reference.imageUrl || reference.palette.length > 0;
 
   return (
     <div className="p-3 space-y-4">
@@ -140,7 +236,7 @@ export function ReferencePanel() {
               </button>
             </div>
             <button
-              onClick={() => setReferenceImage(null)}
+              onClick={() => { setReferenceImage(null); setGeneratedAssets([]); }}
               className="font-mono text-[9px] tracking-wide uppercase text-zinc-500 px-2 py-1 transition-colors hover:text-red-400 rounded-sm"
               style={{ border: "1px solid rgba(255,255,255,0.1)" }}
             >
@@ -178,53 +274,25 @@ export function ReferencePanel() {
               <span className="font-mono text-[8px] text-zinc-700">extracting…</span>
             )}
           </div>
-
           {reference.paletteError ? (
             <p className="font-mono text-[8px] text-red-500/70">{reference.paletteError}</p>
           ) : reference.palette.length > 0 ? (
             <>
               <div className="flex flex-wrap gap-1">
                 {reference.palette.map((c) => (
-                  <div key={c.hex} className="group/swatch relative">
-                    <div
-                      className="w-6 h-6 rounded-sm cursor-pointer hover:scale-110 transition-transform"
-                      style={{
-                        background: c.hex,
-                        border: "1px solid rgba(255,255,255,0.12)",
-                      }}
-                      title={`${c.hex} (${c.role})`}
-                    />
-                  </div>
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-1">
-                {reference.palette.map((c) => (
-                  <span
+                  <div
                     key={c.hex}
-                    className="font-mono text-[7px] text-zinc-700"
-                    title={c.role}
-                  >
-                    {c.hex}
-                  </span>
+                    className="w-6 h-6 rounded-sm hover:scale-110 transition-transform"
+                    style={{ background: c.hex, border: "1px solid rgba(255,255,255,0.12)" }}
+                    title={`${c.hex} (${c.role})`}
+                  />
                 ))}
               </div>
-              {/* Apply palette button */}
               {project && (
                 <button
                   onClick={applyPaletteToCanvas}
-                  className="w-full font-mono text-[9px] tracking-wide uppercase py-1.5 transition-colors"
-                  style={{
-                    border: "1px solid rgba(255,255,255,0.1)",
-                    color: "#71717a",
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLButtonElement).style.color = "#e4e4e7";
-                    (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.25)";
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLButtonElement).style.color = "#71717a";
-                    (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.1)";
-                  }}
+                  className="w-full font-mono text-[9px] tracking-wide uppercase py-1.5 transition-colors text-zinc-600 hover:text-zinc-200"
+                  style={{ border: "1px solid rgba(255,255,255,0.1)" }}
                 >
                   Apply palette to text layers
                 </button>
@@ -239,22 +307,15 @@ export function ReferencePanel() {
       {/* Strength slider */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <span className="font-mono text-[9px] tracking-[0.15em] uppercase text-zinc-600">
-            Strength
-          </span>
+          <span className="font-mono text-[9px] tracking-[0.15em] uppercase text-zinc-600">Strength</span>
           <span className="font-mono text-[9px] text-zinc-500">
             {reference.strength}
-            {reference.strength >= 71
-              ? " — strict"
-              : reference.strength >= 31
-              ? " — noticeable"
-              : " — loose"}
+            {reference.strength >= 71 ? " — strict" : reference.strength >= 31 ? " — noticeable" : " — loose"}
           </span>
         </div>
         <input
           type="range"
-          min={0}
-          max={100}
+          min={0} max={100}
           value={reference.strength}
           onChange={(e) => setReference({ strength: Number(e.target.value) })}
           className="w-full h-0.5 accent-zinc-400"
@@ -263,9 +324,7 @@ export function ReferencePanel() {
 
       {/* Target checkboxes */}
       <div className="space-y-1.5">
-        <div className="font-mono text-[9px] tracking-[0.15em] uppercase text-zinc-600">
-          Apply to
-        </div>
+        <div className="font-mono text-[9px] tracking-[0.15em] uppercase text-zinc-600">Apply to</div>
         <div className="space-y-1.5">
           {TARGETS.map(({ key, label }) => {
             const active = reference.targets[key];
@@ -282,9 +341,7 @@ export function ReferencePanel() {
                     background: active ? "rgba(255,255,255,0.08)" : "transparent",
                     color: active ? "#e4e4e7" : "transparent",
                   }}
-                >
-                  ✓
-                </span>
+                >✓</span>
                 <span
                   className="font-mono text-[9px] transition-colors"
                   style={{ color: active ? "#a1a1aa" : "#52525b" }}
@@ -302,9 +359,7 @@ export function ReferencePanel() {
 
       {/* Custom instruction */}
       <div className="space-y-1.5">
-        <div className="font-mono text-[9px] tracking-[0.15em] uppercase text-zinc-600">
-          Instruction
-        </div>
+        <div className="font-mono text-[9px] tracking-[0.15em] uppercase text-zinc-600">Instruction</div>
         <textarea
           value={reference.instruction}
           onChange={(e) => setReference({ instruction: e.target.value })}
@@ -315,7 +370,87 @@ export function ReferencePanel() {
         />
       </div>
 
-      {!reference.imageUrl && (
+      {/* ── Generate from Reference CTA ──────────────────────────────────── */}
+      {project && (
+        <div
+          className="pt-2 space-y-2"
+          style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
+        >
+          <button
+            onClick={generateFromReference}
+            disabled={genLoading || !hasReference}
+            className="w-full py-2.5 font-mono text-[9px] tracking-[0.15em] uppercase transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+            style={{
+              background: genLoading ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.07)",
+              border: "1px solid rgba(255,255,255,0.14)",
+              color: genLoading ? "#71717a" : "#e4e4e7",
+            }}
+          >
+            {genLoading ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="w-2.5 h-2.5 border border-zinc-600 border-t-zinc-300 rounded-full animate-spin inline-block" />
+                generating 2 variations…
+              </span>
+            ) : (
+              "Generate Image from Reference →"
+            )}
+          </button>
+
+          {!hasReference && (
+            <p className="font-mono text-[8px] text-zinc-700 text-center">
+              Upload a reference image or set targets to enable
+            </p>
+          )}
+
+          {/* Toast */}
+          {genToast && (
+            <p className="font-mono text-[9px] text-zinc-400 text-center">{genToast}</p>
+          )}
+        </div>
+      )}
+
+      {/* ── Generated results ─────────────────────────────────────────────── */}
+      {generatedAssets.length > 0 && (
+        <div className="space-y-3">
+          <div className="font-mono text-[9px] tracking-[0.15em] uppercase text-zinc-600">
+            Generated — choose an action
+          </div>
+
+          {generatedAssets.map((asset, i) => (
+            <div key={asset.id} className="space-y-1.5">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={asset.imageUrl}
+                alt={`variation ${i + 1}`}
+                className="w-full rounded-sm"
+                style={{ border: "1px solid rgba(255,255,255,0.08)", aspectRatio: `${project?.canvas.width ?? 1}/${project?.canvas.height ?? 1}`, objectFit: "cover" }}
+              />
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => applyToCanvas(asset, "background")}
+                  className="flex-1 py-1.5 font-mono text-[9px] tracking-wide uppercase transition-colors text-zinc-400 hover:text-zinc-100"
+                  style={{ border: "1px solid rgba(255,255,255,0.12)" }}
+                >
+                  Set Background
+                </button>
+                <button
+                  onClick={() => applyToCanvas(asset, "layer")}
+                  className="flex-1 py-1.5 font-mono text-[9px] tracking-wide uppercase transition-colors text-zinc-400 hover:text-zinc-100"
+                  style={{ border: "1px solid rgba(255,255,255,0.12)" }}
+                >
+                  Add as Layer
+                </button>
+              </div>
+            </div>
+          ))}
+
+          <p className="font-mono text-[8px] text-zinc-700 text-center">
+            Also saved in Assets tab · no automatic canvas change
+          </p>
+        </div>
+      )}
+
+      {!reference.imageUrl && generatedAssets.length === 0 && (
         <p className="font-mono text-[8px] text-zinc-700 text-center pt-1">
           Reference metadata and palette are sent to AI even without an image
         </p>
