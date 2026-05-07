@@ -76,7 +76,7 @@ export function PosterSetupModal() {
         body: JSON.stringify({ setup: config, lockedLayers: [] }),
       });
       if (!layoutRes.ok) throw new Error("Layout generation failed");
-      const { layers, canvas, imagePrompt } = await layoutRes.json();
+      const { layers, canvas, imagePrompt, demo: layoutDemo } = await layoutRes.json();
 
       // 2. Generate background image (optional — placeholder if unavailable)
       const imgRes = await fetch("/api/generate/image", {
@@ -113,6 +113,7 @@ export function PosterSetupModal() {
         language: config.language,
         promptHistory: [config.prompt],
         lockedLayers: [],
+        isDemo: !!layoutDemo,
         createdAt: now,
         updatedAt: now,
       };

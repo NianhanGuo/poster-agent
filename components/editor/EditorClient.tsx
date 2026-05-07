@@ -9,6 +9,7 @@ import { PosterSetupModal } from "@/components/setup/PosterSetupModal";
 
 export function EditorClient() {
   const { project, isGenerating, generatingStep } = usePosterStore();
+  const isDemo = project?.isDemo ?? false;
 
   const handleExport = useCallback(() => {
     (window as Window & { __posterExport?: () => void }).__posterExport?.();
@@ -56,6 +57,11 @@ export function EditorClient() {
         </div>
 
         <div className="flex items-center gap-3">
+          {isDemo && (
+            <span className="text-xs bg-amber-900/40 text-amber-400 border border-amber-800/60 px-2 py-0.5 rounded-md">
+              Demo mode — add ANTHROPIC_API_KEY for AI
+            </span>
+          )}
           {isGenerating && (
             <span className="text-xs text-violet-400 flex items-center gap-1.5">
               <span className="w-3 h-3 border border-violet-400 border-t-transparent rounded-full animate-spin inline-block" />

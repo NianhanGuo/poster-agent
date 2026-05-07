@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
 import type {
   PosterSetupConfig,
   Layer,
@@ -8,8 +7,7 @@ import type {
 } from "@/types/poster";
 import { CANVAS_SIZES } from "@/types/poster";
 import { v4 as uuidv4 } from "uuid";
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+import { mockLayout } from "@/lib/mockLayout";
 
 function getCanvasConfig(setup: PosterSetupConfig): CanvasConfig {
   if (setup.canvasSize === "custom") {
@@ -132,7 +130,20 @@ export async function POST(req: NextRequest) {
 
   const canvas = getCanvasConfig(setup);
 
+  // Demo mode: no API key configured
+  if (!process.env.ANTHROPIC_API_KEY) {
+    const { layers, imagePrompt, designNotes } = mockLayout(setup, canvas);
+    const finalLayers = [
+      ...lockedLayers,
+      ...layers.filter((l) => !lockedLayers.find((ll) => ll.id === l.id)),
+    ];
+    return NextResponse.json({ layers: finalLayers, canvas, imagePrompt, designNotes, demo: true });
+  }
+
   try {
+    const { default: Anthropic } = await import("@anthropic-ai/sdk");
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
     const message = await anthropic.messages.create({
       model: "claude-opus-4-7",
       max_tokens: 4096,
@@ -152,7 +163,6 @@ export async function POST(req: NextRequest) {
       parsed = JSON.parse(jsonMatch[0]);
     }
 
-    // Ensure each layer has a valid uuid and merge locked layers
     const newLayers = parsed.layers.map((l) => ({
       ...l,
       id: l.id || uuidv4(),
@@ -160,7 +170,6 @@ export async function POST(req: NextRequest) {
       locked: false,
     }));
 
-    // Re-inject locked layers
     const finalLayers = [
       ...lockedLayers,
       ...newLayers.filter((l) => !lockedLayers.find((ll) => ll.id === l.id)),
@@ -171,6 +180,7 @@ export async function POST(req: NextRequest) {
       canvas,
       imagePrompt: parsed.imagePrompt,
       designNotes: parsed.designNotes,
+      demo: false,
     });
   } catch (err) {
     console.error("Layout generation error:", err);

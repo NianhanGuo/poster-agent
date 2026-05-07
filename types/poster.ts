@@ -100,6 +100,7 @@ export interface PosterProject {
   promptHistory: string[];
   lockedLayers: string[];
   thumbnail?: string;
+  isDemo?: boolean;
   createdAt: string;
   updatedAt: string;
 }

@@ -231,6 +231,8 @@ export function AIToolbar() {
     }
   }
 
+  const isDemo = project.isDemo ?? false;
+
   const buttons = [
     { label: "Regenerate All", action: regenerateAll, color: "violet" },
     { label: "New Image", action: regenerateImageOnly, color: "blue" },
@@ -258,9 +260,11 @@ export function AIToolbar() {
           key={btn.label}
           onClick={btn.action}
           disabled={isGenerating}
+          title={isDemo ? `${btn.label} (mock response — add ANTHROPIC_API_KEY for real AI)` : btn.label}
           className={`text-xs px-3 py-1.5 rounded-lg border transition-colors disabled:opacity-40 ${colorMap[btn.color]}`}
         >
           {btn.label}
+          {isDemo && <span className="ml-1 opacity-50 text-[10px]">demo</span>}
         </button>
       ))}
       {lockedLayers.length > 0 && (

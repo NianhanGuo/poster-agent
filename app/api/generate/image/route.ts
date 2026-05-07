@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { mockGradientDataUrl } from "@/lib/mockGradient";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
-
-// Uses Replicate if configured, otherwise falls back to a placeholder gradient
 async function generateWithReplicate(
   prompt: string,
   width: number,
@@ -35,7 +32,6 @@ async function generateWithReplicate(
   if (!res.ok) return null;
   const prediction = await res.json();
 
-  // Poll for result
   let result = prediction;
   for (let i = 0; i < 30; i++) {
     if (result.status === "succeeded") return result.output?.[0] ?? null;
@@ -50,11 +46,10 @@ async function generateWithReplicate(
   return null;
 }
 
-// Enhance the prompt using Claude before sending to image gen
-async function enhancePrompt(
-  rawPrompt: string,
-  style: string
-): Promise<string> {
+async function enhancePrompt(rawPrompt: string, style: string): Promise<string> {
+  // Only runs when ANTHROPIC_API_KEY is present
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const msg = await anthropic.messages.create({
     model: "claude-haiku-4-5-20251001",
     max_tokens: 300,
@@ -74,26 +69,24 @@ export async function POST(req: NextRequest) {
   const { prompt, style, width, height } = await req.json();
 
   try {
-    const enhanced = await enhancePrompt(prompt, style);
-    const imageUrl = await generateWithReplicate(enhanced, width, height);
+    // Enhance prompt only when Anthropic key is present
+    const finalPrompt = process.env.ANTHROPIC_API_KEY
+      ? await enhancePrompt(prompt, style)
+      : prompt;
+
+    const imageUrl = await generateWithReplicate(finalPrompt, width, height);
 
     if (imageUrl) {
-      return NextResponse.json({ url: imageUrl, prompt: enhanced });
+      return NextResponse.json({ url: imageUrl, prompt: finalPrompt, demo: false });
     }
 
-    // Fallback: return a placeholder data URL (dark gradient)
-    return NextResponse.json({
-      url: null,
-      placeholder: true,
-      prompt: enhanced,
-      message:
-        "Image generation unavailable — configure REPLICATE_API_TOKEN for AI image generation",
-    });
+    // No Replicate token — return a gradient SVG data URL as the background
+    const gradientUrl = mockGradientDataUrl(style, width, height);
+    return NextResponse.json({ url: gradientUrl, prompt: finalPrompt, demo: true });
   } catch (err) {
     console.error("Image generation error:", err);
-    return NextResponse.json(
-      { error: "Failed to generate image" },
-      { status: 500 }
-    );
+    // Even on error, return a gradient so the editor still opens
+    const gradientUrl = mockGradientDataUrl(style ?? "cinematic", width ?? 800, height ?? 600);
+    return NextResponse.json({ url: gradientUrl, demo: true });
   }
 }
