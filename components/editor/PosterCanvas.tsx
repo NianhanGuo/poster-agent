@@ -1,36 +1,20 @@
 "use client";
+// react-konva requires a browser environment. Importing directly in a
+// "use client" file is safe because Next.js never runs "use client"
+// modules on the server. The `ready` guard below additionally ensures
+// Konva elements are only rendered after the component has mounted.
 import { useRef, useEffect, useState, useCallback } from "react";
-import dynamic from "next/dynamic";
+import {
+  Stage,
+  Layer as KonvaLayer,
+  Rect as KonvaRect,
+  Text as KonvaText,
+  Image as KonvaImage,
+  Transformer as KonvaTransformer,
+} from "react-konva";
 import { usePosterStore } from "@/store/posterStore";
+import { CanvasErrorBoundary } from "./CanvasErrorBoundary";
 import type { PosterLayer } from "@/types/poster";
-
-// Each named export must be wrapped as { default: ... } so Next.js dynamic()
-// can correctly detect the module shape without throwing
-// "Cannot use 'in' operator to search for 'default' in <KonvaClass>".
-const Stage = dynamic(
-  () => import("react-konva").then((m) => ({ default: m.Stage })),
-  { ssr: false }
-);
-const KonvaLayer = dynamic(
-  () => import("react-konva").then((m) => ({ default: m.Layer })),
-  { ssr: false }
-);
-const KonvaRect = dynamic(
-  () => import("react-konva").then((m) => ({ default: m.Rect })),
-  { ssr: false }
-);
-const KonvaText = dynamic(
-  () => import("react-konva").then((m) => ({ default: m.Text })),
-  { ssr: false }
-);
-const KonvaImage = dynamic(
-  () => import("react-konva").then((m) => ({ default: m.Image })),
-  { ssr: false }
-);
-const KonvaTransformer = dynamic(
-  () => import("react-konva").then((m) => ({ default: m.Transformer })),
-  { ssr: false }
-);
 
 const SCALE = 0.5;
 
@@ -40,6 +24,7 @@ export function PosterCanvas() {
   const stageRef = useRef<import("konva/lib/Stage").Stage | null>(null);
   const [ready, setReady] = useState(false);
 
+  // Only mount Konva after the component has hydrated on the client
   useEffect(() => { setReady(true); }, []);
 
   const handleExport = useCallback(() => {
@@ -67,62 +52,64 @@ export function PosterCanvas() {
   const displayH = project.canvas.height * SCALE;
   const sortedLayers = getSortedLayers();
 
+  console.log("rendering poster layers", sortedLayers);
+
   return (
-    <div
-      className="relative shadow-2xl"
-      style={{ width: displayW, height: displayH, background: "#111" }}
-    >
-      <Stage
-        ref={stageRef}
-        width={displayW}
-        height={displayH}
-        scaleX={SCALE}
-        scaleY={SCALE}
-        onClick={(e) => {
-          if (e.target === e.target.getStage()) selectLayer(null);
-        }}
+    <CanvasErrorBoundary>
+      <div
+        className="relative shadow-2xl"
+        style={{ width: displayW, height: displayH, background: "#111" }}
       >
-        <KonvaLayer>
-          {/* Black canvas base */}
-          <KonvaRect
-            x={0} y={0}
-            width={project.canvas.width}
-            height={project.canvas.height}
-            fill="#000000"
-          />
+        <Stage
+          ref={stageRef}
+          width={displayW}
+          height={displayH}
+          scaleX={SCALE}
+          scaleY={SCALE}
+          onClick={(e) => {
+            if (e.target === e.target.getStage()) selectLayer(null);
+          }}
+        >
+          <KonvaLayer>
+            {/* Black canvas base */}
+            <KonvaRect
+              x={0} y={0}
+              width={project.canvas.width}
+              height={project.canvas.height}
+              fill="#000000"
+            />
 
-          {sortedLayers
-            .filter((l) => l.visible)
-            .map((layer) => {
-              // Safety guard: skip any malformed layer object
-              if (!layer || typeof layer !== "object" || !layer.id || !layer.type) {
-                console.warn("PosterCanvas: skipping invalid layer", layer);
-                return null;
-              }
-              return (
-                <PosterLayerNode
-                  key={layer.id}
-                  layer={layer}
-                  selected={selectedLayerId === layer.id}
-                  onSelect={() => !layer.locked && selectLayer(layer.id)}
-                  onChange={(attrs) => updateLayer(layer.id, attrs)}
-                />
-              );
-            })}
-        </KonvaLayer>
-      </Stage>
+            {sortedLayers
+              .filter((l) => l.visible)
+              .map((layer) => {
+                if (!layer || typeof layer !== "object" || !layer.id || !layer.type) {
+                  console.warn("PosterCanvas: skipping invalid layer", layer);
+                  return null;
+                }
+                return (
+                  <PosterLayerNode
+                    key={layer.id}
+                    layer={layer}
+                    selected={selectedLayerId === layer.id}
+                    onSelect={() => !layer.locked && selectLayer(layer.id)}
+                    onChange={(attrs) => updateLayer(layer.id, attrs)}
+                  />
+                );
+              })}
+          </KonvaLayer>
+        </Stage>
 
-      <button
-        onClick={handleExport}
-        className="absolute bottom-3 right-3 bg-zinc-800/90 hover:bg-zinc-700 text-zinc-200 text-xs px-3 py-1.5 rounded-lg backdrop-blur transition-colors"
-      >
-        Export PNG
-      </button>
-    </div>
+        <button
+          onClick={handleExport}
+          className="absolute bottom-3 right-3 bg-zinc-800/90 hover:bg-zinc-700 text-zinc-200 text-xs px-3 py-1.5 rounded-lg backdrop-blur transition-colors"
+        >
+          Export PNG
+        </button>
+      </div>
+    </CanvasErrorBoundary>
   );
 }
 
-// Renamed from LayerNode → PosterLayerNode to avoid any confusion with Konva's Layer
 function PosterLayerNode({
   layer,
   selected,
@@ -199,7 +186,6 @@ function PosterLayerNode({
     );
   }
 
-  // Text layer — guard against missing textData
   const td = layer.textData;
   if (!td) {
     console.warn("PosterCanvas: text layer missing textData", layer.id, layer.type);
@@ -258,13 +244,12 @@ function KonvaImageNode({
     img.src = src;
     img.onload = () => setImage(img);
     img.onerror = () => {
-      console.warn("PosterCanvas: image failed to load", src?.slice(0, 80));
+      console.warn("PosterCanvas: image failed to load", src.slice(0, 80));
       setImgError(true);
       setImage(null);
     };
   }, [src]);
 
-  // Fallback rect when no src, load error, or still loading
   if (!src || imgError || !image) {
     return (
       <KonvaRect
