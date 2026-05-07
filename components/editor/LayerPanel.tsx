@@ -87,6 +87,11 @@ function LayerRow({
         {layer.label}
       </span>
 
+      {/* Persistent lock indicator */}
+      {layer.locked && (
+        <span className="font-mono text-[9px] text-zinc-600 flex-none group-hover:hidden" title="locked">■</span>
+      )}
+
       {/* Controls */}
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <Btn title={layer.visible ? "hide" : "show"} onClick={(e) => { e.stopPropagation(); onToggleVisibility(); }}>

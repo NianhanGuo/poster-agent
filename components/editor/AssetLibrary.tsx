@@ -56,7 +56,7 @@ export function AssetLibrary() {
     disabled: busy,
   });
 
-  function useAsset(asset: AssetItem, action: UsageAction) {
+  function applyAsset(asset: AssetItem, action: UsageAction) {
     if (!project) return;
 
     if (action === "reference") {
@@ -137,7 +137,7 @@ export function AssetLibrary() {
             <AssetThumbnail
               key={asset.id}
               asset={asset}
-              onUse={(action) => useAsset(asset, action)}
+              onUse={(action) => applyAsset(asset, action)}
               onDelete={() => removeAsset(asset.id)}
             />
           ))}

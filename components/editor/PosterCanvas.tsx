@@ -28,6 +28,7 @@ export function PosterCanvas({ showGuides = false }: { showGuides?: boolean }) {
   const [ready, setReady] = useState(false);
 
   // Only mount Konva after the component has hydrated on the client
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setReady(true); }, []);
 
   const handleExport = useCallback(() => {
@@ -55,7 +56,6 @@ export function PosterCanvas({ showGuides = false }: { showGuides?: boolean }) {
   const displayH = project.canvas.height * SCALE;
   const sortedLayers = getSortedLayers();
 
-  console.log("rendering poster layers", sortedLayers);
 
   return (
     <CanvasErrorBoundary>
@@ -277,6 +277,7 @@ function KonvaImageNode({
   const [imgError, setImgError] = useState(false);
   const src = layer.imageData?.src;
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!src) { setImage(null); setImgError(false); return; }
     setImgError(false);
@@ -290,6 +291,7 @@ function KonvaImageNode({
       setImage(null);
     };
   }, [src]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   if (!src || imgError || !image) {
     return (

@@ -5,10 +5,6 @@ import { RECIPES } from "@/lib/styleRecipes";
 // Opinionated, design-forward mock layouts — one per style recipe.
 // Used when ANTHROPIC_API_KEY is absent.
 
-function p(canvas: CanvasConfig, rx: number, ry: number) {
-  return { x: Math.round(canvas.width * rx), y: Math.round(canvas.height * ry) };
-}
-
 function bg(canvas: CanvasConfig): PosterLayer {
   return {
     id: uuidv4(),
@@ -56,7 +52,6 @@ export function mockLayout(
   canvas: CanvasConfig,
 ): { layers: PosterLayer[]; imagePrompt: string; designNotes: string } {
   const recipe = RECIPES[setup.styleRecipe] ?? RECIPES["cinematic-rain"];
-  const t = recipe.type;
   const pad = Math.round(canvas.width * 0.05);
   const inner = canvas.width - pad * 2;
 

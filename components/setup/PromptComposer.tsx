@@ -3,7 +3,6 @@ import { useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { usePosterStore } from "@/store/posterStore";
 import { RECIPE_LIST } from "@/lib/styleRecipes";
-import { CANVAS_PRESETS } from "@/types/poster";
 import type {
   PosterType,
   Language,

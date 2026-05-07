@@ -5,7 +5,6 @@ import type { FontCategory } from "@/lib/fonts";
 
 interface Props {
   value: string;
-  weight: number;
   onChange: (family: string, weights: number[]) => void;
 }
 
@@ -18,11 +17,11 @@ const CATEGORIES: { value: FontCategory | "all"; label: string }[] = [
   { value: "mono",    label: "Mono" },
 ];
 
-export function FontPicker({ value, weight, onChange }: Props) {
+export function FontPicker({ value, onChange }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [cat, setCat] = useState<FontCategory | "all">("all");
-  const [previewed, setPreviewed] = useState<Set<string>>(new Set());
+  const previewed = useRef<Set<string>>(new Set());
   const ref = useRef<HTMLDivElement>(null);
 
   const results = searchFonts(query, cat === "all" ? undefined : cat);
@@ -38,15 +37,13 @@ export function FontPicker({ value, weight, onChange }: Props) {
 
   // Load preview fonts when they become visible
   useEffect(() => {
-    const toLoad = results.slice(0, 20).filter((f) => !previewed.has(f.family));
+    const toLoad = results.slice(0, 20).filter((f) => !previewed.current.has(f.family));
     if (toLoad.length === 0) return;
-    toLoad.forEach((f) => loadGoogleFont(f.family, [400]));
-    setPreviewed((p) => {
-      const next = new Set(p);
-      toLoad.forEach((f) => next.add(f.family));
-      return next;
+    toLoad.forEach((f) => {
+      loadGoogleFont(f.family, [400]);
+      previewed.current.add(f.family);
     });
-  }, [results]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [results]);
 
   function select(family: string) {
     const def = FONT_LIST.find((f) => f.family === family);

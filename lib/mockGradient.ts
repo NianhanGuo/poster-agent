@@ -7,7 +7,7 @@ export function mockGradientDataUrl(
   height: number,
 ): string {
   const def = RECIPES[recipe as StyleRecipe] ?? RECIPES["cinematic-rain"];
-  const { bg, surface, accent } = def.palette;
+  const { bg, surface } = def.palette;
 
   // Each recipe gets a distinct gradient direction and character
   const gradients: Record<string, string> = {

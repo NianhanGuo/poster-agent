@@ -3,7 +3,7 @@ import { useState } from "react";
 import { usePosterStore } from "@/store/posterStore";
 import { ImageUploadPanel } from "./ImageUploadPanel";
 import { FontPicker } from "./FontPicker";
-import { FONT_LIST, loadGoogleFont } from "@/lib/fonts";
+import { loadGoogleFont } from "@/lib/fonts";
 import { GRADIENT_PRESETS, EFFECTS, COLOR_SWATCHES } from "@/lib/textEffects";
 import type { PosterLayer } from "@/types/poster";
 import { isTextLayer, isImageLayer } from "@/types/poster";
@@ -86,7 +86,7 @@ export function ToolPanel({ onTypography }: ToolPanelProps) {
       )}
 
       {selected && textSelected && selected.textData && (
-        <TextInspector td={selected.textData} layer={selected} onText={onText} onLayer={onLayer} onTypography={onTypography} />
+        <TextInspector td={selected.textData} onText={onText} onTypography={onTypography} />
       )}
 
       {selected && imageSelected && (
@@ -145,12 +145,10 @@ function SliderRow({
 // ─── Text inspector ─────────────────────────────────────────────────────────
 
 function TextInspector({
-  td, layer, onText, onLayer, onTypography,
+  td, onText, onTypography,
 }: {
   td: NonNullable<PosterLayer["textData"]>;
-  layer: PosterLayer;
   onText: (u: Partial<NonNullable<PosterLayer["textData"]>>) => void;
-  onLayer: (u: Partial<PosterLayer>) => void;
   onTypography?: (styleHint?: string) => void;
 }) {
   const fontWeight = td.fontWeight ?? 400;
@@ -159,7 +157,7 @@ function TextInspector({
 
   function toggleEffect(id: string) {
     const next = new Set(activeEffects);
-    next.has(id) ? next.delete(id) : next.add(id);
+    if (next.has(id)) { next.delete(id); } else { next.add(id); }
     const effects = [...next];
 
     // Derive Konva props from effects
@@ -204,16 +202,12 @@ function TextInspector({
     onText({ fontFamily: family, fontWeight: w, fontStyle: style });
   }
 
-  // Find available weights for current font
-  const fontDef = FONT_LIST.find((f) => f.family === td.fontFamily);
-  const availableWeights = fontDef?.weights ?? [400, 700];
-
   return (
     <>
       {/* Typography */}
       <Section label="Font" />
       <div className="px-4 pb-1">
-        <FontPicker value={td.fontFamily} weight={fontWeight} onChange={setFont} />
+        <FontPicker value={td.fontFamily} onChange={setFont} />
       </div>
 
       <Row label="Weight">

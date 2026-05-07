@@ -164,7 +164,13 @@ export function EditorClient() {
       // Non-fatal — use layout without new image
     }
 
-    const newProject = { ...project, layers: layers as typeof project.layers };
+    const newProject = {
+      ...project,
+      layers: layers as typeof project.layers,
+      promptHistory: promptOverride
+        ? [...project.promptHistory, promptOverride]
+        : project.promptHistory,
+    };
     pushVersion(newProject, brief);
     setProject(newProject);
     setGenerating(false);
