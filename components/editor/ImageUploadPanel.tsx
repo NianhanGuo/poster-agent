@@ -4,18 +4,19 @@ import { useDropzone } from "react-dropzone";
 import { usePosterStore } from "@/store/posterStore";
 import type { PosterLayer, ImageInputMode } from "@/types/poster";
 
-const MODES: { value: ImageInputMode; label: string; disabled?: boolean }[] = [
-  { value: "background",      label: "Background" },
-  { value: "crop-to-fit",     label: "Crop to fit" },
-  { value: "no-modify",       label: "As-is" },
-  { value: "extract-subject", label: "Extract subject", disabled: true },
+const MODES: { value: ImageInputMode; label: string; hint: string }[] = [
+  { value: "new-layer",   label: "Add Layer",       hint: "New independent image layer" },
+  { value: "background",  label: "Set Background",  hint: "Replace or create background" },
+  { value: "foreground",  label: "Foreground",      hint: "Place above all other layers" },
+  { value: "texture",     label: "Texture",         hint: "Semi-transparent overlay above background" },
+  { value: "reference",   label: "Reference",       hint: "Use for style reference only (no layer added)" },
 ];
 
 interface Props { onClose: () => void }
 
 export function ImageUploadPanel({ onClose }: Props) {
-  const { project, addLayer, updateLayer, getSortedLayers } = usePosterStore();
-  const [mode, setMode] = useState<ImageInputMode>("background");
+  const { project, addLayer, updateLayer, getSortedLayers, setReferenceImage } = usePosterStore();
+  const [mode, setMode] = useState<ImageInputMode>("new-layer");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
 
@@ -23,11 +24,6 @@ export function ImageUploadPanel({ onClose }: Props) {
     (files: File[]) => {
       const file = files[0];
       if (!file || !project) return;
-
-      if (mode === "extract-subject") {
-        setStatus("Subject extraction requires REMOVE_BG_API_KEY on the server.");
-        return;
-      }
 
       setBusy(true);
       setStatus("");
@@ -42,32 +38,99 @@ export function ImageUploadPanel({ onClose }: Props) {
           return;
         }
 
-        const canvas = project.canvas;
-        const fit = mode === "crop-to-fit" ? "cover" : "fill";
-        const bgLayer = getSortedLayers().find((l) => l.type === "backgroundImage");
-
-        if (bgLayer && (mode === "background" || mode === "crop-to-fit")) {
-          // Replace existing background layer src in-place
-          updateLayer(bgLayer.id, { imageData: { src: dataUrl, fit } });
-          setStatus("background updated");
-        } else {
-          const isBackground = mode === "background";
-          const newLayer: PosterLayer = {
-            id: crypto.randomUUID(),
-            type: isBackground ? "backgroundImage" : "userImage",
-            label: isBackground ? "Background" : "Image",
-            x: 0, y: 0,
-            width: canvas.width,
-            height: canvas.height,
-            rotation: 0, opacity: 1,
-            visible: true, locked: false,
-            zIndex: isBackground ? 1 : Math.max(0, ...getSortedLayers().map((l) => l.zIndex)) + 1,
-            imageData: { src: dataUrl, fit },
-          };
-          addLayer(newLayer);
-          setStatus("added");
+        if (mode === "reference") {
+          setReferenceImage(dataUrl);
+          setStatus("set as reference");
+          setBusy(false);
+          return;
         }
 
+        const canvas = project.canvas;
+        const layers = getSortedLayers();
+        const maxZ = Math.max(0, ...layers.map((l) => l.zIndex));
+        const baseName = file.name.replace(/\.[^/.]+$/, "");
+
+        if (mode === "background") {
+          const bgLayer = layers.find((l) => l.type === "backgroundImage");
+          if (bgLayer) {
+            updateLayer(bgLayer.id, { imageData: { src: dataUrl, fit: "fill" } });
+            setStatus("background updated");
+          } else {
+            const newLayer: PosterLayer = {
+              id: crypto.randomUUID(),
+              type: "backgroundImage",
+              label: "Background",
+              x: 0, y: 0,
+              width: canvas.width, height: canvas.height,
+              rotation: 0, opacity: 1,
+              visible: true, locked: false,
+              zIndex: 1,
+              imageData: { src: dataUrl, fit: "fill" },
+            };
+            addLayer(newLayer);
+            setStatus("background added");
+          }
+          setBusy(false);
+          return;
+        }
+
+        if (mode === "texture") {
+          const bgZ = layers.find((l) => l.type === "backgroundImage")?.zIndex ?? 1;
+          const newLayer: PosterLayer = {
+            id: crypto.randomUUID(),
+            type: "userImage",
+            label: baseName || "Texture",
+            x: 0, y: 0,
+            width: canvas.width, height: canvas.height,
+            rotation: 0, opacity: 0.35,
+            visible: true, locked: false,
+            zIndex: bgZ + 1,
+            imageData: { src: dataUrl, fit: "fill" },
+          };
+          addLayer(newLayer);
+          setStatus("texture added");
+          setBusy(false);
+          return;
+        }
+
+        if (mode === "foreground") {
+          const userImgCount = layers.filter((l) => l.type === "userImage").length;
+          const newLayer: PosterLayer = {
+            id: crypto.randomUUID(),
+            type: "userImage",
+            label: baseName || `image ${userImgCount + 1}`,
+            x: Math.round(canvas.width * 0.1),
+            y: Math.round(canvas.height * 0.1),
+            width: Math.round(canvas.width * 0.8),
+            height: Math.round(canvas.height * 0.8),
+            rotation: 0, opacity: 1,
+            visible: true, locked: false,
+            zIndex: maxZ + 1,
+            imageData: { src: dataUrl, fit: "contain" },
+          };
+          addLayer(newLayer);
+          setStatus("foreground added");
+          setBusy(false);
+          return;
+        }
+
+        // "new-layer" default — auto-assign zIndex via store (pass 0)
+        const userImgCount = layers.filter((l) => l.type === "userImage").length;
+        const newLayer: PosterLayer = {
+          id: crypto.randomUUID(),
+          type: "userImage",
+          label: baseName || `image ${userImgCount + 1}`,
+          x: Math.round(canvas.width * 0.05),
+          y: Math.round(canvas.height * 0.05),
+          width: Math.round(canvas.width * 0.9),
+          height: Math.round(canvas.height * 0.9),
+          rotation: 0, opacity: 1,
+          visible: true, locked: false,
+          zIndex: 0,
+          imageData: { src: dataUrl, fit: "contain" },
+        };
+        addLayer(newLayer);
+        setStatus("layer added");
         setBusy(false);
       };
 
@@ -78,7 +141,7 @@ export function ImageUploadPanel({ onClose }: Props) {
 
       reader.readAsDataURL(file);
     },
-    [mode, project, addLayer, updateLayer, getSortedLayers],
+    [mode, project, addLayer, updateLayer, getSortedLayers, setReferenceImage],
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -87,6 +150,8 @@ export function ImageUploadPanel({ onClose }: Props) {
     maxFiles: 1,
     disabled: busy,
   });
+
+  const activeMode = MODES.find((m) => m.value === mode);
 
   return (
     <div className="border border-zinc-800 p-3 space-y-3">
@@ -99,11 +164,10 @@ export function ImageUploadPanel({ onClose }: Props) {
         {MODES.map((m) => (
           <button
             key={m.value}
-            onClick={() => { if (!m.disabled) { setMode(m.value); setStatus(""); } }}
-            disabled={m.disabled}
-            title={m.disabled ? "Requires server API key" : undefined}
-            className={`font-mono text-[9px] tracking-wide uppercase px-2 py-1 border transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
-              mode === m.value && !m.disabled
+            onClick={() => { setMode(m.value); setStatus(""); }}
+            title={m.hint}
+            className={`font-mono text-[9px] tracking-wide uppercase px-2 py-1 border transition-colors ${
+              mode === m.value
                 ? "border-zinc-500 text-zinc-200"
                 : "border-zinc-800 text-zinc-600 hover:border-zinc-600"
             }`}
@@ -112,6 +176,10 @@ export function ImageUploadPanel({ onClose }: Props) {
           </button>
         ))}
       </div>
+
+      {activeMode && (
+        <p className="font-mono text-[9px] text-zinc-700">{activeMode.hint}</p>
+      )}
 
       <div
         {...getRootProps()}

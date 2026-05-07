@@ -117,8 +117,10 @@ export const usePosterStore = create<PosterState>()(
       set((state) => {
         if (!state.project) return;
         get().pushHistory();
-        const maxZ = Math.max(0, ...state.project.layers.map((l) => l.zIndex));
-        layer.zIndex = maxZ + 1;
+        if (!layer.zIndex) {
+          const maxZ = Math.max(0, ...state.project.layers.map((l) => l.zIndex));
+          layer.zIndex = maxZ + 1;
+        }
         state.project.layers.push(layer);
         state.selectedLayerId = layer.id;
       }),

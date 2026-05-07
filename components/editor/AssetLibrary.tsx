@@ -4,12 +4,13 @@ import { useDropzone } from "react-dropzone";
 import { usePosterStore } from "@/store/posterStore";
 import type { AssetItem, PosterLayer } from "@/types/poster";
 
-type UsageAction = "background" | "layer" | "reference";
+type UsageAction = "layer" | "background" | "foreground" | "reference";
 
 const ACTIONS: { value: UsageAction; label: string }[] = [
-  { value: "background", label: "Background" },
-  { value: "layer",      label: "Add layer" },
-  { value: "reference",  label: "As reference" },
+  { value: "layer",      label: "Add Layer" },
+  { value: "background", label: "Set Background" },
+  { value: "foreground", label: "Foreground" },
+  { value: "reference",  label: "Reference" },
 ];
 
 export function AssetLibrary() {
@@ -66,9 +67,11 @@ export function AssetLibrary() {
 
     const canvas = project.canvas;
     const layers = getSortedLayers();
-    const bgLayer = layers.find((l) => l.type === "backgroundImage");
+    const maxZ = Math.max(0, ...layers.map((l) => l.zIndex));
+    const name = asset.fileName.replace(/\.[^/.]+$/, "");
 
     if (action === "background") {
+      const bgLayer = layers.find((l) => l.type === "backgroundImage");
       if (bgLayer) {
         updateLayer(bgLayer.id, { imageData: { src: asset.imageUrl, fit: "fill" } });
       } else {
@@ -77,32 +80,48 @@ export function AssetLibrary() {
           type: "backgroundImage",
           label: "Background",
           x: 0, y: 0,
-          width: canvas.width,
-          height: canvas.height,
+          width: canvas.width, height: canvas.height,
           rotation: 0, opacity: 1,
           visible: true, locked: false, zIndex: 1,
           imageData: { src: asset.imageUrl, fit: "fill" },
         };
         addLayer(newLayer);
       }
-    } else {
-      const maxZ = Math.max(0, ...layers.map((l) => l.zIndex));
-      const name = asset.fileName.replace(/\.[^/.]+$/, "");
+      return;
+    }
+
+    if (action === "foreground") {
       const newLayer: PosterLayer = {
         id: crypto.randomUUID(),
         type: "userImage",
-        label: name,
-        x: Math.round(canvas.width * 0.1),
-        y: Math.round(canvas.height * 0.1),
-        width: Math.round(canvas.width * 0.8),
-        height: Math.round(canvas.height * 0.5),
+        label: name || "Foreground",
+        x: 0, y: 0,
+        width: canvas.width, height: canvas.height,
         rotation: 0, opacity: 1,
         visible: true, locked: false,
         zIndex: maxZ + 1,
         imageData: { src: asset.imageUrl, fit: "contain" },
       };
       addLayer(newLayer);
+      return;
     }
+
+    // "layer" — add above background, below text (auto-assigned by store)
+    const userImgCount = layers.filter((l) => l.type === "userImage").length;
+    const newLayer: PosterLayer = {
+      id: crypto.randomUUID(),
+      type: "userImage",
+      label: name || `image ${userImgCount + 1}`,
+      x: Math.round(canvas.width * 0.1),
+      y: Math.round(canvas.height * 0.1),
+      width: Math.round(canvas.width * 0.8),
+      height: Math.round(canvas.height * 0.5),
+      rotation: 0, opacity: 1,
+      visible: true, locked: false,
+      zIndex: 0,
+      imageData: { src: asset.imageUrl, fit: "contain" },
+    };
+    addLayer(newLayer);
   }
 
   return (

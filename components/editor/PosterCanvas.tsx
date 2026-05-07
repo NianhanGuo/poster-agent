@@ -293,14 +293,34 @@ function KonvaImageNode({
   }, [src]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  if (!src || imgError || !image) {
+  if (!src) return null;
+
+  const isBg = layer.type === "backgroundImage" || layer.type === "subjectImage";
+
+  if (imgError) {
     return (
       <KonvaRect
         x={layer.x} y={layer.y}
         width={layer.width} height={layer.height}
-        fill={layer.type === "backgroundImage" ? "#0a0a0a" : "#1a1a1a"}
-        stroke={selected ? "#71717a" : "transparent"}
+        fill={isBg ? "#0a0a0a" : "#2a0a0a"}
+        stroke={selected ? "#71717a" : "rgba(180,0,0,0.4)"}
         strokeWidth={2}
+        opacity={layer.opacity}
+        draggable={!layer.locked}
+        onClick={commonProps.onClick as () => void}
+        onTap={commonProps.onTap as () => void}
+        onDragEnd={commonProps.onDragEnd as (e: { target: { x: () => number; y: () => number } }) => void}
+      />
+    );
+  }
+
+  if (!image) {
+    if (!isBg) return null;
+    return (
+      <KonvaRect
+        x={layer.x} y={layer.y}
+        width={layer.width} height={layer.height}
+        fill="#0a0a0a"
         opacity={layer.opacity}
         draggable={!layer.locked}
         onClick={commonProps.onClick as () => void}

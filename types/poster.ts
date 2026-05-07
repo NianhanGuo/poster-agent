@@ -31,7 +31,11 @@ export type ImageStyle =
   | "custom";
 
 export type ImageInputMode =
+  | "new-layer"
   | "background"
+  | "foreground"
+  | "texture"
+  | "reference"
   | "crop-to-fit"
   | "extract-subject"
   | "style-reference"

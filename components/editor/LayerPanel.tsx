@@ -103,6 +103,12 @@ function LayerRow({
         <Btn title="up" onClick={(e) => { e.stopPropagation(); onMoveUp(); }}>↑</Btn>
         <Btn title="down" onClick={(e) => { e.stopPropagation(); onMoveDown(); }}>↓</Btn>
         <Btn title="dupe" onClick={(e) => { e.stopPropagation(); onDuplicate(); }}>+</Btn>
+        <button
+          title="Merge coming soon"
+          disabled
+          onClick={(e) => e.stopPropagation()}
+          className="w-4 h-4 flex items-center justify-center font-mono text-[10px] text-zinc-800 cursor-not-allowed"
+        >⊕</button>
         <Btn title="delete" onClick={(e) => { e.stopPropagation(); if (confirm(`Delete "${layer.label}"?`)) onDelete(); }} className="hover:text-red-500">×</Btn>
       </div>
     </div>
