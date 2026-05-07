@@ -2,13 +2,11 @@
 import { useState } from "react";
 import { usePosterStore } from "@/store/posterStore";
 import { ImageUploadPanel } from "./ImageUploadPanel";
+import { FontPicker } from "./FontPicker";
+import { FONT_LIST, loadGoogleFont } from "@/lib/fonts";
+import { GRADIENT_PRESETS, EFFECTS, COLOR_SWATCHES } from "@/lib/textEffects";
 import type { PosterLayer } from "@/types/poster";
 import { isTextLayer, isImageLayer } from "@/types/poster";
-
-const FONT_FAMILIES = [
-  "Arial", "Helvetica Neue", "Georgia", "Times New Roman",
-  "Courier New", "Impact", "Palatino", "Garamond", "Baskerville",
-];
 
 export function ToolPanel() {
   const { project, selectedLayerId, getLayerById, updateLayer, updateTextData, addLayer } =
@@ -35,8 +33,10 @@ export function ToolPanel() {
       textData: {
         text: "New Text",
         fontSize: 64,
-        fontFamily: "Helvetica Neue",
+        fontFamily: "Inter",
         fontStyle: "normal",
+        fontWeight: 400,
+        italic: false,
         fill: "#ffffff",
         align: "center",
         letterSpacing: 2,
@@ -46,88 +46,57 @@ export function ToolPanel() {
     addLayer(newLayer);
   }
 
+  const onText = (u: Partial<NonNullable<PosterLayer["textData"]>>) => {
+    if (selected) updateTextData(selected.id, u);
+  };
+  const onLayer = (u: Partial<PosterLayer>) => {
+    if (selected) updateLayer(selected.id, u);
+  };
+
   return (
-    <div className="py-3 space-y-5 text-xs">
+    <div className="py-3 space-y-1 text-xs select-none">
       {/* Add */}
-      <div className="px-4 space-y-2">
-        <div className="font-mono text-[9px] tracking-[0.25em] uppercase text-zinc-700 pb-1">
-          Add
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={addTextLayer}
-            className="flex-1 border border-zinc-800 hover:border-zinc-600 text-zinc-500 hover:text-zinc-300 font-mono text-[10px] tracking-wide uppercase py-1.5 transition-colors"
-          >
-            + Text
-          </button>
-          <button
-            onClick={() => setShowImageUpload(!showImageUpload)}
-            className="flex-1 border border-zinc-800 hover:border-zinc-600 text-zinc-500 hover:text-zinc-300 font-mono text-[10px] tracking-wide uppercase py-1.5 transition-colors"
-          >
-            + Image
-          </button>
-        </div>
-        {showImageUpload && (
-          <ImageUploadPanel onClose={() => setShowImageUpload(false)} />
-        )}
+      <Section label="Add" />
+      <div className="px-4 flex gap-2 pb-2">
+        <button
+          onClick={addTextLayer}
+          className="flex-1 border border-zinc-800 hover:border-zinc-600 text-zinc-500 hover:text-zinc-300 font-mono text-[10px] tracking-wide uppercase py-1.5 transition-colors"
+        >
+          + Text
+        </button>
+        <button
+          onClick={() => setShowImageUpload(!showImageUpload)}
+          className="flex-1 border border-zinc-800 hover:border-zinc-600 text-zinc-500 hover:text-zinc-300 font-mono text-[10px] tracking-wide uppercase py-1.5 transition-colors"
+        >
+          + Image
+        </button>
       </div>
+      {showImageUpload && (
+        <div className="px-4 pb-2">
+          <ImageUploadPanel onClose={() => setShowImageUpload(false)} />
+        </div>
+      )}
 
       {!selected && (
-        <div className="px-4 font-mono text-[10px] text-zinc-700">
-          select a layer
-        </div>
+        <div className="px-4 pt-2 font-mono text-[10px] text-zinc-700">select a layer</div>
       )}
 
       {selected && textSelected && selected.textData && (
-        <TextProps
-          layer={selected}
-          onText={(u) => updateTextData(selected.id, u)}
-          onLayer={(u) => updateLayer(selected.id, u)}
-        />
+        <TextInspector td={selected.textData} layer={selected} onText={onText} onLayer={onLayer} />
       )}
 
       {selected && imageSelected && (
-        <ImageProps
-          layer={selected}
-          onLayer={(u) => updateLayer(selected.id, u)}
-        />
+        <ImageInspector layer={selected} onLayer={onLayer} />
       )}
 
       {selected && (
-        <TransformProps
-          layer={selected}
-          onLayer={(u) => updateLayer(selected.id, u)}
-        />
+        <TransformInspector layer={selected} onLayer={onLayer} />
       )}
     </div>
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-2 px-4 py-0.5">
-      <span className="font-mono text-[9px] tracking-wide uppercase text-zinc-700 w-16 flex-none">{label}</span>
-      <div className="flex-1 min-w-0">{children}</div>
-    </div>
-  );
-}
-
-function Input({ value, onChange, type = "text", placeholder = "" }: {
-  value: string | number;
-  onChange: (v: string) => void;
-  type?: string;
-  placeholder?: string;
-}) {
-  return (
-    <input
-      type={type}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      className="w-full bg-transparent border-b border-zinc-800 focus:border-zinc-600 text-zinc-300 font-mono text-[10px] outline-none pb-0.5 placeholder:text-zinc-700 transition-colors"
-    />
-  );
-}
+// ─── Section header ────────────────────────────────────────────────────────────
 
 function Section({ label }: { label: string }) {
   return (
@@ -137,76 +106,143 @@ function Section({ label }: { label: string }) {
   );
 }
 
-function TextProps({
-  layer, onText, onLayer,
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 px-4 py-0.5 min-h-[26px]">
+      <span className="font-mono text-[9px] tracking-wide uppercase text-zinc-700 w-14 flex-none">{label}</span>
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
+  );
+}
+
+function SliderRow({
+  label, min, max, step = 1, value, onChange, display,
 }: {
+  label: string; min: number; max: number; step?: number;
+  value: number; onChange: (v: number) => void; display?: string;
+}) {
+  return (
+    <Row label={label}>
+      <div className="flex items-center gap-2">
+        <input
+          type="range" min={min} max={max} step={step}
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="flex-1 h-0.5 accent-zinc-400"
+        />
+        <span className="font-mono text-[9px] text-zinc-600 w-8 text-right flex-none">
+          {display ?? value}
+        </span>
+      </div>
+    </Row>
+  );
+}
+
+// ─── Text inspector ─────────────────────────────────────────────────────────
+
+function TextInspector({
+  td, layer, onText, onLayer,
+}: {
+  td: NonNullable<PosterLayer["textData"]>;
   layer: PosterLayer;
   onText: (u: Partial<NonNullable<PosterLayer["textData"]>>) => void;
   onLayer: (u: Partial<PosterLayer>) => void;
 }) {
-  const td = layer.textData!;
+  const fontWeight = td.fontWeight ?? 400;
+  const italic = td.italic ?? false;
+  const activeEffects = new Set(td.effects ?? []);
+
+  function toggleEffect(id: string) {
+    const next = new Set(activeEffects);
+    next.has(id) ? next.delete(id) : next.add(id);
+    const effects = [...next];
+
+    // Derive Konva props from effects
+    const hasShadow = next.has("shadow");
+    const hasOutline = next.has("outline");
+    const hasNeon = next.has("neon");
+    const neonColor = td.fill ?? "#ffffff";
+
+    onText({
+      effects,
+      textDecoration: [
+        next.has("underline") ? "underline" : "",
+        next.has("strikethrough") ? "line-through" : "",
+      ].filter(Boolean).join(" ") || undefined,
+      shadowEnabled: hasShadow || hasNeon,
+      shadowColor: hasNeon ? neonColor : (hasShadow ? (td.shadowColor ?? "#000000") : undefined),
+      shadowBlur: hasNeon ? 28 : (hasShadow ? (td.shadowBlur ?? 8) : undefined),
+      shadowOffsetX: hasNeon ? 0 : (hasShadow ? (td.shadowOffsetX ?? 4) : undefined),
+      shadowOffsetY: hasNeon ? 0 : (hasShadow ? (td.shadowOffsetY ?? 4) : undefined),
+      stroke: hasOutline ? (td.stroke ?? "#ffffff") : undefined,
+      strokeWidth: hasOutline ? (td.strokeWidth ?? 2) : undefined,
+    });
+  }
+
+  function setFontWeight(w: number) {
+    const style = italic ? `italic ${w}` : w === 400 ? "normal" : `${w}`;
+    onText({ fontWeight: w, fontStyle: style });
+    // Reload with new weight
+    loadGoogleFont(td.fontFamily, [w]);
+  }
+
+  function setItalic(on: boolean) {
+    const w = fontWeight;
+    const style = on ? `italic ${w}` : w === 400 ? "normal" : `${w}`;
+    onText({ italic: on, fontStyle: style });
+    loadGoogleFont(td.fontFamily, [w]);
+  }
+
+  function setFont(family: string, availableWeights: number[]) {
+    const w = availableWeights.includes(fontWeight) ? fontWeight : (availableWeights.includes(400) ? 400 : availableWeights[0]);
+    const style = italic ? `italic ${w}` : w === 400 ? "normal" : `${w}`;
+    onText({ fontFamily: family, fontWeight: w, fontStyle: style });
+  }
+
+  // Find available weights for current font
+  const fontDef = FONT_LIST.find((f) => f.family === td.fontFamily);
+  const availableWeights = fontDef?.weights ?? [400, 700];
+
   return (
     <>
-      <Section label="Text" />
-      <div className="px-4">
-        <textarea
-          value={td.text}
-          onChange={(e) => onText({ text: e.target.value })}
-          rows={3}
-          className="w-full bg-transparent border-b border-zinc-800 focus:border-zinc-600 text-zinc-300 font-mono text-[10px] outline-none pb-1 resize-none placeholder:text-zinc-700 transition-colors"
-        />
+      {/* Typography */}
+      <Section label="Font" />
+      <div className="px-4 pb-1">
+        <FontPicker value={td.fontFamily} weight={fontWeight} onChange={setFont} />
       </div>
 
-      <Row label="Font">
-        <select
-          value={td.fontFamily}
-          onChange={(e) => onText({ fontFamily: e.target.value })}
-          className="w-full bg-transparent text-zinc-300 font-mono text-[10px] outline-none border-b border-zinc-800 pb-0.5"
-        >
-          {FONT_FAMILIES.map((f) => <option key={f} value={f}>{f}</option>)}
-        </select>
-      </Row>
-
-      <Row label="Size">
+      <Row label="Weight">
         <div className="flex items-center gap-2">
           <input
-            type="range" min={8} max={400}
-            value={td.fontSize}
-            onChange={(e) => onText({ fontSize: Number(e.target.value) })}
-            className="flex-1"
+            type="range"
+            min={100} max={900} step={100}
+            value={fontWeight}
+            onChange={(e) => setFontWeight(Number(e.target.value))}
+            className="flex-1 h-0.5 accent-zinc-400"
+            // Snap to available weights visually
           />
-          <span className="font-mono text-[10px] text-zinc-500 w-8 text-right">{td.fontSize}</span>
+          <span className="font-mono text-[9px] text-zinc-600 w-8 text-right flex-none">{fontWeight}</span>
         </div>
       </Row>
 
       <Row label="Style">
-        <div className="flex gap-1">
-          {(["normal", "bold", "italic"] as const).map((s) => (
-            <button
-              key={s}
-              onClick={() => onText({ fontStyle: s })}
-              className={`px-2 py-0.5 font-mono text-[9px] border transition-colors ${
-                td.fontStyle === s
-                  ? "border-zinc-500 text-zinc-200"
-                  : "border-zinc-800 text-zinc-600 hover:border-zinc-600"
-              }`}
-            >
-              {s[0].toUpperCase()}
-            </button>
-          ))}
-        </div>
-      </Row>
-
-      <Row label="Align">
-        <div className="flex gap-1">
+        <div className="flex items-center gap-2">
+          {/* Italic toggle */}
+          <button
+            onClick={() => setItalic(!italic)}
+            className={`border px-2 py-0.5 font-mono text-[9px] italic transition-colors ${
+              italic ? "border-zinc-500 text-zinc-200" : "border-zinc-800 text-zinc-600 hover:border-zinc-600"
+            }`}
+          >
+            I
+          </button>
+          {/* Alignment */}
           {(["left", "center", "right"] as const).map((a) => (
             <button
               key={a}
               onClick={() => onText({ align: a })}
-              className={`px-2 py-0.5 font-mono text-[9px] border transition-colors ${
-                td.align === a
-                  ? "border-zinc-500 text-zinc-200"
-                  : "border-zinc-800 text-zinc-600 hover:border-zinc-600"
+              className={`border px-2 py-0.5 font-mono text-[9px] transition-colors ${
+                td.align === a ? "border-zinc-500 text-zinc-200" : "border-zinc-800 text-zinc-600 hover:border-zinc-600"
               }`}
             >
               {a === "left" ? "L" : a === "center" ? "C" : "R"}
@@ -215,51 +251,161 @@ function TextProps({
         </div>
       </Row>
 
-      <Row label="Color">
+      <SliderRow label="Size" min={8} max={400} value={td.fontSize} onChange={(v) => onText({ fontSize: v })} display={`${td.fontSize}px`} />
+      <SliderRow label="Spacing" min={-10} max={60} value={td.letterSpacing ?? 0} onChange={(v) => onText({ letterSpacing: v })} display={`${td.letterSpacing ?? 0}`} />
+      <SliderRow label="Leading" min={0.7} max={3.5} step={0.05} value={td.lineHeight ?? 1.2} onChange={(v) => onText({ lineHeight: v })} display={(td.lineHeight ?? 1.2).toFixed(2)} />
+
+      {/* Text content */}
+      <Section label="Text" />
+      <div className="px-4 pb-1">
+        <textarea
+          value={td.text}
+          onChange={(e) => onText({ text: e.target.value })}
+          rows={3}
+          className="w-full bg-transparent border-b border-zinc-800 focus:border-zinc-600 text-zinc-300 font-mono text-[10px] outline-none pb-1 resize-none transition-colors"
+        />
+      </div>
+
+      {/* Color */}
+      <Section label="Color" />
+      {/* Swatches */}
+      <div className="px-4 pb-1">
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {COLOR_SWATCHES.map((c) => (
+            <button
+              key={c}
+              onClick={() => onText({ fill: c, fillGradient: undefined })}
+              className="w-5 h-5 rounded-sm border border-zinc-800 hover:scale-110 transition-transform"
+              style={{ background: c }}
+              title={c}
+            />
+          ))}
+        </div>
         <div className="flex items-center gap-2">
           <input
             type="color"
             value={td.fill}
-            onChange={(e) => onText({ fill: e.target.value })}
+            onChange={(e) => onText({ fill: e.target.value, fillGradient: undefined })}
             className="w-5 h-5 bg-transparent border-0 cursor-pointer"
           />
           <input
             type="text"
             value={td.fill}
-            onChange={(e) => onText({ fill: e.target.value })}
+            onChange={(e) => onText({ fill: e.target.value, fillGradient: undefined })}
             className="flex-1 bg-transparent border-b border-zinc-800 text-zinc-300 font-mono text-[10px] outline-none pb-0.5"
           />
         </div>
-      </Row>
+      </div>
 
-      <Row label="Tracking">
-        <div className="flex items-center gap-2">
-          <input
-            type="range" min={-5} max={40}
-            value={td.letterSpacing ?? 0}
-            onChange={(e) => onText({ letterSpacing: Number(e.target.value) })}
-            className="flex-1"
-          />
-          <span className="font-mono text-[10px] text-zinc-500 w-6 text-right">{td.letterSpacing ?? 0}</span>
-        </div>
-      </Row>
+      {/* Gradient */}
+      <Section label="Gradient" />
+      <div className="px-4 pb-1 flex flex-wrap gap-1.5">
+        {GRADIENT_PRESETS.map((g) => {
+          const active = (td.fillGradient ?? "none") === g.id;
+          const previewStyle =
+            g.id === "none"
+              ? { background: "#222" }
+              : {
+                  background: `linear-gradient(135deg, ${(g.colorStops as (string | number)[])
+                    .filter((s) => typeof s === "string")
+                    .join(", ")})`,
+                };
+          return (
+            <button
+              key={g.id}
+              title={g.label}
+              onClick={() => onText({ fillGradient: g.id === "none" ? undefined : g.id })}
+              className={`w-8 h-5 rounded-sm border transition-colors ${
+                active ? "border-zinc-400 scale-110" : "border-zinc-800 hover:border-zinc-600"
+              }`}
+              style={previewStyle}
+            />
+          );
+        })}
+      </div>
 
-      <Row label="Width">
-        <div className="flex items-center gap-2">
-          <input
-            type="range" min={50} max={Math.max(layer.width, 2000)}
-            value={layer.width}
-            onChange={(e) => onLayer({ width: Number(e.target.value) })}
-            className="flex-1"
-          />
-          <span className="font-mono text-[10px] text-zinc-500 w-10 text-right">{layer.width}px</span>
-        </div>
-      </Row>
+      {/* Effects */}
+      <Section label="Effects" />
+      <div className="px-4 pb-1 flex flex-wrap gap-1.5">
+        {EFFECTS.map((ef) => {
+          const active = activeEffects.has(ef.id);
+          return (
+            <button
+              key={ef.id}
+              onClick={() => toggleEffect(ef.id)}
+              title={ef.konvaSupported ? ef.label : `${ef.label} (not available in canvas)`}
+              className={`font-mono text-[9px] tracking-wide uppercase px-2 py-0.5 border transition-colors ${
+                active
+                  ? "border-zinc-400 text-zinc-200 bg-zinc-900"
+                  : "border-zinc-800 text-zinc-600 hover:border-zinc-600"
+              } ${!ef.konvaSupported ? "opacity-40" : ""}`}
+            >
+              {ef.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Shadow controls (when shadow or neon active) */}
+      {(activeEffects.has("shadow") || activeEffects.has("neon")) && (
+        <>
+          <Section label="Shadow" />
+          {activeEffects.has("shadow") && (
+            <>
+              <Row label="Color">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={td.shadowColor ?? "#000000"}
+                    onChange={(e) => onText({ shadowColor: e.target.value })}
+                    className="w-5 h-5 bg-transparent border-0 cursor-pointer"
+                  />
+                  <input
+                    type="text"
+                    value={td.shadowColor ?? "#000000"}
+                    onChange={(e) => onText({ shadowColor: e.target.value })}
+                    className="flex-1 bg-transparent border-b border-zinc-800 text-zinc-300 font-mono text-[10px] outline-none pb-0.5"
+                  />
+                </div>
+              </Row>
+              <SliderRow label="Offset X" min={-28} max={28} value={td.shadowOffsetX ?? 4} onChange={(v) => onText({ shadowOffsetX: v })} />
+              <SliderRow label="Offset Y" min={-28} max={28} value={td.shadowOffsetY ?? 4} onChange={(v) => onText({ shadowOffsetY: v })} />
+            </>
+          )}
+          <SliderRow label="Blur" min={0} max={50} value={td.shadowBlur ?? 8} onChange={(v) => onText({ shadowBlur: v })} display={`${td.shadowBlur ?? 8}px`} />
+        </>
+      )}
+
+      {/* Outline controls (when outline active) */}
+      {activeEffects.has("outline") && (
+        <>
+          <Section label="Outline" />
+          <Row label="Color">
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={td.stroke ?? "#ffffff"}
+                onChange={(e) => onText({ stroke: e.target.value })}
+                className="w-5 h-5 bg-transparent border-0 cursor-pointer"
+              />
+              <input
+                type="text"
+                value={td.stroke ?? "#ffffff"}
+                onChange={(e) => onText({ stroke: e.target.value })}
+                className="flex-1 bg-transparent border-b border-zinc-800 text-zinc-300 font-mono text-[10px] outline-none pb-0.5"
+              />
+            </div>
+          </Row>
+          <SliderRow label="Width" min={1} max={20} value={td.strokeWidth ?? 2} onChange={(v) => onText({ strokeWidth: v })} display={`${td.strokeWidth ?? 2}px`} />
+        </>
+      )}
     </>
   );
 }
 
-function ImageProps({ layer, onLayer }: {
+// ─── Image inspector ───────────────────────────────────────────────────────────
+
+function ImageInspector({ layer, onLayer }: {
   layer: PosterLayer;
   onLayer: (u: Partial<PosterLayer>) => void;
 }) {
@@ -267,29 +413,33 @@ function ImageProps({ layer, onLayer }: {
     <>
       <Section label="Image" />
       <Row label="Src">
-        <Input
+        <input
+          type="text"
           value={layer.imageData?.src ?? ""}
-          onChange={(v) => onLayer({ imageData: { ...(layer.imageData ?? {}), src: v } })}
+          onChange={(e) => onLayer({ imageData: { ...(layer.imageData ?? {}), src: e.target.value } })}
           placeholder="https://… or data:image/…"
+          className="w-full bg-transparent border-b border-zinc-800 text-zinc-300 font-mono text-[10px] outline-none pb-0.5 placeholder:text-zinc-700"
         />
       </Row>
     </>
   );
 }
 
-function TransformProps({ layer, onLayer }: {
+// ─── Transform inspector ───────────────────────────────────────────────────────
+
+function TransformInspector({ layer, onLayer }: {
   layer: PosterLayer;
   onLayer: (u: Partial<PosterLayer>) => void;
 }) {
   return (
     <>
       <Section label="Transform" />
-      <div className="px-4 grid grid-cols-2 gap-x-3 gap-y-2">
+      <div className="px-4 grid grid-cols-2 gap-x-3 gap-y-2 pb-1">
         {[
-          { label: "X", value: Math.round(layer.x), key: "x" },
-          { label: "Y", value: Math.round(layer.y), key: "y" },
-          { label: "W", value: Math.round(layer.width), key: "width" },
-          { label: "H", value: Math.round(layer.height), key: "height" },
+          { label: "X",  value: Math.round(layer.x),      key: "x" },
+          { label: "Y",  value: Math.round(layer.y),      key: "y" },
+          { label: "W",  value: Math.round(layer.width),  key: "width" },
+          { label: "H",  value: Math.round(layer.height), key: "height" },
         ].map(({ label, value, key }) => (
           <div key={key}>
             <span className="font-mono text-[9px] tracking-wide uppercase text-zinc-700">{label}</span>
@@ -309,9 +459,9 @@ function TransformProps({ layer, onLayer }: {
             type="range" min={-180} max={180}
             value={layer.rotation}
             onChange={(e) => onLayer({ rotation: Number(e.target.value) })}
-            className="flex-1"
+            className="flex-1 h-0.5 accent-zinc-400"
           />
-          <span className="font-mono text-[10px] text-zinc-500 w-8 text-right">{Math.round(layer.rotation)}°</span>
+          <span className="font-mono text-[9px] text-zinc-600 w-8 text-right flex-none">{Math.round(layer.rotation)}°</span>
         </div>
       </Row>
 
@@ -321,17 +471,18 @@ function TransformProps({ layer, onLayer }: {
             type="range" min={0} max={1} step={0.01}
             value={layer.opacity}
             onChange={(e) => onLayer({ opacity: Number(e.target.value) })}
-            className="flex-1"
+            className="flex-1 h-0.5 accent-zinc-400"
           />
-          <span className="font-mono text-[10px] text-zinc-500 w-8 text-right">{Math.round(layer.opacity * 100)}%</span>
+          <span className="font-mono text-[9px] text-zinc-600 w-8 text-right flex-none">{Math.round(layer.opacity * 100)}%</span>
         </div>
       </Row>
 
       <Row label="Z">
-        <Input
+        <input
           type="number"
           value={layer.zIndex}
-          onChange={(v) => onLayer({ zIndex: Number(v) })}
+          onChange={(e) => onLayer({ zIndex: Number(e.target.value) })}
+          className="w-full bg-transparent border-b border-zinc-800 text-zinc-300 font-mono text-[10px] outline-none pb-0.5"
         />
       </Row>
     </>

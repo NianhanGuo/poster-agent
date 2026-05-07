@@ -70,11 +70,28 @@ export interface TextLayerData {
   text: string;
   fontSize: number;
   fontFamily: string;
-  fontStyle: string;
+  fontStyle: string;       // Konva fontStyle: "normal" | "italic" | "bold" | "bold italic"
+  fontWeight?: number;     // 100–900; used to build fontStyle and load Google Font variant
+  italic?: boolean;
   fill: string;
   align: "left" | "center" | "right";
   letterSpacing?: number;
   lineHeight?: number;
+  // Decoration
+  textDecoration?: string; // "" | "underline" | "line-through" | "underline line-through"
+  // Outline / stroke
+  stroke?: string;
+  strokeWidth?: number;
+  // Drop shadow
+  shadowEnabled?: boolean;
+  shadowColor?: string;
+  shadowOffsetX?: number;
+  shadowOffsetY?: number;
+  shadowBlur?: number;
+  // Text gradient fill (overrides fill when set)
+  fillGradient?: string;   // gradient preset id from GRADIENT_PRESETS
+  // Active effect ids (from EFFECTS list)
+  effects?: string[];
 }
 
 export interface ImageLayerData {

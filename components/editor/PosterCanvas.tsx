@@ -15,6 +15,7 @@ import {
 import { usePosterStore } from "@/store/posterStore";
 import { CanvasErrorBoundary } from "./CanvasErrorBoundary";
 import type { PosterLayer } from "@/types/poster";
+import { getGradientPreset, gradientPoints } from "@/lib/textEffects";
 
 const SCALE = 0.5;
 
@@ -192,6 +193,20 @@ function PosterLayerNode({
     return null;
   }
 
+  // Gradient fill
+  const gradientPreset = td.fillGradient ? getGradientPreset(td.fillGradient) : undefined;
+  const useGradient = !!gradientPreset && gradientPreset.colorStops.length > 0;
+  const gradientProps = useGradient
+    ? (() => {
+        const { start, end } = gradientPoints(gradientPreset!.angle, layer.width, layer.height);
+        return {
+          fillLinearGradientStartPoint: start,
+          fillLinearGradientEndPoint: end,
+          fillLinearGradientColorStops: gradientPreset!.colorStops as (number | string)[],
+        };
+      })()
+    : {};
+
   return (
     <>
       <KonvaText
@@ -203,10 +218,19 @@ function PosterLayerNode({
         fontFamily={td.fontFamily ?? "Arial"}
         fontStyle={td.fontStyle ?? "normal"}
         fill={td.fill ?? "#ffffff"}
+        {...gradientProps}
         align={td.align ?? "left"}
         letterSpacing={td.letterSpacing ?? 0}
         lineHeight={td.lineHeight ?? 1.2}
         wrap="word"
+        textDecoration={td.textDecoration ?? ""}
+        stroke={td.stroke}
+        strokeWidth={td.strokeWidth}
+        shadowEnabled={td.shadowEnabled ?? false}
+        shadowColor={td.shadowColor ?? "#000000"}
+        shadowOffsetX={td.shadowOffsetX ?? 0}
+        shadowOffsetY={td.shadowOffsetY ?? 0}
+        shadowBlur={td.shadowBlur ?? 0}
         onDblClick={() => {
           const newText = prompt("Edit text:", td.text);
           if (newText !== null) {
