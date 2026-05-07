@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { PosterLayer } from "@/types/poster";
+import type { PaletteColor } from "@/lib/colorExtract";
 
 type StyleHint = "cinematic" | "editorial" | "brutalist" | "fit-to-canvas" | "improve" | undefined;
 
@@ -7,6 +8,7 @@ interface ReferenceContext {
   strength: number;
   targets: Record<string, boolean>;
   instruction?: string;
+  palette?: PaletteColor[];
 }
 
 function buildStyleDirective(hint: StyleHint, recipe: string): string {
@@ -86,12 +88,32 @@ export async function POST(req: NextRequest) {
 
   const styleDirective = buildStyleDirective(styleHint as StyleHint, recipe);
 
-  // Reference typography guidance
-  const refNote =
-    (reference as ReferenceContext | undefined)?.instruction &&
-    (reference as ReferenceContext).targets?.typography
-      ? `\nReference typography guidance: ${(reference as ReferenceContext).instruction}`
-      : "";
+  const ref = reference as ReferenceContext | undefined;
+
+  // Palette color guidance for text fills
+  let refNote = "";
+  if (ref?.palette && ref.palette.length > 0) {
+    const colorActive   = ref.targets?.color;
+    const typoActive    = ref.targets?.typography;
+    if (colorActive || typoActive) {
+      const titleColor =
+        ref.palette.find((p) => p.role === "accent")?.hex ??
+        ref.palette.find((p) => p.role === "highlight")?.hex ??
+        ref.palette[1]?.hex;
+      const bodyColor =
+        ref.palette.find((p) => p.role === "highlight")?.hex ??
+        ref.palette[2]?.hex;
+      const enforcement = (ref.strength ?? 50) >= 71 ? "STRICT — use exactly" : "preferred";
+
+      refNote += `\nReference color palette (${enforcement}): ${ref.palette.map((p) => `${p.hex}(${p.role})`).join(", ")}`;
+      if (titleColor) refNote += `\n  → Title text fill: ${titleColor}`;
+      if (bodyColor)  refNote += `\n  → Body/meta text fill: ${bodyColor}`;
+      refNote += "\n  → Do NOT use colors outside this palette for text fills.";
+    }
+  }
+  if (ref?.instruction && ref.targets?.typography) {
+    refNote += `\nReference typography guidance: ${ref.instruction}`;
+  }
 
   const systemPrompt = `You are a typography expert and art director specializing in ${posterType === "film" ? "film" : "exhibition"} posters.
 You make bold, intentional typographic decisions — never safe or average.

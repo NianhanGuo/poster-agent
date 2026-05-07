@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mockGradientDataUrl } from "@/lib/mockGradient";
+import { buildPalettePrompt } from "@/lib/colorExtract";
 import type { DesignBrief } from "@/types/poster";
+import type { PaletteColor } from "@/lib/colorExtract";
 
 interface ReferenceContext {
   strength: number;
   targets: Record<string, boolean>;
   instruction?: string;
   hasImage?: boolean;
+  palette?: PaletteColor[];
 }
 
 function pickDallE3Size(width: number, height: number): "1024x1024" | "1024x1792" | "1792x1024" {
@@ -51,10 +54,22 @@ function buildImagePrompt(
     }
   }
 
-  // Reference instruction (only if targeting relevant aspects)
+  // Extracted palette enforcement (hex-level, strength-tiered)
+  if (reference?.palette && reference.palette.length > 0) {
+    const paletteSection = buildPalettePrompt(
+      reference.palette,
+      reference.strength,
+      !!reference.targets.color,
+    );
+    if (paletteSection) parts.push(paletteSection);
+  }
+
+  // Additional reference instruction for non-color targets
   if (reference?.instruction && reference.strength > 30) {
     const targets = reference.targets;
-    if (targets.mood || targets.color || targets.backgroundStyle || targets.texture || targets.lighting) {
+    const nonColorTarget =
+      targets.mood || targets.backgroundStyle || targets.texture || targets.lighting;
+    if (nonColorTarget) {
       parts.push(`Reference guidance: ${reference.instruction}`);
     }
   }

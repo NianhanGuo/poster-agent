@@ -11,6 +11,7 @@ import type {
   DesignBrief,
   ProjectVersion,
 } from "@/types/poster";
+import type { PaletteColor } from "@/lib/colorExtract";
 import { DEFAULT_REFERENCE } from "@/types/poster";
 
 interface PosterState {
@@ -57,6 +58,7 @@ interface PosterState {
   reference: ReferenceConfig;
   setReference: (updates: Partial<ReferenceConfig>) => void;
   setReferenceImage: (url: string | null) => void;
+  setReferencePalette: (palette: PaletteColor[], error?: string) => void;
 
   // Asset library
   assets: AssetItem[];
@@ -272,6 +274,16 @@ export const usePosterStore = create<PosterState>()(
     setReferenceImage: (url) =>
       set((state) => {
         state.reference.imageUrl = url;
+        if (!url) {
+          state.reference.palette = [];
+          state.reference.paletteError = "";
+        }
+      }),
+
+    setReferencePalette: (palette, error = "") =>
+      set((state) => {
+        state.reference.palette = palette;
+        state.reference.paletteError = error;
       }),
 
     addAsset: (asset) =>

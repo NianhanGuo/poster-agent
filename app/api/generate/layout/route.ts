@@ -4,12 +4,14 @@ import { CANVAS_SIZES } from "@/types/poster";
 import { RECIPES } from "@/lib/styleRecipes";
 import { v4 as uuidv4 } from "uuid";
 import { mockLayout } from "@/lib/mockLayout";
+import type { PaletteColor } from "@/lib/colorExtract";
 
 interface ReferenceContext {
   strength: number;
   targets: Record<string, boolean>;
   instruction?: string;
   hasImage?: boolean;
+  palette?: PaletteColor[];
 }
 
 function getCanvasConfig(setup: PosterSetupConfig): CanvasConfig {
@@ -41,13 +43,44 @@ Negative space guide:
 }
 
 function buildReferenceSection(ref: ReferenceContext): string {
-  const activeTargets = Object.entries(ref.targets)
-    .filter(([, v]) => v).map(([k]) => k).join(", ");
   const parts: string[] = [];
+
   if (ref.instruction) parts.push(`Reference instruction: "${ref.instruction}"`);
-  if (activeTargets && ref.strength > 20) {
-    parts.push(`Reference influence (strength ${ref.strength}/100) on: ${activeTargets}`);
+
+  // Extracted palette — specify exact hex colors for text fills
+  if (ref.targets.color && ref.palette && ref.palette.length > 0 && ref.strength > 20) {
+    const swatches = ref.palette.map((p) => `${p.hex}(${p.role})`).join(", ");
+    const textColor =
+      ref.palette.find((p) => p.role === "accent")?.hex ??
+      ref.palette.find((p) => p.role === "highlight")?.hex ??
+      ref.palette[1]?.hex ??
+      "#ffffff";
+    const bodyColor =
+      ref.palette.find((p) => p.role === "highlight")?.hex ??
+      ref.palette[2]?.hex ??
+      "#aaaaaa";
+    const bgColor = ref.palette[0]?.hex ?? "#000000";
+
+    const enforcement = ref.strength >= 71
+      ? "STRICT — use these exact hex values for all fill colors"
+      : ref.strength >= 31
+      ? "NOTICEABLE — let these colors dominate fills"
+      : "LOOSE — draw inspiration from this palette";
+
+    parts.push(
+      `Reference color palette (${enforcement}): ${swatches}`,
+      `  → Title/accent text fill: ${textColor}`,
+      `  → Body/meta text fill: ${bodyColor}`,
+      `  → Background atmosphere: ${bgColor} (only if no image)`,
+    );
   }
+
+  const activeNonColorTargets = Object.entries(ref.targets)
+    .filter(([k, v]) => v && k !== "color").map(([k]) => k).join(", ");
+  if (activeNonColorTargets && ref.strength > 20) {
+    parts.push(`Other reference influence (strength ${ref.strength}/100) on: ${activeNonColorTargets}`);
+  }
+
   return parts.length ? `\nREFERENCE GUIDANCE:\n${parts.join("\n")}` : "";
 }
 

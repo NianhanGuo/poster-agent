@@ -74,6 +74,7 @@ export function EditorClient() {
     targets: reference.targets,
     instruction: reference.instruction,
     hasImage: !!reference.imageUrl,
+    palette: reference.palette,
   };
 
   // ── 2-step generation: brief → layout + image ──────────────────────────────
@@ -139,6 +140,14 @@ export function EditorClient() {
 
     // Step 3: Image
     setGenerating(true, "generating image…");
+    console.info("[Reference debug — image generation]", {
+      hasImage: !!reference.imageUrl,
+      targets: Object.fromEntries(Object.entries(reference.targets).filter(([, v]) => v)),
+      strength: reference.strength,
+      palette: reference.palette,
+      paletteActive: reference.targets.color && reference.palette.length > 0,
+      imagePrompt,
+    });
     try {
       const imgRes = await fetch("/api/generate/image", {
         method: "POST",
@@ -180,6 +189,13 @@ export function EditorClient() {
     if (!project) return;
     setGenerating(true, "generating image…");
     setGenError("");
+    console.info("[Reference debug — regenerate image]", {
+      hasImage: !!reference.imageUrl,
+      targets: Object.fromEntries(Object.entries(reference.targets).filter(([, v]) => v)),
+      strength: reference.strength,
+      palette: reference.palette,
+      paletteActive: reference.targets.color && reference.palette.length > 0,
+    });
     try {
       const res = await fetch("/api/generate/image", {
         method: "POST",

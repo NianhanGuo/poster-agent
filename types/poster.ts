@@ -180,6 +180,8 @@ export interface ProjectVersion {
 
 // ─── Reference image ──────────────────────────────────────────────────────────
 
+export type { PaletteColor } from "@/lib/colorExtract";
+
 export interface ReferenceConfig {
   imageUrl: string | null;
   strength: number; // 0–100
@@ -193,6 +195,8 @@ export interface ReferenceConfig {
     lighting: boolean;
   };
   instruction: string;
+  palette: import("@/lib/colorExtract").PaletteColor[];
+  paletteError: string;
 }
 
 export const DEFAULT_REFERENCE: ReferenceConfig = {
@@ -208,6 +212,8 @@ export const DEFAULT_REFERENCE: ReferenceConfig = {
     lighting: false,
   },
   instruction: "",
+  palette: [],
+  paletteError: "",
 };
 
 // ─── Asset library ────────────────────────────────────────────────────────────
