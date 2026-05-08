@@ -12,6 +12,7 @@ import { VersionStrip } from "./VersionStrip";
 import { AlignmentBar } from "./AlignmentBar";
 import { QuickPanel } from "./QuickPanel";
 import { ImageEditModal } from "./ImageEditModal";
+import { CutoutModal } from "./CutoutModal";
 import { PromptComposer } from "@/components/setup/PromptComposer";
 import type { DesignBrief, ReferenceTargets } from "@/types/poster";
 import { CANVAS_PRESETS } from "@/types/poster";
@@ -54,6 +55,7 @@ export function EditorClient() {
   const [showGuides, setShowGuides] = useState(false);
   const [aiUsedLabel, setAiUsedLabel] = useState("");
   const [editImageLayerId, setEditImageLayerId] = useState<string | null>(null);
+  const [cutoutLayerId, setCutoutLayerId] = useState<string | null>(null);
 
   const handleExport = useCallback(() => {
     (window as Window & { __posterExport?: () => void }).__posterExport?.();
@@ -538,7 +540,7 @@ export function EditorClient() {
           className="w-60 flex-none overflow-y-auto"
           style={{ background: PANEL_BG, borderLeft: `1px solid ${BORDER}` }}
         >
-          <PanelErrorBoundary name="ToolPanel"><ToolPanel onTypography={runTypography} onEditImage={setEditImageLayerId} /></PanelErrorBoundary>
+          <PanelErrorBoundary name="ToolPanel"><ToolPanel onTypography={runTypography} onEditImage={setEditImageLayerId} onCutout={setCutoutLayerId} /></PanelErrorBoundary>
         </aside>
       </div>
 
@@ -550,6 +552,14 @@ export function EditorClient() {
         <ImageEditModal
           layerId={editImageLayerId}
           onClose={() => setEditImageLayerId(null)}
+        />
+      )}
+
+      {/* ── Cutout modal ─────────────────────────────────────────────────────── */}
+      {cutoutLayerId && (
+        <CutoutModal
+          sourceLayerId={cutoutLayerId}
+          onClose={() => setCutoutLayerId(null)}
         />
       )}
     </div>

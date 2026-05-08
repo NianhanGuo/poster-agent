@@ -1,7 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { writeFile } from "fs/promises";
-import path from "path";
-import { v4 as uuidv4 } from "uuid";
 
 async function removeBackground(imageBuffer: Buffer): Promise<Buffer | null> {
   const apiKey = process.env.REMOVE_BG_API_KEY;
@@ -11,7 +8,7 @@ async function removeBackground(imageBuffer: Buffer): Promise<Buffer | null> {
   formData.append(
     "image_file",
     new Blob([imageBuffer.buffer as ArrayBuffer], { type: "image/png" }),
-    "image.png"
+    "image.png",
   );
   formData.append("size", "auto");
 
@@ -26,45 +23,44 @@ async function removeBackground(imageBuffer: Buffer): Promise<Buffer | null> {
 }
 
 export async function POST(req: NextRequest) {
+  // If no API key, tell the client immediately — no point reading the body
+  if (!process.env.REMOVE_BG_API_KEY) {
+    return NextResponse.json({
+      url: null,
+      hasTransparency: false,
+      apiUnavailable: true,
+      message: "Auto extraction requires a background-removal model (REMOVE_BG_API_KEY). Use manual lasso instead.",
+    });
+  }
+
   try {
     const formData = await req.formData();
-    const file = formData.get("image") as File;
+    const file = formData.get("image") as File | null;
     if (!file) {
       return NextResponse.json({ error: "No image provided" }, { status: 400 });
     }
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-
-    // Try remove.bg first
     const cutout = await removeBackground(buffer);
 
-    const filename = `${uuidv4()}.png`;
-    const uploadDir = path.join(process.cwd(), "public", "uploads");
-
-    let savedPath: string;
-    if (cutout) {
-      await writeFile(path.join(uploadDir, filename), cutout);
-      savedPath = `/uploads/${filename}`;
-    } else {
-      // Save original as fallback
-      const origFilename = `${uuidv4()}-orig${path.extname(file.name)}`;
-      await writeFile(path.join(uploadDir, origFilename), buffer);
-      savedPath = `/uploads/${origFilename}`;
+    if (!cutout) {
+      return NextResponse.json({
+        url: null,
+        hasTransparency: false,
+        apiUnavailable: false,
+        message: "No clear subject detected. Try the lasso tool for manual selection.",
+      });
     }
 
+    const base64 = `data:image/png;base64,${cutout.toString("base64")}`;
     return NextResponse.json({
-      url: savedPath,
-      hasTransparency: !!cutout,
-      message: cutout
-        ? "Subject extracted successfully"
-        : "REMOVE_BG_API_KEY not configured — original image saved. Configure the API key for automatic background removal.",
+      url: base64,
+      mimeType: "image/png",
+      hasTransparency: true,
     });
   } catch (err) {
     console.error("Subject extraction error:", err);
-    return NextResponse.json(
-      { error: "Failed to process image" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to process image" }, { status: 500 });
   }
 }

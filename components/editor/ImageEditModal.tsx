@@ -1,7 +1,8 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { usePosterStore } from "@/store/posterStore";
 import type { ImageAdjustments } from "@/types/poster";
+import { CutoutModal } from "./CutoutModal";
 
 const DEFAULT_ADJ: ImageAdjustments = {
   brightness: 0,
@@ -58,7 +59,7 @@ async function applyAdjToDataUrl(src: string, adj: ImageAdjustments): Promise<st
 }
 
 export function ImageEditModal({ layerId, onClose }: { layerId: string; onClose: () => void }) {
-  const { getLayerById, updateLayer, updateImageData, pushHistory } = usePosterStore();
+  const { getLayerById, updateLayer, pushHistory } = usePosterStore();
   const layer = getLayerById(layerId);
 
   const [adj, setAdj] = useState<ImageAdjustments>(() => ({
@@ -66,8 +67,7 @@ export function ImageEditModal({ layerId, onClose }: { layerId: string; onClose:
     ...(layer?.imageData?.adjustments ?? {}),
   }));
   const [applying, setApplying] = useState(false);
-  const [extracting, setExtractSubject] = useState(false);
-  const [extractError, setExtractError] = useState("");
+  const [showCutout, setShowCutout] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -113,30 +113,16 @@ export function ImageEditModal({ layerId, onClose }: { layerId: string; onClose:
     }
   }
 
-  async function handleExtractSubject() {
-    setExtractSubject(true);
-    setExtractError("");
-    try {
-      const res = await fetch("/api/generate/subject", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrl: originalSrc }),
-      });
-      if (!res.ok) throw new Error("extract failed");
-      const { url } = await res.json();
-      if (url) {
-        pushHistory();
-        updateImageData(layerId, { src: url, originalSrc: originalSrc });
-        onClose();
-      }
-    } catch {
-      setExtractError("Subject extraction failed");
-    } finally {
-      setExtractSubject(false);
-    }
-  }
-
   const cssFilter = hasChanges ? adjToCSS(adj) : "none";
+
+  if (showCutout) {
+    return (
+      <CutoutModal
+        sourceLayerId={layerId}
+        onClose={() => setShowCutout(false)}
+      />
+    );
+  }
 
   return (
     <div
@@ -220,24 +206,20 @@ export function ImageEditModal({ layerId, onClose }: { layerId: string; onClose:
               </div>
             ))}
 
-            {/* Extract Subject */}
+            {/* Cutout tools */}
             <div className="px-4 pt-3">
               <div
-                className="font-mono text-[9px] tracking-[0.2em] uppercase text-zinc-700 pb-2"
+                className="text-[9px] tracking-[0.2em] uppercase text-zinc-600 pb-2"
                 style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 12 }}
               >
-                Tools
+                Cutout
               </div>
               <button
-                onClick={handleExtractSubject}
-                disabled={extracting}
-                className="w-full border border-zinc-800 hover:border-zinc-600 text-zinc-500 hover:text-zinc-200 font-mono text-[9px] tracking-wide uppercase py-2 transition-colors disabled:opacity-30"
+                onClick={() => setShowCutout(true)}
+                className="w-full border border-zinc-800 hover:border-zinc-600 text-zinc-500 hover:text-zinc-200 text-[10px] tracking-wide uppercase py-2 transition-colors"
               >
-                {extracting ? "Extracting…" : "Extract Subject"}
+                Extract / Lasso / Brush
               </button>
-              {extractError && (
-                <p className="font-mono text-[8px] text-red-500/70 mt-1">{extractError}</p>
-              )}
             </div>
           </div>
 

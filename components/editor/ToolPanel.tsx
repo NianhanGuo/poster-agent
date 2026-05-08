@@ -28,9 +28,10 @@ const BLEND_MODES: { value: BlendMode; label: string }[] = [
 interface ToolPanelProps {
   onTypography?: (styleHint?: string) => void;
   onEditImage?: (layerId: string) => void;
+  onCutout?: (layerId: string) => void;
 }
 
-export function ToolPanel({ onTypography, onEditImage }: ToolPanelProps) {
+export function ToolPanel({ onTypography, onEditImage, onCutout }: ToolPanelProps) {
   const { project, selectedLayerId, getLayerById, updateLayer, updateTextData, addLayer } =
     usePosterStore();
   const [showImageUpload, setShowImageUpload] = useState(false);
@@ -110,7 +111,7 @@ export function ToolPanel({ onTypography, onEditImage }: ToolPanelProps) {
       )}
 
       {selected && imageSelected && !gradientSelected && !textureSelected && (
-        <ImageInspector layer={selected} onLayer={onLayer} onEditImage={onEditImage} />
+        <ImageInspector layer={selected} onLayer={onLayer} onEditImage={onEditImage} onCutout={onCutout} />
       )}
 
       {selected && gradientSelected && (
@@ -526,35 +527,45 @@ function TextInspector({
 
 // ─── Image inspector ───────────────────────────────────────────────────────────
 
-function ImageInspector({ layer, onLayer, onEditImage }: {
+function ImageInspector({ layer, onLayer, onEditImage, onCutout }: {
   layer: PosterLayer;
   onLayer: (u: Partial<PosterLayer>) => void;
   onEditImage?: (layerId: string) => void;
+  onCutout?: (layerId: string) => void;
 }) {
   const adj = layer.imageData?.adjustments;
   const hasAdj = adj && Object.values(adj).some((v) => v !== 0);
   return (
     <>
       <Section label="Image" />
-      {onEditImage && (
-        <div className="px-4 pb-2 flex gap-2">
+      <div className="px-4 pb-2 flex gap-2">
+        {onEditImage && (
           <button
             onClick={() => onEditImage(layer.id)}
             className="flex-1 border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-zinc-100 text-[10px] tracking-wide uppercase py-1.5 transition-colors"
           >
             Edit Image
           </button>
-          {hasAdj && (
-            <button
-              onClick={() => onLayer({ imageData: { ...(layer.imageData ?? { src: "" }), adjustments: undefined } })}
-              title="Reset adjustments"
-              className="border border-zinc-800 hover:border-zinc-600 text-zinc-600 hover:text-red-400 font-mono text-[9px] px-2 py-1.5 transition-colors"
-            >
-              ↺
-            </button>
-          )}
-        </div>
-      )}
+        )}
+        {onCutout && (
+          <button
+            onClick={() => onCutout(layer.id)}
+            className="flex-1 border border-zinc-800 hover:border-zinc-500 text-zinc-500 hover:text-zinc-100 text-[10px] tracking-wide uppercase py-1.5 transition-colors"
+            title="Extract subject, lasso, or brush mask"
+          >
+            Cutout
+          </button>
+        )}
+        {hasAdj && (
+          <button
+            onClick={() => onLayer({ imageData: { ...(layer.imageData ?? { src: "" }), adjustments: undefined } })}
+            title="Reset adjustments"
+            className="border border-zinc-800 hover:border-zinc-600 text-zinc-600 hover:text-red-400 font-mono text-[9px] px-2 py-1.5 transition-colors"
+          >
+            ↺
+          </button>
+        )}
+      </div>
       {hasAdj && (
         <div className="px-4 pb-1">
           <span className="font-mono text-[10px] text-zinc-500 tracking-wide">
