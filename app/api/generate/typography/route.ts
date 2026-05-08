@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { PosterLayer, DesignBrief } from "@/types/poster";
+import type { PosterLayer, DesignBrief, TypographyExtract } from "@/types/poster";
 import { buildReferenceSection } from "@/lib/referencePrompt";
 import type { EnrichedRefCtx } from "@/lib/referencePrompt";
 
 type StyleHint =
   | "cinematic" | "editorial" | "brutalist" | "fit-to-canvas" | "improve"
-  | "match-reference" | "experimental" | "hierarchy" | "distribute" | "reference-layout"
+  | "match-reference" | "experimental" | "more-experimental" | "hierarchy" | "distribute" | "reference-layout"
   | string
   | undefined;
 
@@ -48,13 +48,96 @@ DESIGN BRIEF — primary typography constraints (override style recipe defaults)
   ${brief.designRationale ? `Director's note: "${brief.designRationale}"` : ""}`;
 }
 
+// ── Structured extract → concrete directives ──────────────────────────────────
+
+function buildStructuredTypographyDirective(ex: TypographyExtract, strict: boolean): string {
+  const lines: string[] = ["EXTRACTED TYPOGRAPHY SYSTEM — apply these rules:"];
+
+  // Hierarchy → scale relationships
+  const hierarchyMap: Record<TypographyExtract["hierarchy"], string> = {
+    "dominant-title": "Primary text must dominate at 3–6× the scale of all other text blocks.",
+    "distributed":    "Multiple text blocks at comparable scale — no single element dominates. Distribute evenly.",
+    "minimal":        "Minimal text presence — one or two quiet elements, restrained size.",
+    "dense":          "Multiple text blocks creating density — tight arrangement, layered presence.",
+  };
+  lines.push(`• Hierarchy: ${hierarchyMap[ex.hierarchy]}`);
+
+  // Alignment → axis system
+  const alignMap: Record<TypographyExtract["alignment"], string> = {
+    "center":       "Horizontally centered text blocks.",
+    "left":         "Left-aligned — all text blocks flush left.",
+    "mixed":        "Mixed alignment — each block uses its own alignment axis for visual variety.",
+    "edge-aligned": "Text pushed to canvas edges — left edge, right edge, or both. Avoid center alignment.",
+  };
+  lines.push(`• Alignment: ${alignMap[ex.alignment]}`);
+
+  // Orientation → rotation
+  const orientMap: Record<TypographyExtract["orientation"], string> = {
+    "horizontal": "Standard horizontal text — no rotation needed.",
+    "vertical":   "Rotate at least one major text block to 90° or −90° (vertical reading direction).",
+    "rotated":    "Apply deliberate rotation to at least one block — use angles between 5° and 45°, or exactly 90°/−90°.",
+  };
+  lines.push(`• Orientation: ${orientMap[ex.orientation]}`);
+
+  // Scale → size floor
+  const scaleMap: Record<TypographyExtract["scale"], string> = {
+    "large-dominant": `Primary text fontSize must span ≥30% of canvas width when measured as rendered. Make it huge.`,
+    "medium":         "Primary text is clearly legible but not overwhelming — moderate scale.",
+    "small":          "Text is intentionally small, quiet — a graphic element rather than a reader.",
+  };
+  lines.push(`• Scale: ${scaleMap[ex.scale]}`);
+
+  // Spacing
+  const spacingMap: Record<TypographyExtract["spacing"], string> = {
+    "tight":     "Tight letterSpacing (−4 to 2). Compact tracking.",
+    "wide":      "Wide letterSpacing (8 to 20). Air between characters.",
+    "irregular": "Vary letterSpacing between blocks — some tight, some wide — for visual rhythm.",
+  };
+  lines.push(`• Spacing: ${spacingMap[ex.spacing]}`);
+
+  // Positioning → canvas zones
+  const posMap: Record<TypographyExtract["positioning"], string> = {
+    "top":        "Primary text anchored in the top third of the canvas.",
+    "bottom":     "Primary text anchored in the bottom third.",
+    "corner":     "Place text blocks in corners — top-left, bottom-right, or similar. Avoid center.",
+    "full-spread":"Text distributed across the full canvas — elements in at least 3 distinct vertical zones.",
+  };
+  lines.push(`• Positioning: ${posMap[ex.positioning]}`);
+
+  // Style → typographic character
+  const styleMap: Record<TypographyExtract["style"], string> = {
+    "editorial":    "Refined, intellectual — serifs, moderate weight, clean hierarchy.",
+    "brutalist":    "Raw, confrontational — heavy weight, compressed spacing, no apologies.",
+    "minimal":      "Ultra-quiet — thin weight, generous spacing, few elements.",
+    "experimental": "Rule-breaking — mix weights, unexpected sizes, deliberate tension.",
+  };
+  lines.push(`• Style: ${styleMap[ex.style]}`);
+
+  // Rotation → explicit angle instructions
+  const rotMap: Record<TypographyExtract["rotation"], string> = {
+    "none":   "All text blocks upright (rotation: 0).",
+    "slight": "Apply a slight rotation (1–5°) to the primary block for unsettling quality.",
+    "strong": "Apply significant rotation (15°–45°, or ±90°) to at least one block. This is mandatory.",
+  };
+  lines.push(`• Rotation: ${rotMap[ex.rotation]}`);
+
+  if (strict) {
+    lines.push("STRICT MODE: all rules above are hard constraints — do not deviate.");
+    lines.push("Replace text content only. All spatial, rotational, and scale relationships must be preserved.");
+  } else {
+    lines.push("Interpret these rules — translate the system, do not copy positions pixel-for-pixel.");
+  }
+
+  return lines.join("\n");
+}
+
 // ── Reference typography directive ────────────────────────────────────────────
 
 function buildReferenceTypographyDirective(ref: EnrichedRefCtx): string {
   const strict = isStrictRef(ref);
 
   const images = ref.references ?? [];
-  // Prefer a reference with typography target enabled
+  // Prefer a reference with typography target enabled that has analysis
   const typRef =
     images.find((r) => r.targets?.typography && r.analysis?.typographyStyle && r.analysis.typographyStyle !== "no text visible") ??
     images.find((r) => r.analysis?.typographyStyle && r.analysis.typographyStyle !== "no text visible");
@@ -63,29 +146,35 @@ function buildReferenceTypographyDirective(ref: EnrichedRefCtx): string {
   if (!analysis) return "";
 
   const hasTypo = analysis.typographyStyle && analysis.typographyStyle !== "no text visible";
-  const fidelity = strict ? "~90% fidelity — STRICT" : "strong influence";
   const lines: string[] = [];
 
-  if (hasTypo) {
+  // Prefer structured extract when available — it drives much more precise generation
+  if (analysis.typographyExtract && hasTypo) {
+    lines.push(buildStructuredTypographyDirective(analysis.typographyExtract, strict));
+    lines.push(`\nRaw reference description: "${analysis.typographyStyle}"`);
+    console.log("[typography] using structured extract:", JSON.stringify(analysis.typographyExtract));
+  } else if (hasTypo) {
+    // Fallback to free-text description
+    const fidelity = strict ? "~90% fidelity — STRICT" : "strong influence";
     lines.push(`REFERENCE TYPOGRAPHY — ${fidelity}:`);
     lines.push(`  Extracted: "${analysis.typographyStyle}"`);
     if (strict) {
       lines.push(`  STRICT — mirror relative positions, scale hierarchy, alignment, and rotation angles (±5° tolerance).`);
-      lines.push(`  Replace text content only — all spatial and stylistic relationships must be preserved.`);
+      lines.push(`  Replace text content only.`);
     } else {
-      lines.push(`  Translate the typographic system: placement logic, scale ratios, orientation, spacing feel.`);
+      lines.push(`  Translate: placement logic, scale ratios, orientation, spacing feel.`);
       lines.push(`  Interpret — do not copy pixel-exact positions.`);
     }
   }
 
   if (analysis.composition) {
-    lines.push(`  Composition: "${analysis.composition}"`);
-    if (strict) lines.push(`  Mirror zone occupancy for text placement.`);
-    else lines.push(`  Use this spatial logic to guide where text blocks live.`);
+    lines.push(`\nComposition reference: "${analysis.composition}"`);
+    if (strict) lines.push(`Mirror zone occupancy for text placement.`);
+    else lines.push(`Use this spatial logic to guide where text blocks live.`);
   }
 
   if (analysis.blurMap) {
-    lines.push(`  Blur zones: "${analysis.blurMap}" — place text in the sharpest zones for legibility.`);
+    lines.push(`Blur zones: "${analysis.blurMap}" — prefer placing text in sharpest zones.`);
   }
 
   return lines.length > 0 ? `\n${lines.join("\n")}` : "";
@@ -144,6 +233,16 @@ function buildStyleDirective(hint: StyleHint, recipe: string): string {
   - No safe margins required — tension and risk are the correct aesthetic
   - This should look like a human designer took risks`;
 
+    case "more-experimental":
+      return `PUSH FURTHER INTO EXPERIMENTAL — take what exists and break it harder:
+  - If text is currently horizontal, rotate it (vertical or diagonal)
+  - If text is centered, push it to edges or corners
+  - If text is evenly sized, amplify the scale contrast 3× more
+  - If text is neatly spaced, overlap or collide at least one pair of blocks
+  - Partially exit the canvas with at least one element
+  - Every safe choice in the current layout should become a risk`;
+
+
     case "hierarchy":
       return `INCREASE HIERARCHY CONTRAST — amplify scale differentiation:
   - Primary text: as large as content + canvas allows
@@ -177,7 +276,7 @@ function buildStyleDirective(hint: StyleHint, recipe: string): string {
 // ── Layout freedom permissions ────────────────────────────────────────────────
 
 function buildLayoutPermissions(hint: StyleHint): string {
-  const experimental = hint === "experimental" || hint === "brutalist";
+  const experimental = hint === "experimental" || hint === "more-experimental" || hint === "brutalist";
   const base = `
 LAYOUT PERMISSIONS:
 You MAY:
@@ -312,11 +411,16 @@ Hard rules:
     const parsed: { layers: (Partial<PosterLayer> & { id: string })[]; designLog?: Record<string, string> } = JSON.parse(text);
     const improved = Array.isArray(parsed.layers) ? parsed.layers : [];
 
-    // Debug log
-    if (parsed.designLog) {
-      console.log("[typography] design log:", JSON.stringify(parsed.designLog, null, 2));
+    // Debug log — structure, reference influence, and design decisions
+    console.log(`[typography] hint=${styleHint} recipe=${recipe} layers_in=${textLayers.length} layers_out=${improved.length}`);
+    if (ref) {
+      const images = ref.references ?? [];
+      const hasExtract = images.some((r) => r.analysis?.typographyExtract) || !!ref.analysis?.typographyExtract;
+      console.log(`[typography] ref: strict=${isStrictRef(ref)} hasExtract=${hasExtract} imageCount=${images.length}`);
     }
-    console.log(`[typography] hint=${styleHint} recipe=${recipe} layers=${improved.length}`);
+    if (parsed.designLog) {
+      console.log("[typography] designLog:", JSON.stringify(parsed.designLog, null, 2));
+    }
 
     const mergedLayers = (layers as PosterLayer[]).map((l) => {
       if (lockedLayers?.includes(l.id)) return l;

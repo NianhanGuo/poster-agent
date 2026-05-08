@@ -71,7 +71,7 @@ export function PromptComposer() {
   const [error, setError] = useState("");
 
   const [cfg, setCfg] = useState<PosterSetupConfig>({
-    posterType:   "film",
+    posterType:   "poster",
     canvasSize:   "a4",
     language:     "en",
     styleRecipe:  "cinematic-rain",
@@ -270,9 +270,6 @@ export function PromptComposer() {
       {/* Main composer */}
       <div className="flex-1 flex items-start justify-center px-8 pt-16 pb-24">
         <div className="w-full max-w-xl space-y-10">
-
-          {/* Type toggle */}
-          <TypeToggle value={cfg.posterType} set={set} />
 
           {/* Prompt */}
           <div className="space-y-2">
@@ -617,23 +614,6 @@ export function PromptComposer() {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function TypeToggle({ value, set }: { value: PosterType; set: Setter }) {
-  return (
-    <div className="flex gap-6">
-      {(["film", "exhibition"] as PosterType[]).map((t) => (
-        <button
-          key={t}
-          onClick={() => set({ posterType: t })}
-          className={`font-mono text-xs tracking-[0.2em] uppercase transition-colors ${
-            value === t ? "text-zinc-100 border-b border-zinc-400" : "text-zinc-600 hover:text-zinc-400"
-          }`}
-        >
-          {t}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 function Chip({
   children, active, onClick, small,

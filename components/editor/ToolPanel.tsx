@@ -106,7 +106,7 @@ export function ToolPanel({ onTypography, onEditImage }: ToolPanelProps) {
       )}
 
       {selected && textSelected && selected.textData && (
-        <TextInspector td={selected.textData} onText={onText} onTypography={onTypography} />
+        <TextInspector td={selected.textData} onText={onText} onTypography={onTypography} layer={selected} onLayer={onLayer} />
       )}
 
       {selected && imageSelected && !gradientSelected && !textureSelected && (
@@ -173,11 +173,13 @@ function SliderRow({
 // ─── Text inspector ─────────────────────────────────────────────────────────
 
 function TextInspector({
-  td, onText, onTypography,
+  td, onText, onTypography, layer, onLayer,
 }: {
   td: NonNullable<PosterLayer["textData"]>;
   onText: (u: Partial<NonNullable<PosterLayer["textData"]>>) => void;
   onTypography?: (styleHint?: string) => void;
+  layer?: PosterLayer;
+  onLayer?: (u: Partial<PosterLayer>) => void;
 }) {
   const fontWeight = td.fontWeight ?? 400;
   const italic = td.italic ?? false;
@@ -304,6 +306,42 @@ function TextInspector({
       <SliderRow label="Size" min={8} max={400} value={td.fontSize} onChange={(v) => onText({ fontSize: v })} display={`${td.fontSize}px`} />
       <SliderRow label="Spacing" min={-10} max={60} value={td.letterSpacing ?? 0} onChange={(v) => onText({ letterSpacing: v })} display={`${td.letterSpacing ?? 0}`} />
       <SliderRow label="Leading" min={0.7} max={3.5} step={0.05} value={td.lineHeight ?? 1.2} onChange={(v) => onText({ lineHeight: v })} display={(td.lineHeight ?? 1.2).toFixed(2)} />
+
+      {/* Rotation — quick access for text layers */}
+      {layer && onLayer && (
+        <Row label="Rotate">
+          <div className="flex items-center gap-2">
+            <input
+              type="range" min={-180} max={180}
+              value={layer.rotation}
+              onChange={(e) => onLayer({ rotation: Number(e.target.value) })}
+              className="flex-1 h-0.5 accent-zinc-400"
+            />
+            <input
+              type="number"
+              min={-180} max={180}
+              value={Math.round(layer.rotation)}
+              onChange={(e) => onLayer({ rotation: Number(e.target.value) })}
+              className="w-10 bg-transparent border-b border-zinc-800 text-zinc-200 font-mono text-[10px] outline-none pb-0.5 text-right"
+            />
+          </div>
+        </Row>
+      )}
+      {layer && onLayer && (
+        <Row label="">
+          <div className="flex gap-1">
+            {([-90, 0, 45, 90] as const).map((deg) => (
+              <button
+                key={deg}
+                onClick={() => onLayer({ rotation: deg })}
+                className="text-[10px] px-1.5 py-0.5 border border-zinc-800 hover:border-zinc-600 text-zinc-500 hover:text-zinc-200 transition-colors"
+              >
+                {deg}°
+              </button>
+            ))}
+          </div>
+        </Row>
+      )}
 
       {/* Text content */}
       <Section label="Text" />
@@ -456,16 +494,17 @@ function TextInspector({
           <Section label="AI Type" />
           <div className="px-4 pb-2 flex flex-wrap gap-1.5">
             {[
-              { label: "Improve",      hint: "improve" },
-              { label: "Cinematic",    hint: "cinematic" },
-              { label: "Editorial",    hint: "editorial" },
-              { label: "Brutalist",    hint: "brutalist" },
-              { label: "Fit",          hint: "fit-to-canvas" },
-              { label: "Match Ref",    hint: "match-reference" },
-              { label: "Experimental", hint: "experimental" },
-              { label: "Hierarchy ↕", hint: "hierarchy" },
-              { label: "Distribute",   hint: "distribute" },
-              { label: "Ref Layout",   hint: "reference-layout" },
+              { label: "Improve",       hint: "improve" },
+              { label: "Cinematic",     hint: "cinematic" },
+              { label: "Editorial",     hint: "editorial" },
+              { label: "Brutalist",     hint: "brutalist" },
+              { label: "Fit",           hint: "fit-to-canvas" },
+              { label: "Match Ref",     hint: "match-reference" },
+              { label: "Experimental",  hint: "experimental" },
+              { label: "Push Further",  hint: "more-experimental" },
+              { label: "Hierarchy ↕",  hint: "hierarchy" },
+              { label: "Distribute",    hint: "distribute" },
+              { label: "Ref Layout",    hint: "reference-layout" },
             ].map(({ label, hint }) => (
               <button
                 key={hint}

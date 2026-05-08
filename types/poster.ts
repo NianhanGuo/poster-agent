@@ -1,6 +1,6 @@
 // ─── Primitive types ──────────────────────────────────────────────────────────
 
-export type PosterType = "film" | "exhibition";
+export type PosterType = "film" | "exhibition" | "poster";
 export type Language = "en" | "zh" | "mixed";
 
 export type StyleRecipe =
@@ -230,6 +230,20 @@ export interface ProjectVersion {
   timestamp: string;
 }
 
+// ─── Typography extraction ────────────────────────────────────────────────────
+
+export interface TypographyExtract {
+  hierarchy: "dominant-title" | "distributed" | "minimal" | "dense";
+  alignment: "center" | "left" | "mixed" | "edge-aligned";
+  orientation: "horizontal" | "vertical" | "rotated";
+  scale: "large-dominant" | "medium" | "small";
+  spacing: "tight" | "wide" | "irregular";
+  density: "sparse" | "medium" | "dense";
+  positioning: "top" | "bottom" | "corner" | "full-spread";
+  style: "editorial" | "brutalist" | "minimal" | "experimental";
+  rotation: "none" | "slight" | "strong";
+}
+
 // ─── Reference image ──────────────────────────────────────────────────────────
 
 export type { PaletteColor } from "@/lib/colorExtract";
@@ -250,6 +264,7 @@ export interface ReferenceAnalysis {
   contrast: "low" | "medium" | "high";
   styleClass: "abstract-poster" | "blurred-gradient" | "geometric-graphic" | "photographic" | "illustration" | "typographic";
   forbiddenDrift: string[];  // auto-generated terms the output must never become
+  typographyExtract?: TypographyExtract | null; // structured typography properties extracted from image
 }
 
 export type ReferenceMode = "loose" | "balanced" | "strict";

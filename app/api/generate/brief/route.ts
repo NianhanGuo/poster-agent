@@ -46,10 +46,15 @@ export async function POST(req: NextRequest) {
 
   const refSection = ref ? buildReferenceSection(ref, "brief") : "";
 
-  const userPrompt = `Create an opinionated design brief for a ${posterType} poster.
+  const posterContext = posterType && posterType !== "poster"
+    ? `Tonal context (soft hint only): ${posterType}`
+    : "";
 
-Concept: ${prompt || `a ${posterType} poster`}
+  const userPrompt = `Create an opinionated design brief for a poster.
+
+Concept: ${prompt || "an intentionally designed poster"}
 Style recipe: "${recipe.name}" — ${recipe.tagline}
+${posterContext}
 Language: ${language === "zh" ? "Chinese" : language === "mixed" ? "bilingual EN/ZH" : "English"}
 ${refSection}
 

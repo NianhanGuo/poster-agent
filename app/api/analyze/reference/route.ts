@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { ReferenceAnalysis } from "@/types/poster";
+import type { ReferenceAnalysis, TypographyExtract } from "@/types/poster";
 
 const SYSTEM_PROMPT = `You are a visual design analyst specializing in poster and graphic design.
 Analyze the provided image as a design reference for poster creation.
@@ -13,6 +13,17 @@ Return exactly this JSON (all fields required):
   "mood": "brief evocative description of emotional tone",
   "composition": "spatial layout zones: top-zone [what occupies it, density], center-zone [focal subject or negative space], bottom-zone [anchoring elements], left-right balance [symmetric/asymmetric], focal hierarchy [primary→secondary focal point path]",
   "typographyStyle": "placement [top/center/bottom, left/right/full-width], weight [light/regular/bold/ultra], size relative to frame [large/medium/small], tracking [tight/normal/wide], rotation [degrees], density [sparse/moderate/dense]; or 'no text visible'",
+  "typographyExtract": {
+    "hierarchy": "dominant-title | distributed | minimal | dense",
+    "alignment": "center | left | mixed | edge-aligned",
+    "orientation": "horizontal | vertical | rotated",
+    "scale": "large-dominant | medium | small",
+    "spacing": "tight | wide | irregular",
+    "density": "sparse | medium | dense",
+    "positioning": "top | bottom | corner | full-spread",
+    "style": "editorial | brutalist | minimal | experimental",
+    "rotation": "none | slight | strong"
+  },
   "shapes": "circle/ellipse: [count, approximate size, position], gradient fields: [direction, color transitions], blobs/organic: [description], rectangles/lines: [count, orientation], dominant geometry overall",
   "blurMap": "top-zone [sharp/soft/heavy blur], center-zone [sharp/soft/heavy blur], bottom-zone [sharp/soft/heavy blur], edges [sharp/soft/vignette], overall character [in-focus/shallow-DOF/fully-blurred/gradient-field]",
   "texture": "surface quality: grain, noise, smoothness, material feel",
@@ -35,6 +46,17 @@ shapes: identify and name specific geometric primitives visible — circles, ell
 blurMap: describe blur intensity zone by zone. Use: "sharp" (crisp detail), "soft" (gentle blur, Gaussian-style), "heavy blur" (strong defocus / bokeh), "gradient field" (pure color gradation, no detail). Describe top, center, bottom, and edges independently. This drives depth-of-field and blur-layer decisions in generation.
 
 typographyStyle: if text is present, describe its placement position in the frame, typographic weight and style, scale relative to the image, spacing treatment, and any rotation or distortion. If absent, return exactly 'no text visible'.
+
+typographyExtract: if text is present, extract its design system as structured fields. Choose the closest matching value for each. If no text is visible, return null for this field.
+  hierarchy — how text blocks relate in scale: dominant-title (one text block vastly larger), distributed (multiple blocks similar scale), minimal (very little text), dense (many text elements)
+  alignment — how text aligns within the composition: center, left, mixed (varies per block), edge-aligned (text pushed to canvas edges)
+  orientation — primary text direction: horizontal (standard), vertical (90° rotated), rotated (non-0°/90° angle)
+  scale — how large the primary text is relative to canvas: large-dominant (25%+ canvas width), medium, small
+  spacing — letter/word spacing feel: tight, wide, irregular
+  density — how much of the canvas text occupies: sparse, medium, dense
+  positioning — where text primarily lives: top (upper third), bottom (lower third), corner (corners), full-spread (distributed across full canvas)
+  style — overall typographic aesthetic: editorial, brutalist, minimal, experimental
+  rotation — degree of rotation in the text: none (all horizontal), slight (1–8°), strong (>8° or vertical)
 
 brightness (choose exactly one):
   "light" — image is predominantly pale, pastel, bright, or high-key
@@ -63,6 +85,36 @@ Examples:
 
 Be specific and concrete — these drive hard constraints in an AI image generator.`;
 
+const HIERARCHY_VALUES  = ["dominant-title", "distributed", "minimal", "dense"] as const;
+const ALIGNMENT_VALUES  = ["center", "left", "mixed", "edge-aligned"] as const;
+const ORIENT_VALUES     = ["horizontal", "vertical", "rotated"] as const;
+const SCALE_VALUES      = ["large-dominant", "medium", "small"] as const;
+const SPACING_VALUES    = ["tight", "wide", "irregular"] as const;
+const DENSITY_VALUES    = ["sparse", "medium", "dense"] as const;
+const POSITION_VALUES   = ["top", "bottom", "corner", "full-spread"] as const;
+const STYLE_VALUES      = ["editorial", "brutalist", "minimal", "experimental"] as const;
+const ROTATION_VALUES   = ["none", "slight", "strong"] as const;
+
+function pick<T extends string>(val: unknown, allowed: readonly T[], fallback: T): T {
+  return (allowed as readonly string[]).includes(val as string) ? (val as T) : fallback;
+}
+
+function normaliseTypographyExtract(raw: unknown): TypographyExtract | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  return {
+    hierarchy:   pick(r.hierarchy,  HIERARCHY_VALUES,  "minimal"),
+    alignment:   pick(r.alignment,  ALIGNMENT_VALUES,  "center"),
+    orientation: pick(r.orientation, ORIENT_VALUES,    "horizontal"),
+    scale:       pick(r.scale,      SCALE_VALUES,      "medium"),
+    spacing:     pick(r.spacing,    SPACING_VALUES,    "tight"),
+    density:     pick(r.density,    DENSITY_VALUES,    "medium"),
+    positioning: pick(r.positioning, POSITION_VALUES,  "bottom"),
+    style:       pick(r.style,      STYLE_VALUES,      "editorial"),
+    rotation:    pick(r.rotation,   ROTATION_VALUES,   "none"),
+  };
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const { imageUrl } = body as { imageUrl?: string };
@@ -85,7 +137,7 @@ export async function POST(req: NextRequest) {
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
-      max_tokens: 1000,
+      max_tokens: 1400,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
@@ -121,6 +173,7 @@ export async function POST(req: NextRequest) {
       styleClass:      ["abstract-poster","blurred-gradient","geometric-graphic","photographic","illustration","typographic"].includes(raw.styleClass)
                          ? raw.styleClass : "abstract-poster",
       forbiddenDrift:  Array.isArray(raw.forbiddenDrift) ? raw.forbiddenDrift : [],
+      typographyExtract: normaliseTypographyExtract(raw.typographyExtract),
     };
 
     return NextResponse.json({ analysis, demo: false });

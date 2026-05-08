@@ -53,11 +53,13 @@ function buildUserPrompt(
   const recipe = RECIPES[setup.styleRecipe] ?? RECIPES["cinematic-rain"];
 
   const textInstructions = setup.aiWriteCopy
-    ? `Generate compelling poster copy fitting the "${recipe.name}" aesthetic and the concept below.
-       Decide how many text blocks the design needs — let the brief and reference guide you.
-       Possible blocks: primary title, subtitle or tagline, supporting body, date/location, credits line.
-       Create only what serves the design — fewer strong blocks beats many weak ones.
-       Text should feel intentional and designed, not templated.`
+    ? `Generate compelling poster copy driven by the brief, reference, and style recipe.
+       You decide how many text blocks this design needs — there is no fixed template.
+       Think in roles: primary (dominant title), secondary (subtitle or tagline), support (dates, credits, fine text).
+       Choose only the blocks that serve the design — 1 strong block often beats 4 weak ones.
+       You may use "titleText" | "subtitleText" | "bodyText" | "metaText" | "userText" for any block.
+       For experimental or reference-driven layouts, prefer "userText" so placement is unconstrained.
+       Text must feel designed and intentional — not safe, centered, or templated.`
     : `Use ONLY this user-provided text — do NOT invent or alter any copy:
        Title: ${setup.userTitle || "(omit — leave text empty string)"}
        Subtitle: ${setup.userSubtitle || "(omit)"}
@@ -75,10 +77,9 @@ function buildUserPrompt(
   return `Create a poster layout JSON.
 
 Canvas: ${canvas.width} × ${canvas.height}px
-Poster type: ${setup.posterType}
 Style recipe: "${recipe.name}" — ${recipe.tagline}
-Language: ${langNote}
-Concept: ${setup.prompt || `a ${setup.posterType} poster`}
+${setup.posterType && setup.posterType !== "poster" ? `Soft creative context: ${setup.posterType} (use only as a loose tonal hint — brief and reference override this)\n` : ""}Language: ${langNote}
+Concept: ${setup.prompt || "an intentionally designed poster"}
 ${briefSection}
 ${refSection}
 
@@ -120,12 +121,15 @@ Return a JSON object matching this exact schema:
 
 Layout rules:
 - Always include exactly one backgroundImage layer at zIndex 1 with imageData.src = ""
-- Most layers should fit within ${canvas.width}×${canvas.height}; text layers MAY extend slightly beyond edges for dramatic effect
-- Create strong visual hierarchy — primary text should dominate; the exact scale ratio is your decision based on brief and reference
-- Avoid defaulting to centered, balanced, or safe layouts — use the full canvas assertively
-- rotation: use 0 for standard upright; use non-zero angles for asymmetric, experimental, or brutalist compositions
+- Text layers MAY extend beyond canvas edges for dramatic effect — this is encouraged, not an error
+- Create strong visual hierarchy — the scale ratio between primary and secondary text is your design decision
+- DO NOT default to centered or balanced layouts unless the brief/reference explicitly calls for it
+- rotation: use non-zero angles for tension, asymmetry, or reference-derived orientation (vertical = 90°)
+- Text blocks may overlap intentionally — let them collide when it serves the composition
+- Safe margins are optional — push text to edges, corners, and extremes when the design calls for it
 - Only textData on text layers; only imageData on image layers
-- Never add text inside the imagePrompt`;
+- Never add text inside the imagePrompt
+- Avoid repetitive fixed patterns (title-at-bottom, subtitle-above) — let brief and reference drive all placement`;
 }
 
 export async function POST(req: NextRequest) {
