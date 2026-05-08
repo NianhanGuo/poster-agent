@@ -30,7 +30,11 @@ export function CutoutModal({
   const imageSrc = sourceLayer?.imageData?.src ?? "";
 
   const [mode, setMode] = useState<CutoutMode>("lasso");
-  const [cutoutUrl, setCutoutUrl] = useState<string | null>(null);
+
+  // Per-mode preview URLs — kept independent so switching tabs never clears results
+  const [autoPreviewUrl,  setAutoPreviewUrl]  = useState<string | null>(null); // extracted cutout only
+  const [lassoPreviewUrl, setLassoPreviewUrl] = useState<string | null>(null);
+  const [brushPreviewUrl, setBrushPreviewUrl] = useState<string | null>(null);
 
   // ─── Auto state ────────────────────────────────────────────────────────────
   const [autoStatus, setAutoStatus] = useState<AutoStatus>("idle");
@@ -203,7 +207,7 @@ export function CutoutModal({
 
   function onLassoDown(e: React.MouseEvent<HTMLCanvasElement>) {
     if (e.button !== 0) return;
-    setCutoutUrl(null);
+    setLassoPreviewUrl(null);
     setIsLassoing(true);
     setLassoPoints([getCanvasPt(e)]);
   }
@@ -221,7 +225,7 @@ export function CutoutModal({
     setIsLassoing(false);
     if (lassoPoints.length < 3) { setLassoPoints([]); return; }
     const url = await computeLassoCutout(lassoPoints);
-    if (url) setCutoutUrl(url);
+    if (url) setLassoPreviewUrl(url);
   }
 
   // ─── Lasso: compute full-resolution cutout ─────────────────────────────────
@@ -261,7 +265,7 @@ export function CutoutModal({
   function clearLasso() {
     setLassoPoints([]);
     setLassoSnap(false);
-    setCutoutUrl(null);
+    setLassoPreviewUrl(null);
     const canvas = lassoRef.current;
     const img    = lassoImgEl.current;
     if (!canvas || !img) return;
@@ -322,7 +326,6 @@ export function CutoutModal({
 
   function onBrushDown(e: React.MouseEvent<HTMLCanvasElement>) {
     if (e.button !== 0) return;
-    setCutoutUrl(null);
     setIsBrushing(true);
     setHasStrokes(true);
     applyBrushStroke(getCanvasPt(e));
@@ -343,7 +346,7 @@ export function CutoutModal({
   function exportBrushPreview() {
     const canvas = brushRef.current;
     if (!canvas) return;
-    try { setCutoutUrl(canvas.toDataURL("image/png")); } catch { /* CORS tainted */ }
+    try { setBrushPreviewUrl(canvas.toDataURL("image/png")); } catch { /* CORS tainted */ }
   }
 
   // Full-resolution brush cutout: scale display mask up to native image size
@@ -377,15 +380,16 @@ export function CutoutModal({
     ctx.clearRect(0, 0, CW, CH);
     ctx.drawImage(img, x, y, w, h);
     setHasStrokes(false);
-    setCutoutUrl(null);
+    setBrushPreviewUrl(null);
   }
 
   // ─── Auto extraction ───────────────────────────────────────────────────────
 
   async function handleAutoExtract() {
+    console.log("[CutoutModal] sourceImageUrl exists?", !!imageSrc, imageSrc.slice(0, 60));
     setAutoStatus("extracting");
     setAutoMessage("Extracting subject…");
-    setCutoutUrl(null);
+    // Do NOT clear autoPreviewUrl here — keep source image visible during loading
 
     try {
       let blob: Blob;
@@ -405,32 +409,52 @@ export function CutoutModal({
       const res  = await fetch("/api/generate/subject", { method: "POST", body: fd });
       const data = await res.json();
 
+      console.log("[CutoutModal] extract response:", JSON.stringify({ url: data.url?.slice(0, 60), hasTransparency: data.hasTransparency, apiUnavailable: data.apiUnavailable, message: data.message }));
+
       if (data.apiUnavailable) {
         setAutoStatus("unavailable");
-        setAutoMessage("Auto extraction requires a background-removal model. Use manual lasso instead.");
+        setAutoMessage("Auto extraction is not configured. Use Lasso or Brush.");
+        // Keep source image visible — don't clear autoPreviewUrl
         return;
       }
-      if (!data.url) {
+      if (!res.ok || !data.url) {
         setAutoStatus("failed");
         setAutoMessage(data.message ?? "No clear subject detected. Try the lasso tool.");
+        // Keep source image visible — don't clear autoPreviewUrl
         return;
       }
-      setCutoutUrl(data.url);
+
+      // Validate the returned URL looks like a data URI or an absolute path
+      const url: string = data.url;
+      if (!url.startsWith("data:") && !url.startsWith("/") && !url.startsWith("http")) {
+        console.error("[CutoutModal] Unexpected URL format:", url.slice(0, 80));
+        setAutoStatus("failed");
+        setAutoMessage("Extraction returned an unexpected format. Try the lasso tool.");
+        return;
+      }
+
+      setAutoPreviewUrl(url);
+      console.log("[CutoutModal] autoPreviewUrl set:", url.slice(0, 60));
       setAutoStatus("done");
       setAutoMessage("Cutout ready.");
-    } catch {
+    } catch (err) {
+      console.error("[CutoutModal] extraction error:", err);
       setAutoStatus("failed");
       setAutoMessage("Extraction failed. Try the lasso tool.");
+      // Keep source image visible — don't clear autoPreviewUrl
     }
   }
 
   // ─── Apply result ──────────────────────────────────────────────────────────
 
   async function applyAsNewLayer() {
-    let url = cutoutUrl;
+    let url: string | null =
+      mode === "auto"  ? autoPreviewUrl :
+      mode === "lasso" ? lassoPreviewUrl :
+      null;
 
     // For brush: compute full-res export at apply time
-    if (mode === "brush" && !url) {
+    if (mode === "brush") {
       url = await getBrushCutoutFullRes();
     }
     if (!url || !sourceLayer || !project) return;
@@ -467,14 +491,18 @@ export function CutoutModal({
     onClose();
   }
 
-  const canApply = mode === "brush" ? hasStrokes : !!cutoutUrl;
+  // Apply is only enabled when there is a real cutout result (not just the source image)
+  const canApply =
+    mode === "auto"  ? !!autoPreviewUrl  :
+    mode === "lasso" ? !!lassoPreviewUrl :
+    hasStrokes;
 
   // ─── Shared tab button ─────────────────────────────────────────────────────
 
   function Tab({ id, label }: { id: CutoutMode; label: string }) {
     return (
       <button
-        onClick={() => { setMode(id); setCutoutUrl(null); }}
+        onClick={() => setMode(id)}
         className="flex-1 text-[10px] tracking-wide uppercase py-2.5 transition-colors"
         style={{
           color:        mode === id ? "#e4e4e7" : "#52525b",
@@ -492,7 +520,7 @@ export function CutoutModal({
     if (lassoPoints.length === 0)  return "Click and drag to draw selection";
     if (isLassoing && lassoSnap)   return "Release to close selection";
     if (isLassoing)                return "Keep dragging…";
-    if (cutoutUrl)                 return "Cutout ready — apply or clear to retry";
+    if (lassoPreviewUrl)           return "Cutout ready — apply or clear to retry";
     return "Selection closed";
   }
 
@@ -520,18 +548,18 @@ export function CutoutModal({
           className="flex-1 relative overflow-hidden flex items-center justify-center"
           style={{ background: CHECKER }}
         >
-          {/* Auto mode: preview or placeholder */}
+          {/* Auto mode: always show image — cutout result OR source image as fallback */}
           {mode === "auto" && (
-            cutoutUrl ? (
+            (autoPreviewUrl || imageSrc) ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={cutoutUrl} alt="cutout preview" className="max-w-full max-h-full object-contain" />
+              <img
+                src={autoPreviewUrl ?? imageSrc}
+                alt={autoPreviewUrl ? "cutout preview" : "source image"}
+                className="max-w-full max-h-full object-contain"
+                onError={(e) => console.error("[CutoutModal] Preview img failed to load", (e.target as HTMLImageElement).src?.slice(0, 60))}
+              />
             ) : (
-              <span className="text-[10px] text-zinc-600 select-none">
-                {autoStatus === "idle"        ? "Preview will appear here" :
-                 autoStatus === "extracting"  ? "Processing…"             :
-                 autoStatus === "unavailable" ? "Auto extraction unavailable — use Lasso" :
-                 autoStatus === "failed"      ? "No subject detected"     : ""}
-              </span>
+              <span className="text-[10px] text-zinc-600 select-none">No image source</span>
             )
           )}
 
@@ -550,10 +578,10 @@ export function CutoutModal({
                 onMouseLeave={() => { if (isLassoing) { setIsLassoing(false); } }}
               />
               {/* Cutout overlay after path closes */}
-              {cutoutUrl && !isLassoing && (
+              {lassoPreviewUrl && !isLassoing && (
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={cutoutUrl} alt="lasso cutout" className="max-w-full max-h-full object-contain" />
+                  <img src={lassoPreviewUrl} alt="lasso cutout" className="max-w-full max-h-full object-contain" />
                 </div>
               )}
               <div className="absolute top-2 left-2 text-[9px] text-zinc-500 pointer-events-none select-none">
@@ -641,7 +669,7 @@ export function CutoutModal({
             {mode === "lasso" && (
               <LassoPanel
                 hasPoints={lassoPoints.length > 0}
-                hasCutout={!!cutoutUrl}
+                hasCutout={!!lassoPreviewUrl}
                 onClear={clearLasso}
               />
             )}
@@ -663,7 +691,7 @@ export function CutoutModal({
             className="flex-none px-4 py-3 flex flex-col gap-2"
             style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}
           >
-            {canApply && mode !== "auto" && (
+            {canApply && (
               <div className="text-[9px] text-green-400/70 text-center">Cutout ready</div>
             )}
             <button
