@@ -269,7 +269,7 @@ export function LayerPanel() {
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 py-3 overflow-y-auto">
-        <div className="px-4 pb-2 font-mono text-[9px] tracking-[0.25em] uppercase text-zinc-700">
+        <div className="px-4 pb-2 text-[10px] tracking-[0.1em] uppercase text-zinc-500">
           Layers
         </div>
 
@@ -331,7 +331,7 @@ export function LayerPanel() {
         className="flex-none px-3 py-2 space-y-1.5"
         style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
       >
-        <div className="font-mono text-[8px] tracking-[0.2em] uppercase text-zinc-800">Add layer</div>
+        <div className="text-[10px] tracking-[0.08em] uppercase text-zinc-500">Add layer</div>
         <div className="flex gap-1">
           <AddBtn onClick={addTextLayer}                   title="Text layer">T</AddBtn>
           <AddBtn onClick={() => fileInputRef.current?.click()} title="Image layer">⬡</AddBtn>
@@ -340,10 +340,10 @@ export function LayerPanel() {
           <AddBtn onClick={addTextureLayer}                title="Grain / texture layer">⣿</AddBtn>
         </div>
 
-        <div className="font-mono text-[8px] tracking-[0.2em] uppercase text-zinc-800 pt-1">Preset</div>
+        <div className="text-[10px] tracking-[0.08em] uppercase text-zinc-500 pt-1">Preset</div>
         <button
           onClick={addAtmosphericPreset}
-          className="w-full py-1 font-mono text-[8px] tracking-wide uppercase text-zinc-600 hover:text-zinc-200 transition-colors rounded-sm"
+          className="w-full py-1 text-[10px] tracking-wide uppercase text-zinc-500 hover:text-zinc-100 transition-colors rounded-sm"
           style={{ border: "1px solid rgba(255,255,255,0.06)" }}
           title="Adds a violet radial gradient + film grain layer stack"
         >
@@ -405,7 +405,7 @@ function SortableLayerRow(props: Omit<LayerRowProps, "isDragging" | "dragHandle"
       {...attributes}
       {...listeners}
       tabIndex={-1}
-      className="flex-none w-4 h-full flex items-center justify-center cursor-grab active:cursor-grabbing select-none text-zinc-800 hover:text-zinc-500 transition-colors"
+      className="flex-none w-4 h-full flex items-center justify-center cursor-grab active:cursor-grabbing select-none text-zinc-600 hover:text-zinc-400 transition-colors"
       title="Drag to reorder"
       onClick={(e) => e.stopPropagation()}
     >
@@ -432,28 +432,28 @@ function LayerRow({
       onClick={onSelect}
       className={`group flex items-center gap-1.5 pl-1 pr-3 py-1.5 transition-colors ${
         isDragging
-          ? "bg-zinc-800 text-zinc-200"
+          ? "bg-zinc-800 text-zinc-100"
           : selected
-          ? "bg-zinc-900 text-zinc-200 cursor-pointer"
-          : "hover:bg-zinc-950 text-zinc-500 cursor-pointer"
+          ? "bg-zinc-900 text-zinc-100 cursor-pointer"
+          : "hover:bg-zinc-900/50 text-zinc-400 cursor-pointer"
       } ${!layer.visible ? "opacity-30" : ""}`}
     >
       {/* Drag handle */}
       {dragHandle ?? <span className="w-4 flex-none" />}
 
       {/* Type badge */}
-      <span className={`font-mono text-[9px] tracking-wide w-10 flex-none ${selected ? "text-zinc-500" : "text-zinc-700"}`}>
+      <span className={`font-mono text-[9px] tracking-wide w-10 flex-none ${selected ? "text-zinc-400" : "text-zinc-600"}`}>
         {TYPE_LABEL[layer.type] ?? layer.type.slice(0, 5)}
       </span>
 
       {/* Label */}
-      <span className="font-mono text-[10px] truncate flex-1 min-w-0">
+      <span className="text-[11px] truncate flex-1 min-w-0">
         {layer.label}
       </span>
 
       {/* Persistent lock indicator */}
       {layer.locked && (
-        <span className="font-mono text-[9px] text-zinc-600 flex-none group-hover:hidden" title="locked">■</span>
+        <span className="text-[9px] text-zinc-500 flex-none group-hover:hidden" title="locked">■</span>
       )}
 
       {/* Controls */}
@@ -495,7 +495,7 @@ function Btn({ children, onClick, title, className = "" }: {
     <button
       title={title}
       onClick={onClick}
-      className={`w-4 h-4 flex items-center justify-center font-mono text-[10px] text-zinc-600 hover:text-zinc-300 transition-colors ${className}`}
+      className={`w-5 h-5 flex items-center justify-center text-[11px] text-zinc-500 hover:text-zinc-200 transition-colors ${className}`}
     >
       {children}
     </button>
@@ -511,7 +511,7 @@ function AddBtn({ children, onClick, title }: {
     <button
       title={title}
       onClick={onClick}
-      className="flex-1 py-1.5 font-mono text-[10px] text-zinc-600 hover:text-zinc-300 transition-colors border border-zinc-900 hover:border-zinc-700 rounded-sm"
+      className="flex-1 py-1.5 text-[13px] text-zinc-500 hover:text-zinc-200 transition-colors border border-zinc-800 hover:border-zinc-600 rounded-sm"
     >
       {children}
     </button>

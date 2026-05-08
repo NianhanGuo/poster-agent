@@ -324,7 +324,7 @@ export function EditorClient() {
         <div className="flex items-center gap-3 flex-none">
           <button
             onClick={() => usePosterStore.getState().clearProject()}
-            className="font-mono text-[10px] tracking-[0.2em] uppercase text-zinc-600 hover:text-zinc-400 transition-colors"
+            className="text-[11px] tracking-[0.08em] uppercase text-zinc-500 hover:text-zinc-200 transition-colors"
           >
             ← New
           </button>
@@ -343,10 +343,10 @@ export function EditorClient() {
               <button
                 key={id}
                 onClick={() => setGenMode(id)}
-                className="px-2 h-7 font-mono text-[9px] tracking-[0.12em] uppercase transition-colors"
+                className="px-2.5 h-7 text-[10px] tracking-[0.04em] uppercase transition-colors"
                 style={{
                   background: genMode === id ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.02)",
-                  color: genMode === id ? "#e4e4e7" : "#52525b",
+                  color: genMode === id ? "#f0f0f2" : "#71717a",
                   borderRight: id !== "type" ? "1px solid rgba(255,255,255,0.08)" : "none",
                 }}
               >
@@ -371,12 +371,12 @@ export function EditorClient() {
                 : "Describe a change, mood, or direction…"
               }
               disabled={isGenerating}
-              className="flex-1 bg-transparent font-mono text-[10px] text-zinc-300 placeholder:text-zinc-700 outline-none disabled:opacity-40"
+              className="flex-1 bg-transparent text-[11px] text-zinc-200 placeholder:text-zinc-500 outline-none disabled:opacity-40"
             />
             <button
               onClick={handleGenerate}
               disabled={isGenerating}
-              className="flex-none font-mono text-[10px] tracking-[0.15em] uppercase text-zinc-400 hover:text-zinc-100 disabled:opacity-30 transition-colors pl-2 ml-0.5"
+              className="flex-none text-[11px] tracking-[0.06em] uppercase text-zinc-400 hover:text-zinc-100 disabled:opacity-30 transition-colors pl-2 ml-0.5"
               style={{ borderLeft: "1px solid rgba(255,255,255,0.08)" }}
             >
               {genMode === "full" ? "Generate" : genMode === "image" ? "Regen Image" : "Retype"}
@@ -389,7 +389,7 @@ export function EditorClient() {
           {/* Current design brief mood */}
           {designBrief && !isGenerating && (
             <span
-              className="font-mono text-[9px] text-zinc-600 italic max-w-[120px] truncate hidden lg:block"
+              className="text-[10px] text-zinc-500 italic max-w-[120px] truncate hidden lg:block"
               title={designBrief.designRationale}
             >
               {designBrief.mood}
@@ -397,18 +397,18 @@ export function EditorClient() {
           )}
 
           {isDemo && (
-            <span className="font-mono text-[10px] text-zinc-700" title="Add OPENAI_API_KEY for AI generation">
+            <span className="text-[10px] text-zinc-500" title="Add OPENAI_API_KEY for AI generation">
               ○ demo
             </span>
           )}
           {isGenerating && (
-            <span className="font-mono text-[10px] text-zinc-500 flex items-center gap-1.5">
+            <span className="text-[11px] text-zinc-400 flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full border border-zinc-600 border-t-zinc-300 animate-spin inline-block" />
               {generatingStep}
             </span>
           )}
           {genError && !isGenerating && (
-            <span className="font-mono text-[10px] text-red-500/80">{genError}</span>
+            <span className="text-[11px] text-red-400/90">{genError}</span>
           )}
 
           {/* Canvas size */}
@@ -428,7 +428,7 @@ export function EditorClient() {
           style={{ background: "rgba(74,222,128,0.04)", borderBottom: "1px solid rgba(74,222,128,0.12)" }}
         >
           <span className="w-1.5 h-1.5 rounded-full bg-green-400/60 flex-none" />
-          <span className="font-mono text-[8px] text-green-400/70 tracking-wide">AI used: {aiUsedLabel}</span>
+          <span className="text-[10px] text-green-400/80 tracking-wide">AI used: {aiUsedLabel}</span>
         </div>
       )}
 
@@ -449,8 +449,8 @@ export function EditorClient() {
                 <button
                   key={id}
                   onClick={() => setLeftTab(id)}
-                  className={`flex-1 py-2.5 font-mono text-[9px] tracking-[0.18em] uppercase transition-colors relative ${
-                    leftTab === id ? "text-zinc-200" : "text-zinc-600 hover:text-zinc-400"
+                  className={`flex-1 py-2.5 text-[10px] tracking-[0.08em] uppercase transition-colors relative ${
+                    leftTab === id ? "text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
                   }`}
                 >
                   <span className="flex items-center justify-center gap-1">
@@ -466,8 +466,8 @@ export function EditorClient() {
                   </span>
                   {leftTab === id && (
                     <span
-                      className="absolute bottom-0 left-1/2 -translate-x-1/2 w-5 h-px"
-                      style={{ background: "rgba(161,161,170,0.7)" }}
+                      className="absolute bottom-0 left-0 right-0 h-px"
+                      style={{ background: "rgba(161,161,170,0.6)" }}
                     />
                   )}
                 </button>
@@ -496,7 +496,7 @@ export function EditorClient() {
                 <button
                   onClick={a.fn}
                   disabled={isGenerating}
-                  className="font-mono text-[9px] tracking-[0.12em] uppercase text-zinc-600 hover:text-zinc-300 disabled:opacity-30 transition-colors"
+                  className="text-[10px] tracking-[0.06em] uppercase text-zinc-500 hover:text-zinc-200 disabled:opacity-30 transition-colors"
                 >
                   {a.label}
                 </button>
@@ -514,8 +514,8 @@ export function EditorClient() {
             <button
               onClick={() => setShowGuides((g) => !g)}
               title="Toggle safe margin guides"
-              className="font-mono text-[9px] tracking-wide uppercase transition-colors"
-              style={{ color: showGuides ? "#a1a1aa" : "#3f3f46" }}
+              className="text-[10px] tracking-wide uppercase transition-colors"
+              style={{ color: showGuides ? "#a1a1aa" : "#52525b" }}
             >
               guides
             </button>
@@ -585,7 +585,7 @@ function UndoRedoWidget() {
       >
         ↩
       </button>
-      <span className="font-mono text-[8px] text-zinc-700 px-1">
+      <span className="font-mono text-[9px] text-zinc-600 px-1">
         {historyIndex}/{history.length - 1}
       </span>
       <button
@@ -614,7 +614,7 @@ function TitleEditor() {
           if (s.project) s.project.title = e.target.value;
         })
       }
-      className="bg-transparent font-mono text-[11px] tracking-wide text-zinc-400 outline-none focus:text-zinc-200 transition-colors w-40 truncate"
+      className="bg-transparent text-[13px] tracking-wide text-zinc-300 outline-none focus:text-zinc-100 transition-colors w-44 truncate"
     />
   );
 }
@@ -641,8 +641,8 @@ function CanvasSizeMenu() {
     <div className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="font-mono text-[9px] tracking-[0.15em] uppercase text-zinc-600 hover:text-zinc-300 transition-colors flex items-center gap-1"
-        style={{ border: "1px solid rgba(255,255,255,0.07)", padding: "2px 8px", borderRadius: 3 }}
+        className="text-[10px] tracking-[0.08em] uppercase text-zinc-500 hover:text-zinc-200 transition-colors flex items-center gap-1"
+        style={{ border: "1px solid rgba(255,255,255,0.09)", padding: "3px 8px", borderRadius: 4 }}
         title="Change canvas size"
       >
         {currentLabel}
@@ -661,13 +661,13 @@ function CanvasSizeMenu() {
                 <button
                   key={key}
                   onClick={() => { resizeCanvas(cfg); setOpen(false); }}
-                  className="w-full text-left px-3 py-2 font-mono text-[9px] tracking-wide transition-colors flex justify-between items-center"
+                  className="w-full text-left px-3 py-2 text-[10px] transition-colors flex justify-between items-center"
                   style={{
-                    color: active ? "#e4e4e7" : "#71717a",
-                    background: active ? "rgba(255,255,255,0.06)" : "transparent",
+                    color: active ? "#f0f0f2" : "#a1a1aa",
+                    background: active ? "rgba(255,255,255,0.07)" : "transparent",
                   }}
-                  onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.color = "#d4d4d8"; }}
-                  onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.color = "#71717a"; }}
+                  onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.color = "#e4e4e7"; }}
+                  onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.color = "#a1a1aa"; }}
                 >
                   <span>{CANVAS_SIZE_LABELS[key] ?? key}</span>
                   <span style={{ opacity: 0.4 }}>{cfg.width}×{cfg.height}</span>
@@ -689,7 +689,7 @@ function ExportMenu({ onPng, onJson }: { onPng: () => void; onJson: () => void }
     <div className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="font-mono text-[10px] tracking-[0.2em] uppercase text-zinc-500 hover:text-zinc-200 transition-colors"
+        className="text-[11px] tracking-[0.1em] uppercase text-zinc-400 hover:text-zinc-100 transition-colors"
       >
         Export →
       </button>
@@ -707,7 +707,7 @@ function ExportMenu({ onPng, onJson }: { onPng: () => void; onJson: () => void }
               <button
                 key={label}
                 onClick={fn}
-                className="w-full text-left px-3 py-2 font-mono text-[9px] tracking-wide text-zinc-400 hover:text-zinc-200 transition-colors"
+                className="w-full text-left px-3 py-2 text-[10px] text-zinc-400 hover:text-zinc-100 transition-colors"
                 style={{ display: "block" }}
               >
                 {label}
@@ -730,7 +730,7 @@ function UserMenu() {
     return (
       <button
         onClick={() => signIn("google")}
-        className="font-mono text-[10px] tracking-[0.15em] uppercase text-zinc-600 hover:text-zinc-300 transition-colors px-2 py-0.5 rounded-sm"
+        className="text-[11px] tracking-[0.06em] uppercase text-zinc-500 hover:text-zinc-200 transition-colors px-2 py-1 rounded"
         style={{ border: "1px solid rgba(255,255,255,0.08)" }}
       >
         Sign in
@@ -762,12 +762,12 @@ function UserMenu() {
             style={{ background: "#141416", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 16px 40px rgba(0,0,0,0.6)" }}
           >
             <div className="px-3 py-2.5" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
-              <div className="font-mono text-[10px] text-zinc-200 truncate">{session.user.name}</div>
-              <div className="font-mono text-[8px] text-zinc-600 truncate mt-0.5">{session.user.email}</div>
+              <div className="text-[11px] text-zinc-200 truncate">{session.user.name}</div>
+              <div className="text-[10px] text-zinc-500 truncate mt-0.5">{session.user.email}</div>
             </div>
             <button
               onClick={() => { setOpen(false); signOut(); }}
-              className="w-full text-left px-3 py-2 font-mono text-[9px] tracking-wide uppercase text-zinc-500 hover:text-zinc-300 transition-colors"
+              className="w-full text-left px-3 py-2 text-[10px] tracking-wide uppercase text-zinc-500 hover:text-zinc-200 transition-colors"
             >
               Sign out
             </button>
@@ -801,10 +801,10 @@ class PanelErrorBoundary extends Component<
     if (this.state.error) {
       return (
         <div className="p-3 flex flex-col gap-2">
-          <p className="font-mono text-[9px] text-red-500/70">{this.props.name} error</p>
+          <p className="text-[10px] text-red-400/80">{this.props.name} error</p>
           <button
             onClick={() => this.setState({ error: null })}
-            className="font-mono text-[8px] text-zinc-600 hover:text-zinc-400 transition-colors text-left"
+            className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors text-left"
           >
             Retry
           </button>
@@ -844,7 +844,7 @@ class EditorErrorBoundary extends Component<
           <p className="font-mono text-[11px] text-red-500/80 text-center max-w-lg">
             Editor crashed: {this.state.error.message}
           </p>
-          <p className="font-mono text-[9px] text-zinc-700 text-center max-w-lg whitespace-pre-wrap">
+          <p className="font-mono text-[10px] text-zinc-600 text-center max-w-lg whitespace-pre-wrap">
             {this.state.error.stack?.split("\n").slice(0, 6).join("\n")}
           </p>
           <button

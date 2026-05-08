@@ -84,13 +84,13 @@ export function ToolPanel({ onTypography, onEditImage }: ToolPanelProps) {
       <div className="px-4 flex gap-2 pb-2">
         <button
           onClick={addTextLayer}
-          className="flex-1 border border-zinc-800 hover:border-zinc-600 text-zinc-500 hover:text-zinc-300 font-mono text-[10px] tracking-wide uppercase py-1.5 transition-colors"
+          className="flex-1 border border-zinc-800 hover:border-zinc-600 text-zinc-400 hover:text-zinc-100 text-[11px] tracking-wide uppercase py-1.5 transition-colors"
         >
           + Text
         </button>
         <button
           onClick={() => setShowImageUpload(!showImageUpload)}
-          className="flex-1 border border-zinc-800 hover:border-zinc-600 text-zinc-500 hover:text-zinc-300 font-mono text-[10px] tracking-wide uppercase py-1.5 transition-colors"
+          className="flex-1 border border-zinc-800 hover:border-zinc-600 text-zinc-400 hover:text-zinc-100 text-[11px] tracking-wide uppercase py-1.5 transition-colors"
         >
           + Image
         </button>
@@ -102,7 +102,7 @@ export function ToolPanel({ onTypography, onEditImage }: ToolPanelProps) {
       )}
 
       {!selected && (
-        <div className="px-4 pt-2 font-mono text-[10px] text-zinc-700">select a layer</div>
+        <div className="px-4 pt-2 text-[11px] text-zinc-500">Select a layer</div>
       )}
 
       {selected && textSelected && selected.textData && (
@@ -132,7 +132,7 @@ export function ToolPanel({ onTypography, onEditImage }: ToolPanelProps) {
 
 function Section({ label }: { label: string }) {
   return (
-    <div className="px-4 pt-3 pb-1 font-mono text-[9px] tracking-[0.25em] uppercase text-zinc-700 border-t border-zinc-900">
+    <div className="px-4 pt-3 pb-1 text-[10px] tracking-[0.1em] uppercase text-zinc-500 border-t border-zinc-800/80">
       {label}
     </div>
   );
@@ -141,7 +141,7 @@ function Section({ label }: { label: string }) {
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2 px-4 py-0.5 min-h-[26px]">
-      <span className="font-mono text-[9px] tracking-wide uppercase text-zinc-700 w-14 flex-none">{label}</span>
+      <span className="text-[10px] uppercase text-zinc-500 w-14 flex-none">{label}</span>
       <div className="flex-1 min-w-0">{children}</div>
     </div>
   );
@@ -162,7 +162,7 @@ function SliderRow({
           onChange={(e) => onChange(Number(e.target.value))}
           className="flex-1 h-0.5 accent-zinc-400"
         />
-        <span className="font-mono text-[9px] text-zinc-600 w-8 text-right flex-none">
+        <span className="font-mono text-[10px] text-zinc-500 w-8 text-right flex-none">
           {display ?? value}
         </span>
       </div>
@@ -248,7 +248,7 @@ function TextInspector({
             className="flex-1 h-0.5 accent-zinc-400"
             // Snap to available weights visually
           />
-          <span className="font-mono text-[9px] text-zinc-600 w-8 text-right flex-none">{fontWeight}</span>
+          <span className="font-mono text-[10px] text-zinc-500 w-8 text-right flex-none">{fontWeight}</span>
         </div>
       </Row>
 
@@ -269,14 +269,14 @@ function TextInspector({
                 key={a}
                 onClick={() => onText({ align: a })}
                 title={labels[a]}
-                className="flex-1 py-1.5 font-mono text-[9px] tracking-wide transition-colors"
+                className="flex-1 py-1.5 text-[10px] tracking-wide transition-colors"
                 style={{
                   background: active ? "rgba(255,255,255,0.10)" : "transparent",
-                  color: active ? "#e4e4e7" : "#52525b",
+                  color: active ? "#f0f0f2" : "#71717a",
                   borderLeft: i > 0 ? "1px solid rgba(255,255,255,0.08)" : "none",
                 }}
-                onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.color = "#a1a1aa"; }}
-                onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.color = "#52525b"; }}
+                onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.color = "#e4e4e7"; }}
+                onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLButtonElement).style.color = "#71717a"; }}
               >
                 {a === "left" ? "L" : a === "center" ? "C" : a === "right" ? "R" : "J"}
               </button>
@@ -290,7 +290,7 @@ function TextInspector({
         <div className="flex items-center gap-2">
           <button
             onClick={() => setItalic(!italic)}
-            className="border px-2 py-0.5 font-mono text-[9px] italic transition-colors"
+            className="border px-2 py-0.5 text-[11px] italic transition-colors"
             style={{
               borderColor: italic ? "rgba(161,161,170,0.5)" : "rgba(255,255,255,0.1)",
               color: italic ? "#e4e4e7" : "#52525b",
@@ -312,7 +312,7 @@ function TextInspector({
           value={td.text}
           onChange={(e) => onText({ text: e.target.value })}
           rows={3}
-          className="w-full bg-transparent border-b border-zinc-800 focus:border-zinc-600 text-zinc-300 font-mono text-[10px] outline-none pb-1 resize-none transition-colors"
+          className="w-full bg-transparent border-b border-zinc-800 focus:border-zinc-600 text-zinc-200 text-[11px] outline-none pb-1 resize-none transition-colors"
         />
       </div>
 
@@ -342,7 +342,7 @@ function TextInspector({
             type="text"
             value={td.fill}
             onChange={(e) => onText({ fill: e.target.value, fillGradient: undefined })}
-            className="flex-1 bg-transparent border-b border-zinc-800 text-zinc-300 font-mono text-[10px] outline-none pb-0.5"
+            className="flex-1 bg-transparent border-b border-zinc-800 text-zinc-200 font-mono text-[10px] outline-none pb-0.5"
           />
         </div>
       </div>
@@ -384,10 +384,10 @@ function TextInspector({
               key={ef.id}
               onClick={() => toggleEffect(ef.id)}
               title={ef.konvaSupported ? ef.label : `${ef.label} (not available in canvas)`}
-              className={`font-mono text-[9px] tracking-wide uppercase px-2 py-0.5 border transition-colors ${
+              className={`text-[10px] tracking-wide uppercase px-2 py-0.5 border transition-colors ${
                 active
-                  ? "border-zinc-400 text-zinc-200 bg-zinc-900"
-                  : "border-zinc-800 text-zinc-600 hover:border-zinc-600"
+                  ? "border-zinc-400 text-zinc-100 bg-zinc-900"
+                  : "border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300"
               } ${!ef.konvaSupported ? "opacity-40" : ""}`}
             >
               {ef.label}
@@ -414,7 +414,7 @@ function TextInspector({
                     type="text"
                     value={td.shadowColor ?? "#000000"}
                     onChange={(e) => onText({ shadowColor: e.target.value })}
-                    className="flex-1 bg-transparent border-b border-zinc-800 text-zinc-300 font-mono text-[10px] outline-none pb-0.5"
+                    className="flex-1 bg-transparent border-b border-zinc-800 text-zinc-200 font-mono text-[10px] outline-none pb-0.5"
                   />
                 </div>
               </Row>
@@ -442,7 +442,7 @@ function TextInspector({
                 type="text"
                 value={td.stroke ?? "#ffffff"}
                 onChange={(e) => onText({ stroke: e.target.value })}
-                className="flex-1 bg-transparent border-b border-zinc-800 text-zinc-300 font-mono text-[10px] outline-none pb-0.5"
+                className="flex-1 bg-transparent border-b border-zinc-800 text-zinc-200 font-mono text-[10px] outline-none pb-0.5"
               />
             </div>
           </Row>
@@ -470,10 +470,10 @@ function TextInspector({
               <button
                 key={hint}
                 onClick={() => onTypography(hint)}
-                className="font-mono text-[9px] tracking-wide uppercase px-2 py-0.5 transition-colors"
-                style={{ border: "1px solid rgba(255,255,255,0.1)", color: "#71717a" }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#e4e4e7"; (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.25)"; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#71717a"; (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.1)"; }}
+                className="text-[10px] tracking-wide uppercase px-2 py-0.5 transition-colors"
+                style={{ border: "1px solid rgba(255,255,255,0.12)", color: "#a1a1aa" }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#f0f0f2"; (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.28)"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "#a1a1aa"; (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.12)"; }}
               >
                 {label}
               </button>
@@ -501,7 +501,7 @@ function ImageInspector({ layer, onLayer, onEditImage }: {
         <div className="px-4 pb-2 flex gap-2">
           <button
             onClick={() => onEditImage(layer.id)}
-            className="flex-1 border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-zinc-200 font-mono text-[9px] tracking-wide uppercase py-1.5 transition-colors"
+            className="flex-1 border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-zinc-100 text-[10px] tracking-wide uppercase py-1.5 transition-colors"
           >
             Edit Image
           </button>
@@ -518,7 +518,7 @@ function ImageInspector({ layer, onLayer, onEditImage }: {
       )}
       {hasAdj && (
         <div className="px-4 pb-1">
-          <span className="font-mono text-[8px] text-zinc-600 tracking-wide">
+          <span className="font-mono text-[10px] text-zinc-500 tracking-wide">
             {Object.entries(adj!).filter(([, v]) => v !== 0).map(([k, v]) => `${k} ${v > 0 ? "+" : ""}${v}`).join("  ")}
           </span>
         </div>
@@ -588,7 +588,7 @@ function GradientLayerInspector({
                 key={p.label}
                 title={p.label}
                 onClick={() => set({ gradientType: p.gradientType, stops: p.stops as GradientColorStop[], angle: p.angle })}
-                className="h-7 rounded-sm border border-zinc-800 hover:border-zinc-500 transition-colors text-[7px] font-mono text-zinc-700 hover:text-zinc-300 overflow-hidden"
+                className="h-7 rounded-sm border border-zinc-800 hover:border-zinc-500 transition-colors font-mono text-zinc-600 hover:text-zinc-300 overflow-hidden"
                 style={{ background: css }}
               />
             );
@@ -603,7 +603,7 @@ function GradientLayerInspector({
             <button
               key={t}
               onClick={() => set({ gradientType: t })}
-              className="flex-1 py-0.5 font-mono text-[8px] uppercase transition-colors"
+              className="flex-1 py-0.5 text-[10px] uppercase transition-colors"
               style={{
                 border: `1px solid ${gd.gradientType === t ? "rgba(161,161,170,0.5)" : "rgba(255,255,255,0.08)"}`,
                 color: gd.gradientType === t ? "#e4e4e7" : "#52525b",
@@ -643,18 +643,18 @@ function GradientLayerInspector({
               onChange={(e) => setStop(i, { offset: Number(e.target.value) })}
               className="flex-1 h-0.5 accent-zinc-400"
             />
-            <span className="font-mono text-[8px] text-zinc-600 w-6 flex-none">{Math.round(stop.offset * 100)}%</span>
+            <span className="font-mono text-[10px] text-zinc-500 w-6 flex-none">{Math.round(stop.offset * 100)}%</span>
             <button
               onClick={() => removeStop(i)}
               disabled={gd.stops.length <= 2}
-              className="font-mono text-[9px] text-zinc-700 hover:text-red-400 transition-colors disabled:opacity-20"
+              className="text-[10px] text-zinc-500 hover:text-red-400 transition-colors disabled:opacity-20"
             >×</button>
           </div>
         ))}
         <button
           onClick={addStop}
-          className="w-full py-1 font-mono text-[8px] uppercase text-zinc-700 hover:text-zinc-300 transition-colors"
-          style={{ border: "1px solid rgba(255,255,255,0.06)" }}
+          className="w-full py-1 text-[10px] uppercase text-zinc-500 hover:text-zinc-200 transition-colors"
+          style={{ border: "1px solid rgba(255,255,255,0.09)" }}
         >
           + stop
         </button>
@@ -728,8 +728,8 @@ function TextureLayerInspector({
       <div className="px-4 pb-2">
         <button
           onClick={() => regenerate(nd.intensity, nd.scale)}
-          className="w-full py-1 font-mono text-[8px] uppercase text-zinc-700 hover:text-zinc-300 transition-colors"
-          style={{ border: "1px solid rgba(255,255,255,0.06)" }}
+          className="w-full py-1 text-[10px] uppercase text-zinc-500 hover:text-zinc-200 transition-colors"
+          style={{ border: "1px solid rgba(255,255,255,0.09)" }}
         >
           Reseed grain
         </button>
@@ -755,12 +755,12 @@ function TransformInspector({ layer, onLayer }: {
           { label: "H",  value: Math.round(layer.height), key: "height" },
         ].map(({ label, value, key }) => (
           <div key={key}>
-            <span className="font-mono text-[9px] tracking-wide uppercase text-zinc-700">{label}</span>
+            <span className="text-[10px] uppercase text-zinc-500">{label}</span>
             <input
               type="number"
               value={value}
               onChange={(e) => onLayer({ [key]: Number(e.target.value) })}
-              className="block w-full bg-transparent border-b border-zinc-800 text-zinc-300 font-mono text-[10px] outline-none pb-0.5 mt-0.5"
+              className="block w-full bg-transparent border-b border-zinc-800 text-zinc-200 font-mono text-[10px] outline-none pb-0.5 mt-0.5"
             />
           </div>
         ))}
@@ -779,9 +779,9 @@ function TransformInspector({ layer, onLayer }: {
             min={-180} max={180}
             value={Math.round(layer.rotation)}
             onChange={(e) => onLayer({ rotation: Number(e.target.value) })}
-            className="w-10 bg-transparent border-b border-zinc-800 text-zinc-300 font-mono text-[9px] outline-none pb-0.5 text-right"
+            className="w-10 bg-transparent border-b border-zinc-800 text-zinc-200 font-mono text-[10px] outline-none pb-0.5 text-right"
           />
-          <span className="font-mono text-[9px] text-zinc-700 flex-none">°</span>
+          <span className="font-mono text-[10px] text-zinc-500 flex-none">°</span>
         </div>
       </Row>
       <Row label="">
@@ -790,7 +790,7 @@ function TransformInspector({ layer, onLayer }: {
             <button
               key={deg}
               onClick={() => onLayer({ rotation: deg })}
-              className="font-mono text-[9px] px-1.5 py-0.5 border border-zinc-800 hover:border-zinc-600 text-zinc-600 hover:text-zinc-300 transition-colors"
+              className="text-[10px] px-1.5 py-0.5 border border-zinc-800 hover:border-zinc-600 text-zinc-500 hover:text-zinc-200 transition-colors"
             >
               {deg}°
             </button>
@@ -798,7 +798,7 @@ function TransformInspector({ layer, onLayer }: {
           <button
             onClick={() => onLayer({ rotation: 0 })}
             title="Reset rotation"
-            className="font-mono text-[9px] px-1.5 py-0.5 border border-zinc-800 hover:border-zinc-600 text-zinc-600 hover:text-zinc-300 transition-colors ml-1"
+            className="text-[10px] px-1.5 py-0.5 border border-zinc-800 hover:border-zinc-600 text-zinc-500 hover:text-zinc-200 transition-colors ml-1"
           >
             ↺
           </button>
@@ -813,7 +813,7 @@ function TransformInspector({ layer, onLayer }: {
             onChange={(e) => onLayer({ opacity: Number(e.target.value) })}
             className="flex-1 h-0.5 accent-zinc-400"
           />
-          <span className="font-mono text-[9px] text-zinc-600 w-8 text-right flex-none">{Math.round(layer.opacity * 100)}%</span>
+          <span className="font-mono text-[10px] text-zinc-500 w-8 text-right flex-none">{Math.round(layer.opacity * 100)}%</span>
         </div>
       </Row>
 
@@ -821,7 +821,7 @@ function TransformInspector({ layer, onLayer }: {
         <select
           value={layer.blendMode ?? "normal"}
           onChange={(e) => onLayer({ blendMode: e.target.value as BlendMode })}
-          className="w-full bg-zinc-950 border border-zinc-800 text-zinc-300 font-mono text-[9px] outline-none px-1 py-0.5 rounded-sm"
+          className="w-full bg-zinc-900 border border-zinc-800 text-zinc-200 text-[10px] outline-none px-1 py-0.5 rounded-sm"
         >
           {BLEND_MODES.map(({ value, label }) => (
             <option key={value} value={value}>{label}</option>
@@ -834,7 +834,7 @@ function TransformInspector({ layer, onLayer }: {
           type="number"
           value={layer.zIndex}
           onChange={(e) => onLayer({ zIndex: Number(e.target.value) })}
-          className="w-full bg-transparent border-b border-zinc-800 text-zinc-300 font-mono text-[10px] outline-none pb-0.5"
+          className="w-full bg-transparent border-b border-zinc-800 text-zinc-200 font-mono text-[10px] outline-none pb-0.5"
         />
       </Row>
     </>
