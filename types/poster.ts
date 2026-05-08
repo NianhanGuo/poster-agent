@@ -127,6 +127,28 @@ export interface ImageLayerData {
   adjustments?: ImageAdjustments;
 }
 
+// ─── Gradient layer ───────────────────────────────────────────────────────────
+
+export interface GradientColorStop {
+  offset: number;  // 0–1
+  color: string;   // CSS color (hex or rgba)
+}
+
+export interface GradientLayerData {
+  gradientType: "linear" | "radial";
+  stops: GradientColorStop[];
+  angle: number;   // degrees: 0 = top→bottom, 90 = left→right (linear only)
+}
+
+// ─── Texture / grain layer ────────────────────────────────────────────────────
+
+export interface NoiseLayerData {
+  intensity: number;  // 0–100
+  scale: number;      // 1–10 (pixel block size; 1 = fine grain)
+}
+
+// ─── Layer ───────────────────────────────────────────────────────────────────
+
 export interface PosterLayer {
   id: string;
   type: LayerType;
@@ -144,6 +166,8 @@ export interface PosterLayer {
   blendMode?: BlendMode;
   textData?: TextLayerData;
   imageData?: ImageLayerData;
+  gradientData?: GradientLayerData;
+  noiseData?: NoiseLayerData;
 }
 
 /** @deprecated Use PosterLayer */

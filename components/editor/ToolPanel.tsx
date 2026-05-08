@@ -5,7 +5,7 @@ import { ImageUploadPanel } from "./ImageUploadPanel";
 import { FontPicker } from "./FontPicker";
 import { loadGoogleFont } from "@/lib/fonts";
 import { GRADIENT_PRESETS, EFFECTS, COLOR_SWATCHES } from "@/lib/textEffects";
-import type { PosterLayer, BlendMode } from "@/types/poster";
+import type { PosterLayer, BlendMode, GradientColorStop } from "@/types/poster";
 import { isTextLayer, isImageLayer } from "@/types/poster";
 
 const BLEND_MODES: { value: BlendMode; label: string }[] = [
@@ -38,8 +38,10 @@ export function ToolPanel({ onTypography, onEditImage }: ToolPanelProps) {
   if (!project) return null;
 
   const selected = selectedLayerId ? getLayerById(selectedLayerId) : null;
-  const textSelected = selected ? isTextLayer(selected.type) : false;
-  const imageSelected = selected ? isImageLayer(selected.type) : false;
+  const textSelected    = selected ? isTextLayer(selected.type) : false;
+  const imageSelected   = selected ? isImageLayer(selected.type) : false;
+  const gradientSelected = selected?.type === "gradientLayer";
+  const textureSelected  = selected?.type === "textureLayer";
 
   function addTextLayer() {
     const canvas = project!.canvas;
@@ -107,8 +109,16 @@ export function ToolPanel({ onTypography, onEditImage }: ToolPanelProps) {
         <TextInspector td={selected.textData} onText={onText} onTypography={onTypography} />
       )}
 
-      {selected && imageSelected && (
+      {selected && imageSelected && !gradientSelected && !textureSelected && (
         <ImageInspector layer={selected} onLayer={onLayer} onEditImage={onEditImage} />
+      )}
+
+      {selected && gradientSelected && (
+        <GradientLayerInspector layer={selected} onLayer={onLayer} />
+      )}
+
+      {selected && textureSelected && (
+        <TextureLayerInspector layer={selected} onLayer={onLayer} />
       )}
 
       {selected && (
@@ -508,6 +518,217 @@ function ImageInspector({ layer, onLayer, onEditImage }: {
           </span>
         </div>
       )}
+    </>
+  );
+}
+
+// ─── Gradient layer inspector ─────────────────────────────────────────────────
+
+const GRADIENT_PRESETS_LAYER = [
+  { label: "Violet Radial",  gradientType: "radial"  as const, stops: [{ offset: 0, color: "#6b21a8" }, { offset: 1, color: "rgba(0,0,0,0)" }], angle: 0 },
+  { label: "Night Linear",   gradientType: "linear"  as const, stops: [{ offset: 0, color: "#0f172a" }, { offset: 1, color: "#1e1b4b" }], angle: 180 },
+  { label: "Dusk",           gradientType: "linear"  as const, stops: [{ offset: 0, color: "#7c3aed" }, { offset: 0.5, color: "#db2777" }, { offset: 1, color: "#f59e0b" }], angle: 135 },
+  { label: "Fog",            gradientType: "radial"  as const, stops: [{ offset: 0, color: "rgba(255,255,255,0.15)" }, { offset: 1, color: "rgba(255,255,255,0)" }], angle: 0 },
+  { label: "Ember",          gradientType: "radial"  as const, stops: [{ offset: 0, color: "#dc2626" }, { offset: 0.6, color: "#7f1d1d" }, { offset: 1, color: "rgba(0,0,0,0)" }], angle: 0 },
+  { label: "Sea",            gradientType: "linear"  as const, stops: [{ offset: 0, color: "#0c4a6e" }, { offset: 1, color: "#164e63" }], angle: 180 },
+];
+
+function GradientLayerInspector({
+  layer,
+  onLayer,
+}: {
+  layer: PosterLayer;
+  onLayer: (u: Partial<PosterLayer>) => void;
+}) {
+  const gd = layer.gradientData ?? {
+    gradientType: "radial" as const,
+    stops: [{ offset: 0, color: "#4a1d96" }, { offset: 1, color: "rgba(0,0,0,0)" }] as GradientColorStop[],
+    angle: 0,
+  };
+
+  function set(updates: Partial<typeof gd>) {
+    onLayer({ gradientData: { ...gd, ...updates } });
+  }
+
+  function setStop(index: number, updates: Partial<GradientColorStop>) {
+    const stops = gd.stops.map((s, i) => i === index ? { ...s, ...updates } : s);
+    set({ stops });
+  }
+
+  function addStop() {
+    const stops = [...gd.stops, { offset: 0.5, color: "#ffffff" }].sort((a, b) => a.offset - b.offset);
+    set({ stops });
+  }
+
+  function removeStop(index: number) {
+    if (gd.stops.length <= 2) return;
+    const stops = gd.stops.filter((_, i) => i !== index);
+    set({ stops });
+  }
+
+  return (
+    <>
+      <Section label="Gradient" />
+
+      {/* Presets */}
+      <div className="px-4 pb-2">
+        <div className="grid grid-cols-3 gap-1">
+          {GRADIENT_PRESETS_LAYER.map((p) => {
+            const css =
+              p.gradientType === "radial"
+                ? `radial-gradient(circle, ${p.stops.map((s) => `${s.color} ${Math.round(s.offset * 100)}%`).join(", ")})`
+                : `linear-gradient(${p.angle}deg, ${p.stops.map((s) => `${s.color} ${Math.round(s.offset * 100)}%`).join(", ")})`;
+            return (
+              <button
+                key={p.label}
+                title={p.label}
+                onClick={() => set({ gradientType: p.gradientType, stops: p.stops as GradientColorStop[], angle: p.angle })}
+                className="h-7 rounded-sm border border-zinc-800 hover:border-zinc-500 transition-colors text-[7px] font-mono text-zinc-700 hover:text-zinc-300 overflow-hidden"
+                style={{ background: css }}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Type */}
+      <Row label="Type">
+        <div className="flex gap-1">
+          {(["linear", "radial"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => set({ gradientType: t })}
+              className="flex-1 py-0.5 font-mono text-[8px] uppercase transition-colors"
+              style={{
+                border: `1px solid ${gd.gradientType === t ? "rgba(161,161,170,0.5)" : "rgba(255,255,255,0.08)"}`,
+                color: gd.gradientType === t ? "#e4e4e7" : "#52525b",
+              }}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      </Row>
+
+      {/* Angle (linear only) */}
+      {gd.gradientType === "linear" && (
+        <SliderRow
+          label="Angle"
+          min={0} max={360}
+          value={gd.angle}
+          onChange={(v) => set({ angle: v })}
+          display={`${gd.angle}°`}
+        />
+      )}
+
+      {/* Color stops */}
+      <Section label="Stops" />
+      <div className="px-4 space-y-2 pb-2">
+        {gd.stops.map((stop, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <input
+              type="color"
+              value={stop.color.startsWith("rgba") ? "#888888" : stop.color}
+              onChange={(e) => setStop(i, { color: e.target.value })}
+              className="w-5 h-5 bg-transparent border-0 cursor-pointer flex-none"
+            />
+            <input
+              type="range" min={0} max={1} step={0.01}
+              value={stop.offset}
+              onChange={(e) => setStop(i, { offset: Number(e.target.value) })}
+              className="flex-1 h-0.5 accent-zinc-400"
+            />
+            <span className="font-mono text-[8px] text-zinc-600 w-6 flex-none">{Math.round(stop.offset * 100)}%</span>
+            <button
+              onClick={() => removeStop(i)}
+              disabled={gd.stops.length <= 2}
+              className="font-mono text-[9px] text-zinc-700 hover:text-red-400 transition-colors disabled:opacity-20"
+            >×</button>
+          </div>
+        ))}
+        <button
+          onClick={addStop}
+          className="w-full py-1 font-mono text-[8px] uppercase text-zinc-700 hover:text-zinc-300 transition-colors"
+          style={{ border: "1px solid rgba(255,255,255,0.06)" }}
+        >
+          + stop
+        </button>
+      </div>
+    </>
+  );
+}
+
+// ─── Texture / grain layer inspector ─────────────────────────────────────────
+
+function generateGrainSrc(width: number, height: number, intensity: number, scale: number): string {
+  const s = Math.max(1, Math.round(scale));
+  const w = Math.ceil(width / s);
+  const h = Math.ceil(height / s);
+  const canvas = document.createElement("canvas");
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+  const img = ctx.createImageData(w, h);
+  const alpha = Math.round((intensity / 100) * 255);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = Math.floor(Math.random() * 255);
+    img.data[i] = v; img.data[i + 1] = v; img.data[i + 2] = v; img.data[i + 3] = alpha;
+  }
+  ctx.putImageData(img, 0, 0);
+  if (s === 1) return canvas.toDataURL();
+  const c2 = document.createElement("canvas");
+  c2.width = width; c2.height = height;
+  const ctx2 = c2.getContext("2d")!;
+  ctx2.imageSmoothingEnabled = false;
+  ctx2.drawImage(canvas, 0, 0, width, height);
+  return c2.toDataURL();
+}
+
+function TextureLayerInspector({
+  layer,
+  onLayer,
+}: {
+  layer: PosterLayer;
+  onLayer: (u: Partial<PosterLayer>) => void;
+}) {
+  const nd = layer.noiseData ?? { intensity: 30, scale: 2 };
+  const { project } = usePosterStore();
+
+  function regenerate(intensity: number, scale: number) {
+    if (!project) return;
+    const src = generateGrainSrc(layer.width, layer.height, intensity, scale);
+    onLayer({
+      noiseData: { intensity, scale },
+      imageData: { ...(layer.imageData ?? { src: "" }), src, fit: "fill" },
+    });
+  }
+
+  return (
+    <>
+      <Section label="Grain" />
+      <SliderRow
+        label="Intensity"
+        min={0} max={100}
+        value={nd.intensity}
+        onChange={(v) => regenerate(v, nd.scale)}
+        display={`${nd.intensity}%`}
+      />
+      <SliderRow
+        label="Scale"
+        min={1} max={10}
+        value={nd.scale}
+        onChange={(v) => regenerate(nd.intensity, v)}
+        display={`${nd.scale}px`}
+      />
+      <div className="px-4 pb-2">
+        <button
+          onClick={() => regenerate(nd.intensity, nd.scale)}
+          className="w-full py-1 font-mono text-[8px] uppercase text-zinc-700 hover:text-zinc-300 transition-colors"
+          style={{ border: "1px solid rgba(255,255,255,0.06)" }}
+        >
+          Reseed grain
+        </button>
+      </div>
     </>
   );
 }

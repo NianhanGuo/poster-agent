@@ -11,7 +11,7 @@ import {
 } from "react-konva";
 import { usePosterStore } from "@/store/posterStore";
 import { CanvasErrorBoundary } from "./CanvasErrorBoundary";
-import type { PosterLayer } from "@/types/poster";
+import type { PosterLayer, GradientLayerData } from "@/types/poster";
 import { getGradientPreset, gradientPoints } from "@/lib/textEffects";
 
 const SAFE_MARGIN = 48;
@@ -371,13 +371,23 @@ function PosterLayerNode({
     },
   };
 
+  // gradientLayer renders as a native Konva gradient rect — not a KonvaImageNode
+  if (layer.type === "gradientLayer") {
+    return (
+      <GradientLayerNode
+        layer={layer}
+        selected={selected}
+        commonProps={{ ...commonProps, ...blendProp }}
+      />
+    );
+  }
+
   const isImageType =
     layer.type === "backgroundImage" ||
     layer.type === "subjectImage" ||
     layer.type === "foregroundCutout" ||
     layer.type === "userImage" ||
     layer.type === "drawingLayer" ||
-    layer.type === "gradientLayer" ||
     layer.type === "textureLayer";
 
   if (isImageType) {
@@ -524,6 +534,76 @@ function KonvaImageNode({
         height={layer.height}
       />
       {selected && <KonvaTransformer ref={transformerRef} rotateEnabled keepRatio={false} />}
+    </>
+  );
+}
+
+// ─── Gradient layer node ──────────────────────────────────────────────────────
+
+function GradientLayerNode({
+  layer,
+  selected,
+  commonProps,
+}: {
+  layer: PosterLayer;
+  selected: boolean;
+  commonProps: Record<string, unknown>;
+}) {
+  const shapeRef = useRef<import("konva/lib/shapes/Rect").Rect | null>(null);
+  const transformerRef =
+    useRef<import("konva/lib/shapes/Transformer").Transformer | null>(null);
+
+  useEffect(() => {
+    if (selected && transformerRef.current && shapeRef.current) {
+      transformerRef.current.nodes([shapeRef.current as never]);
+      transformerRef.current.getLayer()?.batchDraw();
+    }
+  }, [selected]);
+
+  const gd: GradientLayerData | undefined = layer.gradientData;
+  const w = layer.width;
+  const h = layer.height;
+
+  let fillProps: Record<string, unknown> = { fill: "rgba(80,40,160,0.4)" };
+
+  if (gd) {
+    const stops = gd.stops.flatMap((s) => [s.offset, s.color]);
+
+    if (gd.gradientType === "radial") {
+      const cx = w / 2;
+      const cy = h / 2;
+      fillProps = {
+        fillRadialGradientStartPoint: { x: cx, y: cy },
+        fillRadialGradientStartRadius: 0,
+        fillRadialGradientEndPoint: { x: cx, y: cy },
+        fillRadialGradientEndRadius: Math.max(w, h) * 0.7,
+        fillRadialGradientColorStops: stops,
+      };
+    } else {
+      const rad = ((gd.angle - 90) * Math.PI) / 180;
+      const len = (Math.sqrt(w * w + h * h) / 2) * 1.05;
+      const cx = w / 2;
+      const cy = h / 2;
+      fillProps = {
+        fillLinearGradientStartPoint: { x: cx - Math.cos(rad) * len, y: cy - Math.sin(rad) * len },
+        fillLinearGradientEndPoint:   { x: cx + Math.cos(rad) * len, y: cy + Math.sin(rad) * len },
+        fillLinearGradientColorStops: stops,
+      };
+    }
+  }
+
+  return (
+    <>
+      <KonvaRect
+        ref={shapeRef}
+        {...commonProps}
+        width={w}
+        height={h}
+        {...fillProps}
+      />
+      {selected && (
+        <KonvaTransformer ref={transformerRef} rotateEnabled keepRatio={false} />
+      )}
     </>
   );
 }

@@ -11,6 +11,7 @@ import type {
   AssetItem,
   DesignBrief,
   ProjectVersion,
+  CanvasConfig,
 } from "@/types/poster";
 import type { PaletteColor } from "@/lib/colorExtract";
 import { DEFAULT_REFERENCE } from "@/types/poster";
@@ -54,6 +55,9 @@ interface PosterState {
   currentVersionIndex: number;
   pushVersion: (project: PosterProject, brief?: DesignBrief) => void;
   restoreVersion: (index: number) => void;
+
+  // Canvas
+  resizeCanvas: (newCanvas: CanvasConfig) => void;
 
   // Reference image
   reference: ReferenceConfig;
@@ -287,6 +291,23 @@ export const usePosterStore = create<PosterState>()(
         state.project = JSON.parse(JSON.stringify(version.project));
         state.designBrief = version.brief ?? null;
         state.currentVersionIndex = index;
+      }),
+
+    resizeCanvas: (newCanvas) =>
+      set((state) => {
+        if (!state.project) return;
+        const oldW = state.project.canvas.width;
+        const oldH = state.project.canvas.height;
+        const sx = newCanvas.width / oldW;
+        const sy = newCanvas.height / oldH;
+        state.project.canvas = newCanvas;
+        state.project.layers = state.project.layers.map((l) => ({
+          ...l,
+          x: Math.round(l.x * sx),
+          y: Math.round(l.y * sy),
+          width: Math.round(l.width * sx),
+          height: Math.round(l.height * sy),
+        }));
       }),
 
     setReference: (updates) =>

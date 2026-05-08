@@ -14,6 +14,7 @@ import { QuickPanel } from "./QuickPanel";
 import { ImageEditModal } from "./ImageEditModal";
 import { PromptComposer } from "@/components/setup/PromptComposer";
 import type { DesignBrief, ReferenceTargets } from "@/types/poster";
+import { CANVAS_PRESETS } from "@/types/poster";
 import type { EnrichedRefCtx } from "@/lib/referencePrompt";
 
 const DEFAULT_TARGETS: ReferenceTargets = {
@@ -27,6 +28,7 @@ const DEFAULT_TARGETS: ReferenceTargets = {
 };
 
 type LeftTab = "layers" | "assets" | "reference";
+type GenMode = "full" | "image" | "type";
 
 const PANEL_BG = "#0b0b0d";
 const BORDER   = "rgba(255,255,255,0.07)";
@@ -47,6 +49,7 @@ export function EditorClient() {
 
   const [leftTab, setLeftTab] = useState<LeftTab>("layers");
   const [command, setCommand] = useState("");
+  const [genMode, setGenMode] = useState<GenMode>("full");
   const [genError, setGenError] = useState("");
   const [showGuides, setShowGuides] = useState(false);
   const [aiUsedLabel, setAiUsedLabel] = useState("");
@@ -274,7 +277,13 @@ export function EditorClient() {
   async function handleGenerate() {
     const cmd = command.trim();
     setCommand("");
-    await runGeneration(cmd || undefined);
+    if (genMode === "image") {
+      await regenerateImage();
+    } else if (genMode === "type") {
+      await runTypography(cmd || undefined);
+    } else {
+      await runGeneration(cmd || undefined);
+    }
   }
 
   const LEFT_TABS: { id: LeftTab; label: string }[] = [
@@ -312,8 +321,30 @@ export function EditorClient() {
           <TitleEditor />
         </div>
 
-        {/* Center: prompt input */}
-        <div className="flex-1 flex items-center mx-2">
+        {/* Center: mode + prompt input */}
+        <div className="flex-1 flex items-center gap-2 mx-2">
+          {/* Generation mode pills */}
+          <div
+            className="flex-none flex gap-px rounded-md overflow-hidden"
+            style={{ border: "1px solid rgba(255,255,255,0.09)" }}
+          >
+            {([ ["full", "Layout"], ["image", "Image"], ["type", "Type"] ] as const).map(([id, label]) => (
+              <button
+                key={id}
+                onClick={() => setGenMode(id)}
+                className="px-2 h-7 font-mono text-[9px] tracking-[0.12em] uppercase transition-colors"
+                style={{
+                  background: genMode === id ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.02)",
+                  color: genMode === id ? "#e4e4e7" : "#52525b",
+                  borderRight: id !== "type" ? "1px solid rgba(255,255,255,0.08)" : "none",
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Prompt input */}
           <div
             className="flex-1 flex items-center gap-2 h-7 rounded-md px-3"
             style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)" }}
@@ -323,7 +354,11 @@ export function EditorClient() {
               value={command}
               onChange={(e) => setCommand(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
-              placeholder="Describe a change, mood, or direction…"
+              placeholder={
+                genMode === "image" ? "Image style hint (optional)…"
+                : genMode === "type"  ? "Type style hint, e.g. 'cinematic'…"
+                : "Describe a change, mood, or direction…"
+              }
               disabled={isGenerating}
               className="flex-1 bg-transparent font-mono text-[10px] text-zinc-300 placeholder:text-zinc-700 outline-none disabled:opacity-40"
             />
@@ -333,7 +368,7 @@ export function EditorClient() {
               className="flex-none font-mono text-[10px] tracking-[0.15em] uppercase text-zinc-400 hover:text-zinc-100 disabled:opacity-30 transition-colors pl-2 ml-0.5"
               style={{ borderLeft: "1px solid rgba(255,255,255,0.08)" }}
             >
-              Generate
+              {genMode === "full" ? "Generate" : genMode === "image" ? "Regen Image" : "Retype"}
             </button>
           </div>
         </div>
@@ -364,6 +399,9 @@ export function EditorClient() {
           {genError && !isGenerating && (
             <span className="font-mono text-[10px] text-red-500/80">{genError}</span>
           )}
+
+          {/* Canvas size */}
+          <CanvasSizeMenu />
 
           {/* Export dropdown */}
           <ExportMenu onPng={handleExport} onJson={exportJSON} />
@@ -567,6 +605,68 @@ function TitleEditor() {
       }
       className="bg-transparent font-mono text-[11px] tracking-wide text-zinc-400 outline-none focus:text-zinc-200 transition-colors w-40 truncate"
     />
+  );
+}
+
+// ─── Canvas size menu ─────────────────────────────────────────────────────────
+
+const CANVAS_SIZE_LABELS: Record<string, string> = {
+  "a4":              "A4",
+  "a3":              "A3",
+  "instagram-post":  "Square",
+  "instagram-story": "Story",
+  "square":          "Square",
+};
+
+function CanvasSizeMenu() {
+  const project      = usePosterStore((s) => s.project);
+  const resizeCanvas = usePosterStore((s) => s.resizeCanvas);
+  const [open, setOpen] = useState(false);
+  if (!project) return null;
+
+  const currentLabel = CANVAS_SIZE_LABELS[project.canvas.size] ?? project.canvas.size;
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="font-mono text-[9px] tracking-[0.15em] uppercase text-zinc-600 hover:text-zinc-300 transition-colors flex items-center gap-1"
+        style={{ border: "1px solid rgba(255,255,255,0.07)", padding: "2px 8px", borderRadius: 3 }}
+        title="Change canvas size"
+      >
+        {currentLabel}
+        <span style={{ opacity: 0.4 }}>▾</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div
+            className="absolute right-0 top-full mt-1.5 w-44 rounded-sm overflow-hidden z-50"
+            style={{ background: "#141416", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 12px 32px rgba(0,0,0,0.6)" }}
+          >
+            {Object.entries(CANVAS_PRESETS).map(([key, cfg]) => {
+              const active = project.canvas.size === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => { resizeCanvas(cfg); setOpen(false); }}
+                  className="w-full text-left px-3 py-2 font-mono text-[9px] tracking-wide transition-colors flex justify-between items-center"
+                  style={{
+                    color: active ? "#e4e4e7" : "#71717a",
+                    background: active ? "rgba(255,255,255,0.06)" : "transparent",
+                  }}
+                  onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.color = "#d4d4d8"; }}
+                  onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.color = "#71717a"; }}
+                >
+                  <span>{CANVAS_SIZE_LABELS[key] ?? key}</span>
+                  <span style={{ opacity: 0.4 }}>{cfg.width}×{cfg.height}</span>
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
