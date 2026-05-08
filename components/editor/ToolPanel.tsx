@@ -456,11 +456,16 @@ function TextInspector({
           <Section label="AI Type" />
           <div className="px-4 pb-2 flex flex-wrap gap-1.5">
             {[
-              { label: "Improve",   hint: "improve" },
-              { label: "Cinematic", hint: "cinematic" },
-              { label: "Editorial", hint: "editorial" },
-              { label: "Brutalist", hint: "brutalist" },
-              { label: "Fit",       hint: "fit-to-canvas" },
+              { label: "Improve",      hint: "improve" },
+              { label: "Cinematic",    hint: "cinematic" },
+              { label: "Editorial",    hint: "editorial" },
+              { label: "Brutalist",    hint: "brutalist" },
+              { label: "Fit",          hint: "fit-to-canvas" },
+              { label: "Match Ref",    hint: "match-reference" },
+              { label: "Experimental", hint: "experimental" },
+              { label: "Hierarchy ↕", hint: "hierarchy" },
+              { label: "Distribute",   hint: "distribute" },
+              { label: "Ref Layout",   hint: "reference-layout" },
             ].map(({ label, hint }) => (
               <button
                 key={hint}

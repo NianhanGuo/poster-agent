@@ -260,12 +260,23 @@ export function EditorClient() {
           lockedLayers: lockedLayers.map((l) => l.id),
           styleHint: styleHint ?? "improve",
           reference: refCtx,
+          brief: designBrief ?? undefined,
           canvasWidth: project.canvas.width,
           canvasHeight: project.canvas.height,
         }),
       });
       if (!res.ok) throw new Error();
-      const { layers } = await res.json();
+      const { layers, designLog } = await res.json();
+      if (designLog) {
+        console.log("[typography] designLog:", designLog);
+        const note = designLog.experimentalChoices && designLog.experimentalChoices !== "none"
+          ? designLog.experimentalChoices
+          : designLog.placementRationale ?? "";
+        if (note) {
+          setAiUsedLabel(`type: ${note.slice(0, 80)}`);
+          setTimeout(() => setAiUsedLabel(""), 8000);
+        }
+      }
       setProject({ ...project, layers });
     } catch {
       setGenError("Type failed");

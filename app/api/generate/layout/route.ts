@@ -36,9 +36,11 @@ Negative space guide:
 }
 
 function buildSystemPrompt(): string {
-  return `You are a world-class graphic designer specializing in film and exhibition posters.
-Your aesthetic references: A24, Criterion Collection, MoMA, Tate, ICA, Taschen.
-You always make strong design decisions — never produce safe, generic, or average outputs.
+  return `You are a world-class graphic designer and typographer specializing in poster design.
+Your aesthetic references: A24, Criterion Collection, MoMA, Tate, ICA, Taschen, Emigre, David Carson, Neville Brody, Swiss International Style.
+You make strong, intentional decisions — never safe, never centered by default, never generic.
+You understand spatial tension, typographic hierarchy, negative space, and reference-driven design.
+Typography is a design element: it has position, scale, rotation, and spatial relationship to the image.
 You output ONLY valid JSON — no markdown, no code fences, no prose. The response must be parseable by JSON.parse().`;
 }
 
@@ -51,9 +53,11 @@ function buildUserPrompt(
   const recipe = RECIPES[setup.styleRecipe] ?? RECIPES["cinematic-rain"];
 
   const textInstructions = setup.aiWriteCopy
-    ? `Generate compelling ${setup.posterType === "film" ? "film" : "exhibition"} poster copy in the spirit of "${recipe.name}".
-       For film: evocative title (2–5 words), minimal tagline, sparse credits line.
-       For exhibition: exhibition title, artist/curator name, venue and dates.`
+    ? `Generate compelling poster copy fitting the "${recipe.name}" aesthetic and the concept below.
+       Decide how many text blocks the design needs — let the brief and reference guide you.
+       Possible blocks: primary title, subtitle or tagline, supporting body, date/location, credits line.
+       Create only what serves the design — fewer strong blocks beats many weak ones.
+       Text should feel intentional and designed, not templated.`
     : `Use ONLY this user-provided text — do NOT invent or alter any copy:
        Title: ${setup.userTitle || "(omit — leave text empty string)"}
        Subtitle: ${setup.userSubtitle || "(omit)"}
@@ -95,12 +99,14 @@ Return a JSON object matching this exact schema:
       "type": "backgroundImage" | "subjectImage" | "titleText" | "subtitleText" | "metaText" | "bodyText" | "foregroundCutout" | "userText",
       "label": "<human readable>",
       "x": <number>, "y": <number>, "width": <number>, "height": <number>,
-      "rotation": <number>, "opacity": <0-1>,
+      "rotation": <degrees — 0 upright; use non-zero for experimental/asymmetric layouts>,
+      "opacity": <0–1>,
       "visible": true, "locked": false, "zIndex": <number>,
       "textData": {
         "text": "<actual text content>",
         "fontSize": <number>, "fontFamily": "<name>",
         "fontStyle": "normal" | "bold" | "italic" | "bold italic",
+        "fontWeight": <100|200|300|400|500|600|700|800|900>,
         "fill": "<#hex>",
         "align": "left" | "center" | "right",
         "letterSpacing": <number>, "lineHeight": <number>
@@ -109,13 +115,15 @@ Return a JSON object matching this exact schema:
     }
   ],
   "imagePrompt": "<detailed DALL-E prompt. Include: ${recipe.imageKeywords}. Concept: ${setup.prompt || setup.posterType}. NO text, NO typography, NO letters. Leave negative space for title overlay.${recipe.imageAvoid ? " Avoid: " + recipe.imageAvoid + "." : ""}>",
-  "designNotes": "<one sentence summary of the design decisions made>"
+  "designNotes": "<one sentence summary of the core design decision>"
 }
 
-Hard rules:
+Layout rules:
 - Always include exactly one backgroundImage layer at zIndex 1 with imageData.src = ""
-- All x/y/width/height must fit within ${canvas.width}×${canvas.height}
-- Title must be dramatically larger than body (3–5× size difference)
+- Most layers should fit within ${canvas.width}×${canvas.height}; text layers MAY extend slightly beyond edges for dramatic effect
+- Create strong visual hierarchy — primary text should dominate; the exact scale ratio is your decision based on brief and reference
+- Avoid defaulting to centered, balanced, or safe layouts — use the full canvas assertively
+- rotation: use 0 for standard upright; use non-zero angles for asymmetric, experimental, or brutalist compositions
 - Only textData on text layers; only imageData on image layers
 - Never add text inside the imagePrompt`;
 }
