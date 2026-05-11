@@ -12,7 +12,7 @@ const CW = 520;
 const CH = 400;
 
 type CutoutMode = "auto" | "lasso" | "brush";
-type AutoStatus = "idle" | "extracting" | "done" | "unavailable" | "failed";
+type AutoStatus = "idle" | "extracting" | "done" | "failed";
 interface Pt { x: number; y: number }
 interface ImgRect { x: number; y: number; w: number; h: number }
 
@@ -29,21 +29,29 @@ export function CutoutModal({
   const sourceLayer = getLayerById(sourceLayerId);
   const imageSrc = sourceLayer?.imageData?.src ?? "";
 
-  const [mode, setMode] = useState<CutoutMode>("lasso");
+  const [mode, setMode] = useState<CutoutMode>("auto");
 
   // Per-mode preview URLs — kept independent so switching tabs never clears results
-  const [autoPreviewUrl,  setAutoPreviewUrl]  = useState<string | null>(null); // extracted cutout only
+  const [autoPreviewUrl,  setAutoPreviewUrl]  = useState<string | null>(null);
   const [lassoPreviewUrl, setLassoPreviewUrl] = useState<string | null>(null);
   const [brushPreviewUrl, setBrushPreviewUrl] = useState<string | null>(null);
+  const autoObjectUrl = useRef<string | null>(null); // for revoking on reset
 
   // ─── Auto state ────────────────────────────────────────────────────────────
-  const [autoStatus, setAutoStatus] = useState<AutoStatus>("idle");
-  const [autoMessage, setAutoMessage] = useState("Click Extract to automatically detect the main subject.");
+  const [autoStatus,   setAutoStatus]   = useState<AutoStatus>("idle");
+  const [autoProgress, setAutoProgress] = useState(0);
+
+  // Revoke object URLs on unmount
+  useEffect(() => {
+    return () => {
+      if (autoObjectUrl.current) URL.revokeObjectURL(autoObjectUrl.current);
+    };
+  }, []);
 
   // ─── Lasso state ───────────────────────────────────────────────────────────
   const lassoRef    = useRef<HTMLCanvasElement>(null);
   const lassoImgEl  = useRef<HTMLImageElement | null>(null);
-  const lassoIR     = useRef<ImgRect>({ x: 0, y: 0, w: CW, h: CH }); // image rect on canvas
+  const lassoIR     = useRef<ImgRect>({ x: 0, y: 0, w: CW, h: CH });
   const lassoNatW   = useRef(1);
   const lassoNatH   = useRef(1);
   const [lassoPoints, setLassoPoints] = useState<Pt[]>([]);
@@ -61,7 +69,7 @@ export function CutoutModal({
   const [brushSize, setBrushSize] = useState(28);
   const [isBrushing, setIsBrushing] = useState(false);
   const [hasStrokes, setHasStrokes] = useState(false);
-  const [cursorPx, setCursorPx] = useState<Pt | null>(null); // CSS-pixel cursor for brush
+  const [cursorPx, setCursorPx] = useState<Pt | null>(null);
 
   // Keyboard close
   useEffect(() => {
@@ -82,7 +90,6 @@ export function CutoutModal({
     });
   }
 
-  // Compute scaled image rect that fits within CW × CH
   function fitRect(natW: number, natH: number): ImgRect {
     const scale = Math.min(CW / natW, CH / natH);
     const w = natW * scale;
@@ -90,7 +97,7 @@ export function CutoutModal({
     return { x: (CW - w) / 2, y: (CH - h) / 2, w, h };
   }
 
-  // ─── Init lasso canvas when entering lasso mode ────────────────────────────
+  // ─── Init lasso canvas ─────────────────────────────────────────────────────
 
   useEffect(() => {
     if (mode !== "lasso" || !imageSrc) return;
@@ -111,7 +118,7 @@ export function CutoutModal({
     return () => { cancelled = true; };
   }, [mode, imageSrc]);
 
-  // ─── Init brush canvas when entering brush mode ────────────────────────────
+  // ─── Init brush canvas ─────────────────────────────────────────────────────
 
   useEffect(() => {
     if (mode !== "brush" || !imageSrc) return;
@@ -133,7 +140,7 @@ export function CutoutModal({
     return () => { cancelled = true; };
   }, [mode, imageSrc]);
 
-  // ─── Redraw lasso canvas whenever points / snap state changes ─────────────
+  // ─── Redraw lasso canvas ───────────────────────────────────────────────────
 
   const redrawLasso = useCallback(() => {
     const canvas = lassoRef.current;
@@ -155,7 +162,6 @@ export function CutoutModal({
       return;
     }
 
-    // Selection fill
     ctx.save();
     ctx.fillStyle = "rgba(96,165,250,0.18)";
     ctx.beginPath();
@@ -164,7 +170,6 @@ export function CutoutModal({
     ctx.fill();
     ctx.restore();
 
-    // Dashed outline
     ctx.save();
     ctx.strokeStyle = "rgba(255,255,255,0.9)";
     ctx.lineWidth   = 1.5;
@@ -175,7 +180,6 @@ export function CutoutModal({
     ctx.stroke();
     ctx.restore();
 
-    // Start point dot
     const s = lassoPoints[0];
     ctx.save();
     ctx.fillStyle = lassoSnap ? "#60a5fa" : "white";
@@ -187,7 +191,7 @@ export function CutoutModal({
 
   useEffect(() => { redrawLasso(); }, [redrawLasso]);
 
-  // ─── Lasso: coordinate helpers ─────────────────────────────────────────────
+  // ─── Lasso coordinate helpers ──────────────────────────────────────────────
 
   function getCanvasPt(e: React.MouseEvent<HTMLCanvasElement>): Pt {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -203,7 +207,7 @@ export function CutoutModal({
     return Math.hypot(pt.x - s.x, pt.y - s.y) < 15;
   }
 
-  // ─── Lasso: pointer events ─────────────────────────────────────────────────
+  // ─── Lasso pointer events ──────────────────────────────────────────────────
 
   function onLassoDown(e: React.MouseEvent<HTMLCanvasElement>) {
     if (e.button !== 0) return;
@@ -228,15 +232,12 @@ export function CutoutModal({
     if (url) setLassoPreviewUrl(url);
   }
 
-  // ─── Lasso: compute full-resolution cutout ─────────────────────────────────
-
   async function computeLassoCutout(pts: Pt[]): Promise<string | null> {
     if (pts.length < 3) return null;
     const ir   = lassoIR.current;
     const natW = lassoNatW.current;
     const natH = lassoNatH.current;
 
-    // Map display canvas coords → natural image coords
     const natPts = pts.map((p) => ({
       x: ((p.x - ir.x) / ir.w) * natW,
       y: ((p.y - ir.y) / ir.h) * natH,
@@ -275,7 +276,7 @@ export function CutoutModal({
     ctx.drawImage(img, x, y, w, h);
   }
 
-  // ─── Brush: stroke application ─────────────────────────────────────────────
+  // ─── Brush stroke application ──────────────────────────────────────────────
 
   function applyBrushStroke(pt: Pt) {
     const canvas = brushRef.current;
@@ -291,7 +292,6 @@ export function CutoutModal({
       ctx.fillStyle = "rgba(0,0,0,1)";
       ctx.fill();
     } else if (brushMode === "restore" && origData.current) {
-      // Restore: copy region from original image data, clipped to circle
       const x0 = Math.max(0, Math.floor(pt.x - r));
       const y0 = Math.max(0, Math.floor(pt.y - r));
       const rw  = Math.min(CW - x0, Math.ceil(r * 2 + 1));
@@ -313,7 +313,6 @@ export function CutoutModal({
         temp.width  = rw;
         temp.height = rh;
         temp.getContext("2d")!.putImageData(slice, 0, 0);
-
         ctx.globalCompositeOperation = "source-over";
         ctx.beginPath();
         ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2);
@@ -349,7 +348,6 @@ export function CutoutModal({
     try { setBrushPreviewUrl(canvas.toDataURL("image/png")); } catch { /* CORS tainted */ }
   }
 
-  // Full-resolution brush cutout: scale display mask up to native image size
   async function getBrushCutoutFullRes(): Promise<string | null> {
     const canvas = brushRef.current;
     const img    = brushImgEl.current;
@@ -360,14 +358,12 @@ export function CutoutModal({
       out.height   = img.naturalHeight;
       const ctx    = out.getContext("2d")!;
       ctx.drawImage(img, 0, 0);
-      // Use display canvas image region as alpha mask, scaled to full res
       const { x, y, w, h } = brushIR.current;
       ctx.globalCompositeOperation = "destination-in";
       ctx.drawImage(canvas, x, y, w, h, 0, 0, img.naturalWidth, img.naturalHeight);
       return out.toDataURL("image/png");
     } catch {
-      // CORS fallback: return display-res canvas
-      try { return canvas.toDataURL("image/png"); } catch { return null; }
+      try { return brushRef.current?.toDataURL("image/png") ?? null; } catch { return null; }
     }
   }
 
@@ -383,15 +379,21 @@ export function CutoutModal({
     setBrushPreviewUrl(null);
   }
 
-  // ─── Auto extraction ───────────────────────────────────────────────────────
+  // ─── Auto extraction (local AI — @imgly/background-removal) ───────────────
 
   async function handleAutoExtract() {
-    console.log("[CutoutModal] sourceImageUrl exists?", !!imageSrc, imageSrc.slice(0, 60));
     setAutoStatus("extracting");
-    setAutoMessage("Extracting subject…");
-    // Do NOT clear autoPreviewUrl here — keep source image visible during loading
+    setAutoProgress(0);
+
+    // Revoke any previous object URL
+    if (autoObjectUrl.current) {
+      URL.revokeObjectURL(autoObjectUrl.current);
+      autoObjectUrl.current = null;
+    }
+    setAutoPreviewUrl(null);
 
     try {
+      // Convert imageSrc to Blob
       let blob: Blob;
       if (imageSrc.startsWith("data:")) {
         const [header, b64] = imageSrc.split(",");
@@ -404,45 +406,37 @@ export function CutoutModal({
         blob = await fetch(imageSrc).then((r) => r.blob());
       }
 
-      const fd = new FormData();
-      fd.append("image", blob, "image.png");
-      const res  = await fetch("/api/generate/subject", { method: "POST", body: fd });
-      const data = await res.json();
+      // Dynamic import keeps the WASM bundle out of the initial JS chunk
+      const { removeBackground } = await import("@imgly/background-removal");
 
-      console.log("[CutoutModal] extract response:", JSON.stringify({ url: data.url?.slice(0, 60), hasTransparency: data.hasTransparency, apiUnavailable: data.apiUnavailable, message: data.message }));
+      const resultBlob = await removeBackground(blob, {
+        model: "isnet_fp16",
+        output: { format: "image/png", quality: 0.9 },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        progress: (_key: string, current: number, total: number) => {
+          if (total > 0) setAutoProgress(Math.round((current / total) * 100));
+        },
+      });
 
-      if (data.apiUnavailable) {
-        setAutoStatus("unavailable");
-        setAutoMessage("Auto extraction is not configured. Use Lasso or Brush.");
-        // Keep source image visible — don't clear autoPreviewUrl
-        return;
-      }
-      if (!res.ok || !data.url) {
-        setAutoStatus("failed");
-        setAutoMessage(data.message ?? "No clear subject detected. Try the lasso tool.");
-        // Keep source image visible — don't clear autoPreviewUrl
-        return;
-      }
-
-      // Validate the returned URL looks like a data URI or an absolute path
-      const url: string = data.url;
-      if (!url.startsWith("data:") && !url.startsWith("/") && !url.startsWith("http")) {
-        console.error("[CutoutModal] Unexpected URL format:", url.slice(0, 80));
-        setAutoStatus("failed");
-        setAutoMessage("Extraction returned an unexpected format. Try the lasso tool.");
-        return;
-      }
-
+      const url = URL.createObjectURL(resultBlob);
+      autoObjectUrl.current = url;
       setAutoPreviewUrl(url);
-      console.log("[CutoutModal] autoPreviewUrl set:", url.slice(0, 60));
       setAutoStatus("done");
-      setAutoMessage("Cutout ready.");
+      setAutoProgress(100);
     } catch (err) {
       console.error("[CutoutModal] extraction error:", err);
       setAutoStatus("failed");
-      setAutoMessage("Extraction failed. Try the lasso tool.");
-      // Keep source image visible — don't clear autoPreviewUrl
     }
+  }
+
+  function resetAuto() {
+    if (autoObjectUrl.current) {
+      URL.revokeObjectURL(autoObjectUrl.current);
+      autoObjectUrl.current = null;
+    }
+    setAutoPreviewUrl(null);
+    setAutoStatus("idle");
+    setAutoProgress(0);
   }
 
   // ─── Apply result ──────────────────────────────────────────────────────────
@@ -453,7 +447,6 @@ export function CutoutModal({
       mode === "lasso" ? lassoPreviewUrl :
       null;
 
-    // For brush: compute full-res export at apply time
     if (mode === "brush") {
       url = await getBrushCutoutFullRes();
     }
@@ -491,7 +484,6 @@ export function CutoutModal({
     onClose();
   }
 
-  // Apply is only enabled when there is a real cutout result (not just the source image)
   const canApply =
     mode === "auto"  ? !!autoPreviewUrl  :
     mode === "lasso" ? !!lassoPreviewUrl :
@@ -513,8 +505,6 @@ export function CutoutModal({
       </button>
     );
   }
-
-  // ─── Hint text for left pane ───────────────────────────────────────────────
 
   function lassoHint(): string {
     if (lassoPoints.length === 0)  return "Click and drag to draw selection";
@@ -548,22 +538,42 @@ export function CutoutModal({
           className="flex-1 relative overflow-hidden flex items-center justify-center"
           style={{ background: CHECKER }}
         >
-          {/* Auto mode: always show image — cutout result OR source image as fallback */}
+          {/* Auto mode: show extracted result or source image */}
           {mode === "auto" && (
             (autoPreviewUrl || imageSrc) ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={autoPreviewUrl ?? imageSrc}
-                alt={autoPreviewUrl ? "cutout preview" : "source image"}
+                alt={autoPreviewUrl ? "extracted subject" : "source image"}
                 className="max-w-full max-h-full object-contain"
-                onError={(e) => console.error("[CutoutModal] Preview img failed to load", (e.target as HTMLImageElement).src?.slice(0, 60))}
               />
             ) : (
               <span className="text-[10px] text-zinc-600 select-none">No image source</span>
             )
           )}
 
-          {/* Lasso mode: drawing canvas */}
+          {/* Extracting overlay */}
+          {mode === "auto" && autoStatus === "extracting" && (
+            <div
+              className="absolute inset-0 flex items-end justify-center pb-6"
+              style={{ background: "rgba(0,0,0,0.4)" }}
+            >
+              <div className="w-48 space-y-2">
+                <div className="flex justify-between text-[9px] text-zinc-400">
+                  <span>{autoProgress < 10 ? "Downloading model…" : "Extracting subject…"}</span>
+                  <span>{autoProgress}%</span>
+                </div>
+                <div className="h-0.5 bg-zinc-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-zinc-300 rounded-full transition-all duration-200"
+                    style={{ width: `${autoProgress}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Lasso mode */}
           {mode === "lasso" && (
             <>
               <canvas
@@ -575,9 +585,8 @@ export function CutoutModal({
                 onMouseDown={onLassoDown}
                 onMouseMove={onLassoMove}
                 onMouseUp={onLassoUp}
-                onMouseLeave={() => { if (isLassoing) { setIsLassoing(false); } }}
+                onMouseLeave={() => { if (isLassoing) setIsLassoing(false); }}
               />
-              {/* Cutout overlay after path closes */}
               {lassoPreviewUrl && !isLassoing && (
                 <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -590,7 +599,7 @@ export function CutoutModal({
             </>
           )}
 
-          {/* Brush mode: painting canvas */}
+          {/* Brush mode */}
           {mode === "brush" && (
             <div className="relative w-full h-full">
               <canvas
@@ -608,7 +617,6 @@ export function CutoutModal({
                   if (hasStrokes) exportBrushPreview();
                 }}
               />
-              {/* Brush cursor ring */}
               {cursorPx && (
                 <div
                   className="absolute rounded-full pointer-events-none"
@@ -660,9 +668,9 @@ export function CutoutModal({
             {mode === "auto" && (
               <AutoPanel
                 status={autoStatus}
-                message={autoMessage}
+                progress={autoProgress}
                 onExtract={handleAutoExtract}
-                onSwitchLasso={() => setMode("lasso")}
+                onReset={resetAuto}
               />
             )}
 
@@ -723,39 +731,82 @@ export function CutoutModal({
 
 function AutoPanel({
   status,
-  message,
+  progress,
   onExtract,
-  onSwitchLasso,
+  onReset,
 }: {
   status: AutoStatus;
-  message: string;
+  progress: number;
   onExtract: () => void;
-  onSwitchLasso: () => void;
+  onReset: () => void;
 }) {
   return (
     <div className="space-y-3">
-      <p className="text-[9px] text-zinc-500 leading-relaxed">{message}</p>
+      {status === "idle" && (
+        <>
+          <p className="text-[9px] text-zinc-500 leading-relaxed">
+            AI-powered extraction runs locally in your browser — no API key needed, handles hair and complex edges.
+          </p>
+          <p className="text-[9px] text-zinc-600 leading-relaxed">
+            First run downloads the model (~40 MB) and caches it. Subsequent runs are fast.
+          </p>
+          <button
+            onClick={onExtract}
+            className="w-full border border-zinc-700 hover:border-zinc-400 text-zinc-300 hover:text-zinc-100 text-[10px] tracking-wide uppercase py-2 transition-colors"
+          >
+            Extract Subject
+          </button>
+        </>
+      )}
 
       {status === "extracting" && (
-        <div className="text-[9px] text-zinc-500 text-center">Extracting subject…</div>
+        <div className="space-y-3">
+          <p className="text-[9px] text-zinc-400 leading-relaxed">
+            {progress < 10
+              ? "Downloading AI model (~40 MB, cached after first use)…"
+              : "Removing background…"}
+          </p>
+          <div className="space-y-1.5">
+            <div className="flex justify-between font-mono text-[9px] text-zinc-500">
+              <span>Progress</span>
+              <span>{progress}%</span>
+            </div>
+            <div className="h-0.5 bg-zinc-800 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-zinc-400 rounded-full transition-all duration-150"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+        </div>
       )}
 
-      {status !== "extracting" && status !== "done" && (
-        <button
-          onClick={onExtract}
-          className="w-full border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-zinc-100 text-[10px] tracking-wide uppercase py-2 transition-colors"
-        >
-          Extract Subject
-        </button>
+      {status === "done" && (
+        <>
+          <p className="text-[9px] text-green-400/80 leading-relaxed">
+            Subject extracted. Click Apply to add as a new layer.
+          </p>
+          <button
+            onClick={onReset}
+            className="w-full border border-zinc-800 hover:border-zinc-600 text-zinc-500 hover:text-zinc-200 text-[10px] tracking-wide uppercase py-1.5 transition-colors"
+          >
+            Try Again
+          </button>
+        </>
       )}
 
-      {(status === "unavailable" || status === "failed") && (
-        <button
-          onClick={onSwitchLasso}
-          className="w-full border border-zinc-800 hover:border-zinc-600 text-zinc-500 hover:text-zinc-200 text-[10px] tracking-wide uppercase py-2 transition-colors"
-        >
-          Use Lasso Instead
-        </button>
+      {status === "failed" && (
+        <>
+          <p className="text-[9px] text-red-400/80 leading-relaxed">
+            Extraction failed. Check the console for details, or use Lasso for manual selection.
+          </p>
+          <button
+            onClick={onExtract}
+            className="w-full border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-zinc-100 text-[10px] tracking-wide uppercase py-2 transition-colors"
+          >
+            Retry
+          </button>
+        </>
       )}
     </div>
   );
@@ -774,12 +825,10 @@ function LassoPanel({
 }) {
   return (
     <div className="space-y-3">
-      <div className="space-y-1.5">
-        <p className="text-[9px] text-zinc-500 leading-relaxed">
-          Click and drag over the subject to draw a freeform selection.
-          Release near the start point to snap-close, or release anywhere to auto-close.
-        </p>
-      </div>
+      <p className="text-[9px] text-zinc-500 leading-relaxed">
+        Click and drag over the subject to draw a freeform selection.
+        Release near the start point to snap-close, or release anywhere to auto-close.
+      </p>
 
       {(hasPoints || hasCutout) && (
         <button
@@ -822,7 +871,6 @@ function BrushPanel({
 }) {
   return (
     <div className="space-y-3">
-      {/* Mode toggle */}
       <div className="flex gap-1.5">
         {(["erase", "restore"] as const).map((m) => (
           <button
@@ -839,7 +887,6 @@ function BrushPanel({
         ))}
       </div>
 
-      {/* Brush size */}
       <div>
         <div className="flex items-center justify-between mb-1">
           <span className="text-[10px] uppercase text-zinc-500">Size</span>
