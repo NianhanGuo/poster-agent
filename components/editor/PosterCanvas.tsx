@@ -10,6 +10,7 @@ import {
   Transformer as KonvaTransformer,
   Circle as KonvaCircle,
   Line as KonvaLine,
+  Group as KonvaGroup,
 } from "react-konva";
 import { usePosterStore } from "@/store/posterStore";
 import { CanvasErrorBoundary } from "./CanvasErrorBoundary";
@@ -380,7 +381,7 @@ function PosterLayerNode({
   if (layer.type === "noiseTexture") {
     return <NoiseTextureNode layer={layer} selected={selected} commonProps={{ ...commonProps, ...blendProp }} />;
   }
-  if (layer.type === "geometricShape" || layer.type === "accentLine") {
+  if (layer.type === "geometricShape" || layer.type === "accentLine" || layer.type === "solidBackground") {
     return <ShapeLayerNode layer={layer} selected={selected} commonProps={{ ...commonProps, ...blendProp }} />;
   }
 
@@ -761,6 +762,48 @@ function KonvaImageNode({
         onTap={commonProps.onTap as () => void}
         onDragEnd={commonProps.onDragEnd as (e: { target: { x: () => number; y: () => number } }) => void}
       />
+    );
+  }
+
+  const clip = layer.clipShape;
+
+  if (clip) {
+    // Build a clipFunc from the clipShape definition (coords are canvas-absolute)
+    const clipFunc =
+      clip.type === "circle"
+        ? (ctx: CanvasRenderingContext2D) => {
+            ctx.arc(clip.cx ?? 0, clip.cy ?? 0, clip.radius ?? 0, 0, Math.PI * 2, false);
+          }
+        : (ctx: CanvasRenderingContext2D) => {
+            const cx = clip.x ?? 0;
+            const cy = clip.y ?? 0;
+            const cw = clip.width ?? layer.width;
+            const ch = clip.height ?? layer.height;
+            if (clip.rotation) {
+              const rad = (clip.rotation * Math.PI) / 180;
+              const mx = cx + cw / 2;
+              const my = cy + ch / 2;
+              ctx.translate(mx, my);
+              ctx.rotate(rad);
+              ctx.rect(-cw / 2, -ch / 2, cw, ch);
+            } else {
+              ctx.rect(cx, cy, cw, ch);
+            }
+          };
+
+    return (
+      <>
+        <KonvaGroup clipFunc={clipFunc as never}>
+          <KonvaImage
+            ref={shapeRef}
+            {...commonProps}
+            image={image}
+            width={layer.width}
+            height={layer.height}
+          />
+        </KonvaGroup>
+        {selected && <KonvaTransformer ref={transformerRef} rotateEnabled keepRatio={false} />}
+      </>
     );
   }
 

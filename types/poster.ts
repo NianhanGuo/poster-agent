@@ -69,7 +69,8 @@ export type LayerType =
   | "noiseTexture"
   | "geometricShape"
   | "accentLine"
-  | "logoPlaceholder";
+  | "logoPlaceholder"
+  | "solidBackground";
 
 const TEXT_LAYER_TYPES = new Set<LayerType>([
   "titleText", "subtitleText", "metaText", "bodyText", "userText",
@@ -80,7 +81,6 @@ export function isTextLayer(type: LayerType): boolean {
 }
 
 export function isImageLayer(type: LayerType): boolean {
-  // New non-image, non-text types that have their own renderers
   const nonImageTypes = new Set<LayerType>([
     "colorOverlay",
     "noiseTexture",
@@ -88,6 +88,7 @@ export function isImageLayer(type: LayerType): boolean {
     "accentLine",
     "logoPlaceholder",
     "gradientLayer",
+    "solidBackground",
   ]);
   if (nonImageTypes.has(type)) return false;
   return !TEXT_LAYER_TYPES.has(type);
@@ -193,6 +194,28 @@ export interface LayerEffects {
   grain?: number;
 }
 
+// ─── Clip shape (Swiss / Bauhaus geometry-first clipping) ─────────────────────
+
+export interface ClipShape {
+  type: "rect" | "circle";
+  // rect clip
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  rotation?: number;
+  // circle clip
+  cx?: number;
+  cy?: number;
+  radius?: number;
+}
+
+export interface ForegroundClip {
+  echoBackgroundShape: boolean;  // mirror the palette background color in foreground shapes
+  bleedDirection?: "left" | "right" | "top" | "bottom";
+  bleedAmount?: number;          // px amount the clip shape bleeds beyond canvas edge
+}
+
 // ─── Layer ───────────────────────────────────────────────────────────────────
 
 export interface PosterLayer {
@@ -217,6 +240,8 @@ export interface PosterLayer {
   shapeData?: ShapeLayerData;
   overlayData?: OverlayLayerData;
   effects?: LayerEffects;
+  clipShape?: ClipShape;
+  foregroundClip?: ForegroundClip;
 }
 
 /** @deprecated Use PosterLayer */

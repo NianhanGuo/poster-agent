@@ -30,6 +30,30 @@ function pickFluxSize(width: number, height: number): FluxImageSize {
   return { width: snap(w), height: snap(h) };
 }
 
+// ─── Graphic quality suffix — appended to every Flux prompt ──────────────────
+
+const GRAPHIC_QUALITY_SUFFIX =
+  "Graphic design aesthetic. Painterly illustration quality. Screen-print color relationships. Avoid stock photography feel, avoid AI artifact look. Strong silhouettes, decisive color zones, no muddy midtones.";
+
+const RECIPE_STYLE_DIRECTION: Record<string, string> = {
+  "cinematic-rain":    "Woodblock print abstraction. Bold black ink marks. Rain rendered as graphic lines not realism. East Asian ink wash meets Soviet constructivist geometry.",
+  "cinematic_rain":    "Woodblock print abstraction. Bold black ink marks. Rain rendered as graphic lines not realism. East Asian ink wash meets Soviet constructivist geometry.",
+  "gallery-minimal":   "Rothko color field painting. Pure color zones, soft luminous edges. No recognizable objects — pure abstract color relationships. Museum-quality stillness.",
+  "gallery_minimal":   "Rothko color field painting. Pure color zones, soft luminous edges. No recognizable objects — pure abstract color relationships. Museum-quality stillness.",
+  "brutalist-wall":    "Soviet constructivist poster aesthetic. Flat color planes, bold diagonal geometry, stark industrial materials. Rodchenko, El Lissitzky influence.",
+  "brutalist_wall":    "Soviet constructivist poster aesthetic. Flat color planes, bold diagonal geometry, stark industrial materials. Rodchenko, El Lissitzky influence.",
+  "surreal-film":      "Double exposure film photography technique. Two images occupying the same space. Dreamlike layering, organic shapes dissolving into each other.",
+  "surreal_film":      "Double exposure film photography technique. Two images occupying the same space. Dreamlike layering, organic shapes dissolving into each other.",
+  "blur-field":        "Pure color abstraction. Soft bokeh light fields, no hard edges, no recognizable forms. Color relationships only — Turrell light installation aesthetic.",
+  "diffuse_blur":      "Pure color abstraction. Soft bokeh light fields, no hard edges, no recognizable forms. Color relationships only — Turrell light installation aesthetic.",
+  "archive-museum":    "Archival photography aesthetic. Aged photographic print quality, sepia or faded color, documentary gravitas. Walker Evans, August Sander influence.",
+  "archive_museum":    "Archival photography aesthetic. Aged photographic print quality, sepia or faded color, documentary gravitas. Walker Evans, August Sander influence.",
+  "experimental-type": "Layered risograph print aesthetic. Misregistered color separation, halftone dot patterns, zine production texture. Neon accents on dark grounds.",
+  "experimental_type": "Layered risograph print aesthetic. Misregistered color separation, halftone dot patterns, zine production texture. Neon accents on dark grounds.",
+  "soft-editorial":    "Editorial fashion photography aesthetic. Soft diffused light, muted pastel palette, elegant restraint. Céline or Bottega Veneta campaign quality.",
+  "soft_editorial":    "Editorial fashion photography aesthetic. Soft diffused light, muted pastel palette, elegant restraint. Céline or Bottega Veneta campaign quality.",
+};
+
 // ─── Negative-space placement hint from brief ─────────────────────────────────
 
 function negativeSpacePlacement(brief?: DesignBrief): string {
@@ -141,17 +165,22 @@ export async function POST(req: NextRequest) {
     `Intentional empty negative space in the ${spacePlacement} for typography overlay.`,
   ].join(" ");
 
+  const recipeStyleDir = RECIPE_STYLE_DIRECTION[recipe] ?? "";
+
   let finalPrompt: string;
   if (fluxPrompt) {
-    // Use the layout-generated fluxPrompt directly
-    finalPrompt = `${fluxPrompt} ${closingSuffix}`;
+    finalPrompt = [fluxPrompt, recipeStyleDir, closingSuffix, GRAPHIC_QUALITY_SUFFIX]
+      .filter(Boolean)
+      .join(" ");
   } else {
-    // Fall back to existing buildImagePrompt logic
-    finalPrompt = buildImagePrompt(
+    const basePrompt = buildImagePrompt(
       prompt ?? "",
       brief as DesignBrief | undefined,
       refCtxForBrief,
     );
+    finalPrompt = [basePrompt, recipeStyleDir, GRAPHIC_QUALITY_SUFFIX]
+      .filter(Boolean)
+      .join(" ");
   }
 
   if (process.env.NODE_ENV !== "production") {

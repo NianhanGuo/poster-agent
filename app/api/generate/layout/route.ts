@@ -39,6 +39,18 @@ function buildSystemPrompt(): string {
 
 Your task: generate a complete multi-layer poster layout as structured JSON. Every design decision must serve the hierarchy, atmosphere, and visual tension of the piece.
 
+FUNDAMENTAL DESIGN PHILOSOPHY:
+You are making GRAPHIC DESIGN, not photo collages. The hierarchy of visual elements is:
+1. Geometric composition (primary)
+2. Color relationships (primary)
+3. Typography (primary)
+4. Photography/imagery (subordinate — always masked, cropped, or contained within geometric shapes)
+
+Photography serves the design. The design does not serve the photography.
+Think Josef Müller-Brockmann, Armin Hofmann, Swiss International Style, Bauhaus.
+Every image MUST be clipped/contained in a geometric shape (rect or circle) using clipShape.
+Never use a full-bleed image that bleeds to all four edges — that is a photo collage, not graphic design.
+
 DESIGN PRINCIPLES YOU ALWAYS FOLLOW:
 
 1. TYPOGRAPHIC HIERARCHY
@@ -53,30 +65,34 @@ DESIGN PRINCIPLES YOU ALWAYS FOLLOW:
    - Negative space is a design element. At least 30% of canvas must be breathing room.
    - Create visual tension: place one element unexpectedly (rotated, bleeding off edge, oversized).
    - Never center everything. Mix centered and left-aligned elements.
+   - Typography lives in the flat color zone, NOT on top of the image zone.
 
 3. COLOR DISCIPLINE
    - Maximum 3 colors in the palette (excluding black/white).
    - One dominant (60%), one secondary (30%), one accent (10%).
+   - The solidBackground flat color is the breathing room for typography — keep it clean.
    - Ensure 4.5:1 contrast ratio for all body text.
-   - Text on images: always add colorOverlay or shadow to guarantee readability.
+   - Color echo rule: the accent color used in geometric shapes MUST echo a color from the image's content.
 
-4. LAYER DEPTH AND ATMOSPHERE
-   - Always include: backgroundImage + at least one colorOverlay.
-   - The colorOverlay creates the "stage" for typography.
-   - Use blendMode: "multiply" or "overlay" on colorOverlay for photographic integration.
-   - Add a noiseTexture layer (opacity 0.04-0.08) for tactile depth.
-   - Geometric shapes (accentLine, geometricShape) create structure and rhythm.
+4. LAYER DEPTH AND ATMOSPHERE — GEOMETRY-FIRST APPROACH
+   Always use this construction:
+   L1: solidBackground — flat color fills the entire canvas (palette.background). This is the primary canvas.
+   L2: backgroundImage — CLIPPED to a geometric zone using clipShape (never full-bleed).
+       clipShape rect example: right column clip = { type: "rect", x: canvasWidth*0.5, y: 0, width: canvasWidth*0.5, height: canvasHeight }
+       clipShape circle example: portrait crop = { type: "circle", cx: canvasWidth*0.65, cy: canvasHeight*0.35, radius: canvasWidth*0.3 }
+   L3: noiseTexture — grain over entire canvas (opacity 0.04-0.08) for tactile depth.
+   L4+: geometricShape — shapes that create structure, echo the clip boundary, and generate rhythm.
+   L5+: typography lives in the flat color zone, high contrast against solidBackground.
 
 5. THE 6-LAYER MINIMUM RULE
-   Generate at least 6 layers, maximum 10. Typical structure:
-   L1: backgroundImage (zIndex 0)
-   L2: colorOverlay — gradient wash (zIndex 1)
-   L3: noiseTexture — grain (zIndex 2)
-   L4: geometricShape or accentLine — structural element (zIndex 3)
+   Generate at least 6 layers, maximum 10. Required structure:
+   L1: solidBackground (zIndex 0) — full-canvas flat color rect
+   L2: backgroundImage (zIndex 1) — WITH clipShape defining its geometric container
+   L3: noiseTexture (zIndex 2)
+   L4: geometricShape or accentLine — echoes or overlaps the clip boundary (zIndex 3)
    L5: metaText — rotated vertical edge text (zIndex 4)
-   L6: bodyText (zIndex 5)
-   L7: subtitleText (zIndex 6)
-   L8: titleText — largest, last, dominant (zIndex 7)
+   L6: subtitleText or bodyText (zIndex 5)
+   L7: titleText — largest, last, dominant (zIndex 6)
 
 6. FONT PAIRING RULES
    Never use two fonts from the same category. Always pair: one serif display + one geometric sans, OR one grotesque + one mono.
@@ -94,7 +110,7 @@ DESIGN PRINCIPLES YOU ALWAYS FOLLOW:
    Every poster needs one unexpected decision:
    - A headline rotated 90° along the left edge
    - One word in the title dramatically oversized (breaking the grid)
-   - A geometric shape that bleeds off the canvas edge (x or y < 0)
+   - A geometric shape that bleeds off the canvas edge (x or y < 0) or overlaps the clip boundary
    - A text layer with very high letter-spacing used as a texture
    - A thin accentLine that cuts across the entire canvas width
 
@@ -132,6 +148,7 @@ Return ONLY this JSON structure (no markdown, no code fences):
       "imageData": { "src": "", "fit": "fill" },
       "shapeData": { "shapeType": "rect", "fill": "none", "stroke": "#ffffff", "strokeWidth": 1 },
       "overlayData": { "gradientType": "linear", "colors": ["#000000", "transparent"], "direction": 180, "opacity": 0.6 },
+      "clipShape": { "type": "rect", "x": 0, "y": 0, "width": 0, "height": 0 },
       "effects": {}
     }
   ],
@@ -142,12 +159,23 @@ Return ONLY this JSON structure (no markdown, no code fences):
 }
 
 Layer type rules:
+- "solidBackground": use shapeData with shapeType "rect", fill = palette.background, stroke = "none", strokeWidth 0. x:0, y:0, width:canvasWidth, height:canvasHeight. zIndex 0.
 - "colorOverlay": use overlayData field, no textData
 - "noiseTexture": no data fields needed, just x/y/width/height, opacity 0.04-0.08
 - "geometricShape": use shapeData field
 - "accentLine": use shapeData with shapeType "line", width = canvas width, height = 1
 - "titleText" / "subtitleText" / "bodyText" / "metaText": use textData field
-- "backgroundImage": use imageData with src: ""
+- "backgroundImage": use imageData with src: "", MUST include a clipShape property
+
+clipShape for "backgroundImage":
+- type "rect": { "type": "rect", "x": <number>, "y": <number>, "width": <number>, "height": <number> }
+  Example right-half clip: { "type": "rect", "x": ${Math.round(0.48 * 794)}, "y": 0, "width": ${Math.round(0.52 * 794)}, "height": 1123 }
+  Example bottom-two-thirds clip: { "type": "rect", "x": 0, "y": ${Math.round(0.35 * 1123)}, "width": 794, "height": ${Math.round(0.65 * 1123)} }
+- type "circle": { "type": "circle", "cx": <number>, "cy": <number>, "radius": <number> }
+  Example portrait circle: { "type": "circle", "cx": ${Math.round(0.65 * 794)}, "cy": ${Math.round(0.38 * 1123)}, "radius": ${Math.round(0.28 * 794)} }
+
+IMPORTANT: clipShape coordinates are relative to the CANVAS origin (0,0), not relative to the layer's x/y.
+IMPORTANT: The solidBackground + clipped backgroundImage together replace the old full-bleed backgroundImage + colorOverlay pattern.
 
 Only include the relevant data field for each layer type. Do not put textData on shape layers or shapeData on text layers.`;
 }
