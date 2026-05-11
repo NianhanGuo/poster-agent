@@ -17,6 +17,7 @@ import { PromptComposer } from "@/components/setup/PromptComposer";
 import type { DesignBrief, ReferenceTargets } from "@/types/poster";
 import { CANVAS_PRESETS } from "@/types/poster";
 import type { EnrichedRefCtx } from "@/lib/referencePrompt";
+import { loadFontsFromLayers, loadGoogleFont } from "@/lib/fonts";
 
 const DEFAULT_TARGETS: ReferenceTargets = {
   mood: false,
@@ -151,6 +152,11 @@ export function EditorClient() {
       const data = await res.json();
       layers = data.layers;
       imagePrompt = data.imagePrompt;
+      // Load Google Fonts referenced in the layout
+      loadFontsFromLayers(data.layers);
+      if (data.fonts) {
+        Object.values(data.fonts as Record<string, string>).forEach((f) => f && loadGoogleFont(f));
+      }
     } catch {
       setGenError("Layout generation failed");
       setGenerating(false);
@@ -269,6 +275,7 @@ export function EditorClient() {
       });
       if (!res.ok) throw new Error();
       const { layers, designLog } = await res.json();
+      loadFontsFromLayers(layers);
       if (designLog) {
         console.log("[typography] designLog:", designLog);
         const note = designLog.experimentalChoices && designLog.experimentalChoices !== "none"

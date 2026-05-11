@@ -92,6 +92,18 @@ Typography from recipe (use as baseline, adjust to match brief and reference):
 
 ${textInstructions}
 
+Font pairing rules by style recipe — pick the best fit:
+  cinematic-rain      → display: Anton,              body: IBM Plex Mono,     accent: IBM Plex Mono
+  gallery-minimal     → display: Playfair Display,   body: Inter,             accent: Inter
+  brutalist-wall      → display: Bebas Neue,          body: Space Mono,        accent: Space Mono
+  surreal-film        → display: Libre Baskerville,   body: DM Mono,           accent: DM Mono
+  archive-museum      → display: IM Fell English,     body: Courier Prime,     accent: Courier Prime
+  experimental-type   → display: Syne,                body: Syne Mono,         accent: Syne Mono
+  diffuse-blur        → display: Cormorant Garamond,  body: Space Grotesk,     accent: Space Grotesk
+  soft-editorial      → display: Cormorant Garamond,  body: Space Grotesk,     accent: Space Grotesk
+For any other recipe, choose the pairing that best matches the mood and composition from the list above.
+These fonts are available via Google Fonts — always use exact names from this list.
+
 Return a JSON object matching this exact schema:
 {
   "layers": [
@@ -105,7 +117,7 @@ Return a JSON object matching this exact schema:
       "visible": true, "locked": false, "zIndex": <number>,
       "textData": {
         "text": "<actual text content>",
-        "fontSize": <number>, "fontFamily": "<name>",
+        "fontSize": <number>, "fontFamily": "<name from font pairing above>",
         "fontStyle": "normal" | "bold" | "italic" | "bold italic",
         "fontWeight": <100|200|300|400|500|600|700|800|900>,
         "fill": "<#hex>",
@@ -115,7 +127,12 @@ Return a JSON object matching this exact schema:
       "imageData": { "src": "", "fit": "fill" }
     }
   ],
-  "imagePrompt": "<detailed DALL-E prompt. Include: ${recipe.imageKeywords}. Concept: ${setup.prompt || setup.posterType}. NO text, NO typography, NO letters. Leave negative space for title overlay.${recipe.imageAvoid ? " Avoid: " + recipe.imageAvoid + "." : ""}>",
+  "fonts": {
+    "display": "<primary display/title font — exact Google Fonts name>",
+    "body": "<body/secondary font — exact Google Fonts name>",
+    "accent": "<accent/meta font — exact Google Fonts name>"
+  },
+  "imagePrompt": "<detailed Flux image prompt. Include: ${recipe.imageKeywords}. Concept: ${setup.prompt || setup.posterType}. NO text, NO typography, NO letters. Leave negative space for title overlay.${recipe.imageAvoid ? " Avoid: " + recipe.imageAvoid + "." : ""}>",
   "designNotes": "<one sentence summary of the core design decision>"
 }
 
@@ -165,7 +182,7 @@ export async function POST(req: NextRequest) {
     });
 
     const text = completion.choices[0]?.message?.content ?? "{}";
-    const parsed: { layers: PosterLayer[]; imagePrompt: string; designNotes: string } = JSON.parse(text);
+    const parsed: { layers: PosterLayer[]; imagePrompt: string; designNotes: string; fonts?: { display?: string; body?: string; accent?: string } } = JSON.parse(text);
 
     const newLayers = parsed.layers.map((l) => ({
       ...l,
@@ -184,6 +201,7 @@ export async function POST(req: NextRequest) {
       canvas,
       imagePrompt: parsed.imagePrompt,
       designNotes: parsed.designNotes,
+      fonts: parsed.fonts ?? {},
       demo: false,
     });
   } catch (err) {
