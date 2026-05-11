@@ -64,7 +64,12 @@ export type LayerType =
   | "userImage"
   | "drawingLayer"
   | "gradientLayer"
-  | "textureLayer";
+  | "textureLayer"
+  | "colorOverlay"
+  | "noiseTexture"
+  | "geometricShape"
+  | "accentLine"
+  | "logoPlaceholder";
 
 const TEXT_LAYER_TYPES = new Set<LayerType>([
   "titleText", "subtitleText", "metaText", "bodyText", "userText",
@@ -75,6 +80,16 @@ export function isTextLayer(type: LayerType): boolean {
 }
 
 export function isImageLayer(type: LayerType): boolean {
+  // New non-image, non-text types that have their own renderers
+  const nonImageTypes = new Set<LayerType>([
+    "colorOverlay",
+    "noiseTexture",
+    "geometricShape",
+    "accentLine",
+    "logoPlaceholder",
+    "gradientLayer",
+  ]);
+  if (nonImageTypes.has(type)) return false;
   return !TEXT_LAYER_TYPES.has(type);
 }
 
@@ -104,6 +119,9 @@ export interface TextLayerData {
   fillGradient?: string;   // gradient preset id from GRADIENT_PRESETS
   // Active effect ids (from EFFECTS list)
   effects?: string[];
+  // New fields
+  textTransform?: "none" | "uppercase" | "lowercase";
+  writingMode?: "horizontal" | "vertical";
 }
 
 export type BlendMode =
@@ -147,6 +165,34 @@ export interface NoiseLayerData {
   scale: number;      // 1–10 (pixel block size; 1 = fine grain)
 }
 
+// ─── Shape layer data ─────────────────────────────────────────────────────────
+
+export interface ShapeLayerData {
+  shapeType: "rect" | "circle" | "line" | "triangle";
+  fill: string;        // "none" for unfilled
+  stroke: string;
+  strokeWidth: number;
+  cornerRadius?: number;
+}
+
+// ─── Overlay layer data ───────────────────────────────────────────────────────
+
+export interface OverlayLayerData {
+  gradientType: "linear" | "radial";
+  colors: string[];    // array of hex colors
+  direction: number;   // degrees for linear
+  opacity: number;
+}
+
+// ─── Layer effects ────────────────────────────────────────────────────────────
+
+export interface LayerEffects {
+  shadow?: { color: string; blur: number; offsetX: number; offsetY: number };
+  border?: { color: string; width: number; style: "solid" | "dashed" };
+  blur?: number;
+  grain?: number;
+}
+
 // ─── Layer ───────────────────────────────────────────────────────────────────
 
 export interface PosterLayer {
@@ -168,6 +214,9 @@ export interface PosterLayer {
   imageData?: ImageLayerData;
   gradientData?: GradientLayerData;
   noiseData?: NoiseLayerData;
+  shapeData?: ShapeLayerData;
+  overlayData?: OverlayLayerData;
+  effects?: LayerEffects;
 }
 
 /** @deprecated Use PosterLayer */
@@ -210,6 +259,8 @@ export interface PosterProject {
   isDemo?: boolean;
   createdAt: string;
   updatedAt: string;
+  designRationale?: string;
+  generatedPalette?: { dominant: string; secondary: string; accent: string; background: string };
 }
 
 // ─── Design brief ─────────────────────────────────────────────────────────────

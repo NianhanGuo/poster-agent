@@ -121,7 +121,7 @@ function buildImagePrompt(
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  const { prompt, styleRecipe, style, width, height, brief, reference } = await req.json();
+  const { prompt, fluxPrompt, styleRecipe, style, width, height, brief, reference } = await req.json();
   const recipe = styleRecipe ?? style ?? "cinematic-rain";
 
   if (!process.env.FAL_KEY) {
@@ -132,14 +132,31 @@ export async function POST(req: NextRequest) {
   const refCtx = reference as EnrichedRefCtx | undefined;
   const hardMode = refCtx ? isHardConstraintMode(refCtx) : false;
 
-  const finalPrompt = buildImagePrompt(
-    prompt ?? "",
-    brief as DesignBrief | undefined,
-    refCtx,
-  );
+  // Closing suffix — always appended to ensure no text in image
+  const refCtxForBrief = refCtx;
+  const spacePlacement = negativeSpacePlacement(brief as DesignBrief | undefined);
+  const closingSuffix = [
+    "No text, no letters, no typography, no words.",
+    "Pure atmospheric background only.",
+    `Intentional empty negative space in the ${spacePlacement} for typography overlay.`,
+  ].join(" ");
+
+  let finalPrompt: string;
+  if (fluxPrompt) {
+    // Use the layout-generated fluxPrompt directly
+    finalPrompt = `${fluxPrompt} ${closingSuffix}`;
+  } else {
+    // Fall back to existing buildImagePrompt logic
+    finalPrompt = buildImagePrompt(
+      prompt ?? "",
+      brief as DesignBrief | undefined,
+      refCtxForBrief,
+    );
+  }
 
   if (process.env.NODE_ENV !== "production") {
     console.log("[image/route] Hard constraint mode:", hardMode);
+    console.log("[image/route] Using fluxPrompt from layout:", !!fluxPrompt);
     console.log("[image/route] Final Flux prompt length:", finalPrompt.length);
     console.log("[image/route] Final prompt:\n", finalPrompt);
   }
@@ -155,10 +172,12 @@ export async function POST(req: NextRequest) {
       input: {
         prompt: finalPrompt,
         image_size: imageSize,
-        num_inference_steps: 28,
-        guidance_scale: 3.5,
+        num_inference_steps: 35,
+        guidance_scale: 4.0,
         num_images: 1,
         safety_tolerance: "5",
+        output_format: "jpeg",
+        output_quality: 95,
       } as any,
     });
 

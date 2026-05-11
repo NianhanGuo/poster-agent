@@ -34,6 +34,8 @@ interface ToolPanelProps {
 export function ToolPanel({ onTypography, onEditImage, onCutout }: ToolPanelProps) {
   const { project, selectedLayerId, getLayerById, updateLayer, updateTextData, addLayer } =
     usePosterStore();
+  const designRationale = usePosterStore((s) => s.designRationale);
+  const generatedPalette = usePosterStore((s) => s.generatedPalette);
   const [showImageUpload, setShowImageUpload] = useState(false);
 
   if (!project) return null;
@@ -43,6 +45,8 @@ export function ToolPanel({ onTypography, onEditImage, onCutout }: ToolPanelProp
   const imageSelected   = selected ? isImageLayer(selected.type) : false;
   const gradientSelected = selected?.type === "gradientLayer";
   const textureSelected  = selected?.type === "textureLayer";
+  const shapeSelected    = selected?.type === "geometricShape" || selected?.type === "accentLine";
+  const overlaySelected  = selected?.type === "colorOverlay";
 
   function addTextLayer() {
     const canvas = project!.canvas;
@@ -80,6 +84,40 @@ export function ToolPanel({ onTypography, onEditImage, onCutout }: ToolPanelProp
 
   return (
     <div className="py-3 space-y-1 text-xs select-none">
+
+      {/* Design intent (from AI generation) */}
+      {designRationale && (
+        <div className="px-4 py-3 border-b border-zinc-800/60">
+          <div className="text-[9px] text-zinc-600 uppercase tracking-wider mb-1">Design intent</div>
+          <div className="text-[10px] text-zinc-400 italic leading-relaxed">{designRationale}</div>
+        </div>
+      )}
+
+      {/* Generated palette swatches */}
+      {generatedPalette && (
+        <div className="px-4 py-2 border-b border-zinc-800/60">
+          <div className="text-[9px] text-zinc-600 uppercase tracking-wider mb-1.5">Palette</div>
+          <div className="flex gap-1.5">
+            {Object.entries(generatedPalette).map(([key, color]) => (
+              <button
+                key={key}
+                title={`${key}: ${color}`}
+                onClick={() => {
+                  if (!selected) return;
+                  if (selected.textData) {
+                    updateTextData(selected.id, { fill: color });
+                  } else {
+                    updateLayer(selected.id, { overlayData: selected.overlayData ? { ...selected.overlayData, colors: [color, "transparent"] } : undefined });
+                  }
+                }}
+                className="w-6 h-6 rounded-sm border border-zinc-800 hover:scale-110 transition-transform flex-none"
+                style={{ background: color }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Add */}
       <Section label="Add" />
       <div className="px-4 flex gap-2 pb-2">
@@ -120,6 +158,10 @@ export function ToolPanel({ onTypography, onEditImage, onCutout }: ToolPanelProp
 
       {selected && textureSelected && (
         <TextureLayerInspector layer={selected} onLayer={onLayer} />
+      )}
+
+      {selected && (shapeSelected || overlaySelected) && (
+        <ShapeInspector layer={selected} onLayer={onLayer} />
       )}
 
       {selected && (
@@ -307,6 +349,54 @@ function TextInspector({
       <SliderRow label="Size" min={8} max={400} value={td.fontSize} onChange={(v) => onText({ fontSize: v })} display={`${td.fontSize}px`} />
       <SliderRow label="Spacing" min={-10} max={60} value={td.letterSpacing ?? 0} onChange={(v) => onText({ letterSpacing: v })} display={`${td.letterSpacing ?? 0}`} />
       <SliderRow label="Leading" min={0.7} max={3.5} step={0.05} value={td.lineHeight ?? 1.2} onChange={(v) => onText({ lineHeight: v })} display={(td.lineHeight ?? 1.2).toFixed(2)} />
+
+      {/* Writing mode toggle */}
+      <Row label="Orient">
+        <div className="flex gap-1">
+          {(["horizontal", "vertical"] as const).map((mode) => {
+            const active = (td.writingMode ?? "horizontal") === mode;
+            return (
+              <button
+                key={mode}
+                onClick={() => onText({ writingMode: mode })}
+                className="flex-1 py-0.5 text-[10px] uppercase transition-colors"
+                style={{
+                  border: `1px solid ${active ? "rgba(161,161,170,0.5)" : "rgba(255,255,255,0.08)"}`,
+                  color: active ? "#e4e4e7" : "#52525b",
+                }}
+              >
+                {mode === "horizontal" ? "H" : "V"}
+              </button>
+            );
+          })}
+        </div>
+      </Row>
+
+      {/* Text transform */}
+      <Row label="Case">
+        <div className="flex gap-1">
+          {([
+            { value: "uppercase" as const, label: "AA" },
+            { value: "lowercase" as const, label: "aa" },
+            { value: "none" as const,      label: "Aa" },
+          ]).map(({ value, label }) => {
+            const active = (td.textTransform ?? "none") === value;
+            return (
+              <button
+                key={value}
+                onClick={() => onText({ textTransform: value })}
+                className="flex-1 py-0.5 text-[10px] transition-colors"
+                style={{
+                  border: `1px solid ${active ? "rgba(161,161,170,0.5)" : "rgba(255,255,255,0.08)"}`,
+                  color: active ? "#e4e4e7" : "#52525b",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </Row>
 
       {/* Rotation — quick access for text layers */}
       {layer && onLayer && (
@@ -784,6 +874,65 @@ function TextureLayerInspector({
           Reseed grain
         </button>
       </div>
+    </>
+  );
+}
+
+// ─── Shape / accent line inspector ────────────────────────────────────────────
+
+function ShapeInspector({ layer, onLayer }: {
+  layer: PosterLayer;
+  onLayer: (u: Partial<PosterLayer>) => void;
+}) {
+  const sd = layer.shapeData ?? { shapeType: "rect" as const, fill: "none", stroke: "#ffffff", strokeWidth: 1 };
+
+  function set(updates: Partial<typeof sd>) {
+    onLayer({ shapeData: { ...sd, ...updates } });
+  }
+
+  return (
+    <>
+      <Section label="Shape" />
+      <Row label="Fill">
+        <div className="flex items-center gap-2">
+          <input
+            type="color"
+            value={sd.fill === "none" ? "#000000" : sd.fill}
+            onChange={(e) => set({ fill: e.target.value })}
+            className="w-5 h-5 bg-transparent border-0 cursor-pointer flex-none"
+          />
+          <input
+            type="text"
+            value={sd.fill}
+            onChange={(e) => set({ fill: e.target.value })}
+            className="flex-1 bg-transparent border-b border-zinc-800 text-zinc-200 font-mono text-[10px] outline-none pb-0.5"
+            placeholder="none"
+          />
+        </div>
+      </Row>
+      <Row label="Stroke">
+        <div className="flex items-center gap-2">
+          <input
+            type="color"
+            value={sd.stroke || "#ffffff"}
+            onChange={(e) => set({ stroke: e.target.value })}
+            className="w-5 h-5 bg-transparent border-0 cursor-pointer flex-none"
+          />
+          <input
+            type="text"
+            value={sd.stroke}
+            onChange={(e) => set({ stroke: e.target.value })}
+            className="flex-1 bg-transparent border-b border-zinc-800 text-zinc-200 font-mono text-[10px] outline-none pb-0.5"
+          />
+        </div>
+      </Row>
+      <SliderRow
+        label="S. Width"
+        min={0} max={20}
+        value={sd.strokeWidth}
+        onChange={(v) => set({ strokeWidth: v })}
+        display={`${sd.strokeWidth}px`}
+      />
     </>
   );
 }

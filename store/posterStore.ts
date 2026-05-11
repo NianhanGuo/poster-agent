@@ -24,6 +24,12 @@ interface PosterState {
   history: PosterLayer[][];
   historyIndex: number;
 
+  // Design metadata from AI
+  designRationale: string | null;
+  generatedPalette: { dominant: string; secondary: string; accent: string; background: string } | null;
+  setDesignRationale: (r: string | null) => void;
+  setGeneratedPalette: (p: { dominant: string; secondary: string; accent: string; background: string } | null) => void;
+
   // Project actions
   setProject: (project: PosterProject) => void;
   clearProject: () => void;
@@ -105,6 +111,8 @@ export const usePosterStore = create<PosterState>()(
     history: [],
     historyIndex: -1,
     designBrief: null,
+    designRationale: null,
+    generatedPalette: null,
     projectVersions: [],
     currentVersionIndex: -1,
     reference: { ...DEFAULT_REFERENCE },
@@ -129,6 +137,18 @@ export const usePosterStore = create<PosterState>()(
         state.projectVersions = [];
         state.currentVersionIndex = -1;
         state.designBrief = null;
+        state.designRationale = null;
+        state.generatedPalette = null;
+      }),
+
+    setDesignRationale: (r) =>
+      set((state) => {
+        state.designRationale = r;
+      }),
+
+    setGeneratedPalette: (p) =>
+      set((state) => {
+        state.generatedPalette = p;
       }),
 
     selectLayer: (id) =>

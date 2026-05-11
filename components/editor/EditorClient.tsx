@@ -97,7 +97,7 @@ export function EditorClient() {
     refCtx = { strength: 50, targets: DEFAULT_TARGETS };
   }
 
-  // ── 2-step generation: brief → layout + image ──────────────────────────────
+  // ── 2-step generation: brief → layout + image (parallel) ─────────────────
 
   async function runGeneration(promptOverride?: string) {
     if (!project) return;
@@ -127,9 +127,12 @@ export function EditorClient() {
       // Non-fatal — generation continues without brief
     }
 
-    // Step 2: Layout
+    // Step 2: Layout (GPT-4o)
     setGenerating(true, "composing layout…");
-    let layers: unknown[], imagePrompt: string;
+    let layers: unknown[];
+    let fluxPrompt = "";
+    let imagePrompt = "";
+    let layoutData: Record<string, unknown> = {};
     try {
       const res = await fetch("/api/generate/layout", {
         method: "POST",
@@ -150,26 +153,44 @@ export function EditorClient() {
       });
       if (!res.ok) throw new Error("layout failed");
       const data = await res.json();
+      layoutData = data;
       layers = data.layers;
-      imagePrompt = data.imagePrompt;
+      fluxPrompt = data.fluxPrompt ?? "";
+      imagePrompt = data.imagePrompt ?? fluxPrompt;
+
+      // Immediately render layout with placeholder background
+      const immediateProject = {
+        ...project,
+        layers: layers as typeof project.layers,
+        promptHistory: promptOverride
+          ? [...project.promptHistory, promptOverride]
+          : project.promptHistory,
+      };
+      setProject(immediateProject);
+
       // Load Google Fonts referenced in the layout
       loadFontsFromLayers(data.layers);
       if (data.fonts) {
         Object.values(data.fonts as Record<string, string>).forEach((f) => f && loadGoogleFont(f));
       }
+
+      // Store design metadata
+      usePosterStore.getState().setDesignRationale(data.designRationale ?? null);
+      usePosterStore.getState().setGeneratedPalette(data.palette ?? null);
     } catch {
       setGenError("Layout generation failed");
       setGenerating(false);
       return;
     }
 
-    // Step 3: Image
-    setGenerating(true, "generating image…");
+    // Step 3: Image (Flux) — fires after layout is shown
+    setGenerating(true, "generating atmosphere…");
     try {
       const imgRes = await fetch("/api/generate/image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          fluxPrompt,
           prompt: imagePrompt,
           styleRecipe: project.styleRecipe,
           width: project.canvas.width,
@@ -180,11 +201,13 @@ export function EditorClient() {
       });
       const { url } = await imgRes.json();
       if (url) {
-        layers = (layers as { type: string; imageData?: Record<string, unknown> }[]).map((l) =>
+        // Update only the backgroundImage layer src
+        const updatedLayers = (layers as { type: string; imageData?: Record<string, unknown> }[]).map((l) =>
           l.type === "backgroundImage"
             ? { ...l, imageData: { ...(l.imageData ?? {}), src: url } }
             : l,
         );
+        layers = updatedLayers;
       }
     } catch {
       // Non-fatal — use layout without new image
@@ -196,6 +219,8 @@ export function EditorClient() {
       promptHistory: promptOverride
         ? [...project.promptHistory, promptOverride]
         : project.promptHistory,
+      designRationale: (layoutData.designRationale as string) ?? undefined,
+      generatedPalette: (layoutData.palette as typeof project.generatedPalette) ?? undefined,
     };
     pushVersion(newProject, brief);
     setProject(newProject);

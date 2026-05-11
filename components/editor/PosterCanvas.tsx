@@ -8,6 +8,8 @@ import {
   Text as KonvaText,
   Image as KonvaImage,
   Transformer as KonvaTransformer,
+  Circle as KonvaCircle,
+  Line as KonvaLine,
 } from "react-konva";
 import { usePosterStore } from "@/store/posterStore";
 import { CanvasErrorBoundary } from "./CanvasErrorBoundary";
@@ -371,6 +373,17 @@ function PosterLayerNode({
     },
   };
 
+  // New layer types — handle before the legacy gradientLayer check
+  if (layer.type === "colorOverlay") {
+    return <ColorOverlayNode layer={layer} selected={selected} commonProps={{ ...commonProps, ...blendProp }} />;
+  }
+  if (layer.type === "noiseTexture") {
+    return <NoiseTextureNode layer={layer} selected={selected} commonProps={{ ...commonProps, ...blendProp }} />;
+  }
+  if (layer.type === "geometricShape" || layer.type === "accentLine") {
+    return <ShapeLayerNode layer={layer} selected={selected} commonProps={{ ...commonProps, ...blendProp }} />;
+  }
+
   // gradientLayer renders as a native Konva gradient rect — not a KonvaImageNode
   if (layer.type === "gradientLayer") {
     return (
@@ -388,7 +401,8 @@ function PosterLayerNode({
     layer.type === "foregroundCutout" ||
     layer.type === "userImage" ||
     layer.type === "drawingLayer" ||
-    layer.type === "textureLayer";
+    layer.type === "textureLayer" ||
+    layer.type === "logoPlaceholder";
 
   if (isImageType) {
     return (
@@ -405,6 +419,11 @@ function PosterLayerNode({
   const td = layer.textData;
   if (!td || typeof td.text !== "string") return null;
 
+  // Apply textTransform
+  const displayText = td.textTransform === "uppercase" ? td.text?.toUpperCase()
+    : td.textTransform === "lowercase" ? td.text?.toLowerCase()
+    : td.text ?? "";
+
   // Gradient fill
   const gradientPreset = td.fillGradient ? getGradientPreset(td.fillGradient) : undefined;
   const useGradient = !!gradientPreset && gradientPreset.colorStops.length > 0;
@@ -419,14 +438,25 @@ function PosterLayerNode({
       })()
     : {};
 
+  // Vertical writing mode: rotate -90 degrees and reposition
+  const isVertical = td.writingMode === "vertical";
+  const textCommonProps = isVertical
+    ? {
+        ...commonProps,
+        ...blendProp,
+        x: layer.x + (layer.width || 20),
+        y: layer.y,
+        rotation: (layer.rotation || 0) - 90,
+      }
+    : { ...commonProps, ...blendProp };
+
   return (
     <>
       <KonvaText
         ref={shapeRef as React.MutableRefObject<import("konva/lib/shapes/Text").Text | null>}
-        {...commonProps}
-        {...blendProp}
+        {...textCommonProps}
         width={layer.width}
-        text={td.text ?? ""}
+        text={displayText}
         fontSize={td.fontSize ?? 24}
         fontFamily={td.fontFamily ?? "Arial"}
         fontStyle={td.fontStyle ?? "normal"}
@@ -451,6 +481,216 @@ function PosterLayerNode({
             usePosterStore.getState().updateTextData(layer.id, { text: newText });
           }
         }}
+      />
+      {selected && <KonvaTransformer ref={transformerRef} rotateEnabled keepRatio={false} />}
+    </>
+  );
+}
+
+// ─── Color overlay node ────────────────────────────────────────────────────────
+
+function ColorOverlayNode({
+  layer,
+  selected,
+  commonProps,
+}: {
+  layer: PosterLayer;
+  selected: boolean;
+  commonProps: Record<string, unknown>;
+}) {
+  const shapeRef = useRef<import("konva/lib/shapes/Rect").Rect | null>(null);
+  const transformerRef =
+    useRef<import("konva/lib/shapes/Transformer").Transformer | null>(null);
+
+  useEffect(() => {
+    if (selected && transformerRef.current && shapeRef.current) {
+      transformerRef.current.nodes([shapeRef.current as never]);
+      transformerRef.current.getLayer()?.batchDraw();
+    }
+  }, [selected]);
+
+  const od = layer.overlayData;
+  const w = layer.width;
+  const h = layer.height;
+  let fillProps: Record<string, unknown> = {};
+
+  if (od) {
+    if (od.gradientType === "radial") {
+      fillProps = {
+        fillRadialGradientStartPoint: { x: w / 2, y: h / 2 },
+        fillRadialGradientStartRadius: 0,
+        fillRadialGradientEndPoint: { x: w / 2, y: h / 2 },
+        fillRadialGradientEndRadius: Math.max(w, h) * 0.7,
+        fillRadialGradientColorStops: od.colors.flatMap((c, i) => [i / Math.max(od.colors.length - 1, 1), c]),
+      };
+    } else {
+      const rad = ((od.direction - 90) * Math.PI) / 180;
+      const len = Math.sqrt(w * w + h * h) / 2;
+      fillProps = {
+        fillLinearGradientStartPoint: { x: w / 2 - Math.cos(rad) * len, y: h / 2 - Math.sin(rad) * len },
+        fillLinearGradientEndPoint: { x: w / 2 + Math.cos(rad) * len, y: h / 2 + Math.sin(rad) * len },
+        fillLinearGradientColorStops: od.colors.flatMap((c, i) => [i / Math.max(od.colors.length - 1, 1), c]),
+      };
+    }
+  } else {
+    fillProps = { fill: "rgba(0,0,0,0.5)" };
+  }
+
+  return (
+    <>
+      <KonvaRect ref={shapeRef} {...commonProps} width={w} height={h} {...fillProps} />
+      {selected && <KonvaTransformer ref={transformerRef} rotateEnabled keepRatio={false} />}
+    </>
+  );
+}
+
+// ─── Noise texture node ────────────────────────────────────────────────────────
+
+function NoiseTextureNode({
+  layer,
+  selected,
+  commonProps,
+}: {
+  layer: PosterLayer;
+  selected: boolean;
+  commonProps: Record<string, unknown>;
+}) {
+  const [noiseImg, setNoiseImg] = useState<HTMLImageElement | null>(null);
+  const shapeRef = useRef<import("konva/lib/shapes/Image").Image | null>(null);
+  const transformerRef =
+    useRef<import("konva/lib/shapes/Transformer").Transformer | null>(null);
+
+  useEffect(() => {
+    const canvas = document.createElement("canvas");
+    // Use a small tile (128x128) for performance, tiled across the layer
+    canvas.width = 128; canvas.height = 128;
+    const ctx = canvas.getContext("2d")!;
+    const imageData = ctx.createImageData(128, 128);
+    for (let i = 0; i < imageData.data.length; i += 4) {
+      const v = Math.floor(Math.random() * 255);
+      imageData.data[i] = v;
+      imageData.data[i + 1] = v;
+      imageData.data[i + 2] = v;
+      imageData.data[i + 3] = 255;
+    }
+    ctx.putImageData(imageData, 0, 0);
+    const img = new window.Image();
+    img.src = canvas.toDataURL();
+    img.onload = () => setNoiseImg(img);
+  }, []);
+
+  useEffect(() => {
+    if (selected && transformerRef.current && shapeRef.current) {
+      transformerRef.current.nodes([shapeRef.current as never]);
+      transformerRef.current.getLayer()?.batchDraw();
+    }
+  }, [selected]);
+
+  if (!noiseImg) return null;
+
+  return (
+    <>
+      <KonvaImage
+        ref={shapeRef}
+        {...commonProps}
+        image={noiseImg}
+        width={layer.width}
+        height={layer.height}
+      />
+      {selected && <KonvaTransformer ref={transformerRef} rotateEnabled keepRatio={false} />}
+    </>
+  );
+}
+
+// ─── Shape layer node ──────────────────────────────────────────────────────────
+
+function ShapeLayerNode({
+  layer,
+  selected,
+  commonProps,
+}: {
+  layer: PosterLayer;
+  selected: boolean;
+  commonProps: Record<string, unknown>;
+}) {
+  const sd = layer.shapeData;
+  const shapeRef = useRef<
+    | import("konva/lib/shapes/Rect").Rect
+    | import("konva/lib/shapes/Circle").Circle
+    | import("konva/lib/shapes/Line").Line
+    | null
+  >(null);
+  const transformerRef =
+    useRef<import("konva/lib/shapes/Transformer").Transformer | null>(null);
+
+  useEffect(() => {
+    if (selected && transformerRef.current && shapeRef.current) {
+      transformerRef.current.nodes([shapeRef.current as never]);
+      transformerRef.current.getLayer()?.batchDraw();
+    }
+  }, [selected]);
+
+  if (!sd) {
+    // Default: thin white rect
+    return (
+      <>
+        <KonvaRect
+          {...commonProps}
+          width={layer.width}
+          height={Math.max(1, layer.height)}
+          fill="#ffffff"
+        />
+        {selected && <KonvaTransformer ref={transformerRef} rotateEnabled keepRatio={false} />}
+      </>
+    );
+  }
+
+  if (sd.shapeType === "circle") {
+    const r = Math.min(layer.width, layer.height) / 2;
+    return (
+      <>
+        <KonvaCircle
+          ref={shapeRef as React.MutableRefObject<import("konva/lib/shapes/Circle").Circle | null>}
+          {...commonProps}
+          x={layer.x + r} y={layer.y + r}
+          radius={r}
+          fill={sd.fill === "none" ? undefined : sd.fill}
+          stroke={sd.stroke}
+          strokeWidth={sd.strokeWidth}
+        />
+        {selected && <KonvaTransformer ref={transformerRef} rotateEnabled keepRatio={false} />}
+      </>
+    );
+  }
+
+  if (sd.shapeType === "line") {
+    return (
+      <>
+        <KonvaLine
+          ref={shapeRef as React.MutableRefObject<import("konva/lib/shapes/Line").Line | null>}
+          {...commonProps}
+          x={layer.x} y={layer.y}
+          points={[0, 0, layer.width, 0]}
+          stroke={sd.stroke || "#ffffff"}
+          strokeWidth={sd.strokeWidth || 1}
+        />
+        {selected && <KonvaTransformer ref={transformerRef} rotateEnabled keepRatio={false} />}
+      </>
+    );
+  }
+
+  // Default: rect
+  return (
+    <>
+      <KonvaRect
+        ref={shapeRef as React.MutableRefObject<import("konva/lib/shapes/Rect").Rect | null>}
+        {...commonProps}
+        width={layer.width}
+        height={layer.height}
+        fill={sd.fill === "none" ? undefined : sd.fill}
+        stroke={sd.stroke}
+        strokeWidth={sd.strokeWidth}
+        cornerRadius={sd.cornerRadius ?? 0}
       />
       {selected && <KonvaTransformer ref={transformerRef} rotateEnabled keepRatio={false} />}
     </>
@@ -638,6 +878,8 @@ function DrawingOverlay({
       y: (displayY - pan.y) / zoom,
     };
   }
+  // Suppress unused warning — canvasToLocal used conceptually, keep for future
+  void canvasToLocal;
 
   function handlePointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -748,4 +990,3 @@ function DrawingOverlay({
     />
   );
 }
-
