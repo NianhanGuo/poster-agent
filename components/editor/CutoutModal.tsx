@@ -4,12 +4,11 @@ import { v4 as uuidv4 } from "uuid";
 import { usePosterStore } from "@/store/posterStore";
 import type { PosterLayer, AssetItem } from "@/types/poster";
 
-// Checkerboard CSS background for transparency areas
 const CHECKER = `repeating-conic-gradient(#2a2a2a 0% 25%, #181818 0% 50%) 0 0 / 16px 16px`;
 
-// Canvas pixel dimensions (display canvas — not natural image size)
-const CW = 520;
-const CH = 400;
+// Logical canvas dimensions for lasso/brush coordinate mapping
+const CW = 480;
+const CH = 360;
 
 type CutoutMode = "auto" | "lasso" | "brush";
 type AutoStatus = "idle" | "extracting" | "done" | "failed";
@@ -25,23 +24,20 @@ export function CutoutModal({
   sourceLayerId: string;
   onClose: () => void;
 }) {
-  const { getLayerById, addLayer, addAsset, pushHistory, project } = usePosterStore();
+  const { getLayerById, addLayer, selectLayer, addAsset, pushHistory, project } = usePosterStore();
   const sourceLayer = getLayerById(sourceLayerId);
   const imageSrc = sourceLayer?.imageData?.src ?? "";
 
   const [mode, setMode] = useState<CutoutMode>("auto");
 
-  // Per-mode preview URLs — kept independent so switching tabs never clears results
   const [autoPreviewUrl,  setAutoPreviewUrl]  = useState<string | null>(null);
   const [lassoPreviewUrl, setLassoPreviewUrl] = useState<string | null>(null);
   const [brushPreviewUrl, setBrushPreviewUrl] = useState<string | null>(null);
-  const autoObjectUrl = useRef<string | null>(null); // for revoking on reset
+  const autoObjectUrl = useRef<string | null>(null);
 
-  // ─── Auto state ────────────────────────────────────────────────────────────
   const [autoStatus,   setAutoStatus]   = useState<AutoStatus>("idle");
   const [autoProgress, setAutoProgress] = useState(0);
 
-  // Revoke object URLs on unmount
   useEffect(() => {
     return () => {
       if (autoObjectUrl.current) URL.revokeObjectURL(autoObjectUrl.current);
@@ -49,27 +45,28 @@ export function CutoutModal({
   }, []);
 
   // ─── Lasso state ───────────────────────────────────────────────────────────
-  const lassoRef    = useRef<HTMLCanvasElement>(null);
-  const lassoImgEl  = useRef<HTMLImageElement | null>(null);
-  const lassoIR     = useRef<ImgRect>({ x: 0, y: 0, w: CW, h: CH });
-  const lassoNatW   = useRef(1);
-  const lassoNatH   = useRef(1);
+  const lassoRef   = useRef<HTMLCanvasElement>(null);
+  const lassoImgEl = useRef<HTMLImageElement | null>(null);
+  const lassoIR    = useRef<ImgRect>({ x: 0, y: 0, w: CW, h: CH });
+  const lassoNatW  = useRef(1);
+  const lassoNatH  = useRef(1);
   const [lassoPoints, setLassoPoints] = useState<Pt[]>([]);
   const [isLassoing, setIsLassoing]   = useState(false);
   const [lassoSnap,  setLassoSnap]    = useState(false);
 
   // ─── Brush state ───────────────────────────────────────────────────────────
-  const brushRef    = useRef<HTMLCanvasElement>(null);
-  const brushImgEl  = useRef<HTMLImageElement | null>(null);
-  const brushIR     = useRef<ImgRect>({ x: 0, y: 0, w: CW, h: CH });
-  const brushNatW   = useRef(1);
-  const brushNatH   = useRef(1);
-  const origData    = useRef<ImageData | null>(null);
+  const brushRef   = useRef<HTMLCanvasElement>(null);
+  const brushImgEl = useRef<HTMLImageElement | null>(null);
+  const brushIR    = useRef<ImgRect>({ x: 0, y: 0, w: CW, h: CH });
+  const brushNatW  = useRef(1);
+  const brushNatH  = useRef(1);
+  const origData   = useRef<ImageData | null>(null);
   const [brushMode, setBrushMode] = useState<"erase" | "restore">("erase");
   const [brushSize, setBrushSize] = useState(28);
   const [isBrushing, setIsBrushing] = useState(false);
   const [hasStrokes, setHasStrokes] = useState(false);
-  const [cursorPx, setCursorPx] = useState<Pt | null>(null);
+  // cursor: display-space position + scale factor for correct circle size
+  const [brushCursor, setBrushCursor] = useState<{ x: number; y: number; scale: number } | null>(null);
 
   // Keyboard close
   useEffect(() => {
@@ -105,7 +102,7 @@ export function CutoutModal({
     loadImage(imageSrc).then((img) => {
       if (cancelled) return;
       const ir = fitRect(img.naturalWidth, img.naturalHeight);
-      lassoIR.current   = ir;
+      lassoIR.current = ir;
       lassoNatW.current = img.naturalWidth;
       lassoNatH.current = img.naturalHeight;
       lassoImgEl.current = img;
@@ -126,9 +123,9 @@ export function CutoutModal({
     loadImage(imageSrc).then((img) => {
       if (cancelled) return;
       const ir = fitRect(img.naturalWidth, img.naturalHeight);
-      brushIR.current    = ir;
-      brushNatW.current  = img.naturalWidth;
-      brushNatH.current  = img.naturalHeight;
+      brushIR.current = ir;
+      brushNatW.current = img.naturalWidth;
+      brushNatH.current = img.naturalHeight;
       brushImgEl.current = img;
       const canvas = brushRef.current;
       if (!canvas) return;
@@ -332,7 +329,8 @@ export function CutoutModal({
 
   function onBrushMove(e: React.MouseEvent<HTMLCanvasElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
-    setCursorPx({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    const scale = rect.width / CW;
+    setBrushCursor({ x: e.clientX - rect.left, y: e.clientY - rect.top, scale });
     if (!isBrushing) return;
     applyBrushStroke(getCanvasPt(e));
   }
@@ -379,13 +377,11 @@ export function CutoutModal({
     setBrushPreviewUrl(null);
   }
 
-  // ─── Auto extraction (local AI — @imgly/background-removal) ───────────────
+  // ─── Auto extraction ───────────────────────────────────────────────────────
 
   async function handleAutoExtract() {
     setAutoStatus("extracting");
     setAutoProgress(0);
-
-    // Revoke any previous object URL
     if (autoObjectUrl.current) {
       URL.revokeObjectURL(autoObjectUrl.current);
       autoObjectUrl.current = null;
@@ -393,7 +389,6 @@ export function CutoutModal({
     setAutoPreviewUrl(null);
 
     try {
-      // Convert imageSrc to Blob
       let blob: Blob;
       if (imageSrc.startsWith("data:")) {
         const [header, b64] = imageSrc.split(",");
@@ -406,7 +401,6 @@ export function CutoutModal({
         blob = await fetch(imageSrc).then((r) => r.blob());
       }
 
-      // Dynamic import keeps the WASM bundle out of the initial JS chunk
       const { removeBackground } = await import("@imgly/background-removal");
 
       const resultBlob = await removeBackground(blob, {
@@ -439,7 +433,7 @@ export function CutoutModal({
     setAutoProgress(0);
   }
 
-  // ─── Apply result ──────────────────────────────────────────────────────────
+  // ─── Apply result as new layer ─────────────────────────────────────────────
 
   async function applyAsNewLayer() {
     let url: string | null =
@@ -453,16 +447,22 @@ export function CutoutModal({
     if (!url || !sourceLayer || !project) return;
 
     pushHistory();
-    const maxZ     = Math.max(0, ...project.layers.map((l) => l.zIndex));
+    const maxZ    = Math.max(0, ...project.layers.map((l) => l.zIndex));
+    const canvasW = project.canvas.width;
+    const canvasH = project.canvas.height;
+    // Center on canvas at the source layer's dimensions
+    const w = sourceLayer.width;
+    const h = sourceLayer.height;
+    const newLayerId = uuidv4();
     const newLayer: PosterLayer = {
-      id:       uuidv4(),
+      id:       newLayerId,
       type:     "foregroundCutout",
       label:    `${sourceLayer.label} (cutout)`,
-      x:        sourceLayer.x,
-      y:        sourceLayer.y,
-      width:    sourceLayer.width,
-      height:   sourceLayer.height,
-      rotation: sourceLayer.rotation,
+      x:        Math.round((canvasW - w) / 2),
+      y:        Math.round((canvasH - h) / 2),
+      width:    w,
+      height:   h,
+      rotation: 0,
       opacity:  1,
       visible:  true,
       locked:   false,
@@ -470,6 +470,7 @@ export function CutoutModal({
       imageData: { src: url, fit: "contain" },
     };
     addLayer(newLayer);
+    selectLayer(newLayerId);
 
     const asset: AssetItem = {
       id:           uuidv4(),
@@ -485,11 +486,11 @@ export function CutoutModal({
   }
 
   const canApply =
-    mode === "auto"  ? !!autoPreviewUrl  :
+    mode === "auto"  ? autoStatus === "done" && !!autoPreviewUrl :
     mode === "lasso" ? !!lassoPreviewUrl :
     hasStrokes;
 
-  // ─── Shared tab button ─────────────────────────────────────────────────────
+  // ─── Tab component ─────────────────────────────────────────────────────────
 
   function Tab({ id, label }: { id: CutoutMode; label: string }) {
     return (
@@ -506,82 +507,100 @@ export function CutoutModal({
     );
   }
 
-  function lassoHint(): string {
-    if (lassoPoints.length === 0)  return "Click and drag to draw selection";
-    if (isLassoing && lassoSnap)   return "Release to close selection";
-    if (isLassoing)                return "Keep dragging…";
-    if (lassoPreviewUrl)           return "Cutout ready — apply or clear to retry";
-    return "Selection closed";
-  }
-
   // ─── JSX ──────────────────────────────────────────────────────────────────
+
+  // Show source image in preview until extraction is done
+  const autoDisplaySrc = autoPreviewUrl ?? imageSrc;
 
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.92)", backdropFilter: "blur(24px)" }}
+      style={{ background: "rgba(0,0,0,0.88)", backdropFilter: "blur(20px)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="flex overflow-hidden rounded-lg"
+        className="flex flex-col overflow-hidden rounded-lg"
         style={{
-          background:  "rgba(10,10,12,0.98)",
-          border:      "1px solid rgba(255,255,255,0.1)",
-          boxShadow:   "0 24px 80px rgba(0,0,0,0.9)",
-          width:       840,
-          maxWidth:    "94vw",
-          minHeight:   480,
+          background: "rgba(10,10,12,0.98)",
+          border:     "1px solid rgba(255,255,255,0.1)",
+          boxShadow:  "0 24px 80px rgba(0,0,0,0.9)",
+          width:      360,
+          maxWidth:   "94vw",
+          maxHeight:  "88vh",
         }}
       >
-        {/* ── Left: canvas / preview ────────────────────────────────────────── */}
+        {/* Header */}
         <div
-          className="flex-1 relative overflow-hidden flex items-center justify-center"
-          style={{ background: CHECKER }}
+          className="flex-none flex items-center justify-between px-4 py-3"
+          style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}
         >
-          {/* Auto mode: show extracted result or source image */}
-          {mode === "auto" && (
-            (autoPreviewUrl || imageSrc) ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={autoPreviewUrl ?? imageSrc}
-                alt={autoPreviewUrl ? "extracted subject" : "source image"}
-                className="max-w-full max-h-full object-contain"
-              />
-            ) : (
-              <span className="text-[10px] text-zinc-600 select-none">No image source</span>
-            )
-          )}
+          <span className="text-[10px] tracking-[0.15em] uppercase text-zinc-400">Extract Subject</span>
+          <button
+            onClick={onClose}
+            className="text-[11px] text-zinc-600 hover:text-zinc-300 transition-colors"
+          >
+            ✕
+          </button>
+        </div>
 
-          {/* Extracting overlay */}
-          {mode === "auto" && autoStatus === "extracting" && (
-            <div
-              className="absolute inset-0 flex items-end justify-center pb-6"
-              style={{ background: "rgba(0,0,0,0.4)" }}
-            >
-              <div className="w-48 space-y-2">
-                <div className="flex justify-between text-[9px] text-zinc-400">
-                  <span>{autoProgress < 10 ? "Downloading model…" : "Extracting subject…"}</span>
-                  <span>{autoProgress}%</span>
+        {/* Tabs */}
+        <div className="flex-none flex" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+          <Tab id="auto"  label="Auto"  />
+          <Tab id="lasso" label="Lasso" />
+          <Tab id="brush" label="Brush" />
+        </div>
+
+        {/* Preview / canvas area — max 300px tall */}
+        <div
+          className="flex-none relative overflow-hidden"
+          style={{ background: CHECKER, maxHeight: 300 }}
+        >
+          {/* Auto mode: source or extracted image */}
+          {mode === "auto" && autoDisplaySrc && (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={autoDisplaySrc}
+                alt={autoPreviewUrl ? "extracted subject" : "source image"}
+                className="w-full object-contain block"
+                style={{ maxHeight: 300 }}
+              />
+              {autoStatus === "extracting" && (
+                <div
+                  className="absolute inset-0 flex items-end justify-center pb-4"
+                  style={{ background: "rgba(0,0,0,0.55)" }}
+                >
+                  <div className="w-3/4 space-y-1.5">
+                    <div className="flex justify-between text-[9px] text-zinc-300">
+                      <span>{autoProgress < 10 ? "Downloading model…" : "Extracting…"}</span>
+                      <span>{autoProgress}%</span>
+                    </div>
+                    <div className="h-0.5 bg-zinc-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-zinc-300 rounded-full transition-all duration-200"
+                        style={{ width: `${autoProgress}%` }}
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="h-0.5 bg-zinc-800 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-zinc-300 rounded-full transition-all duration-200"
-                    style={{ width: `${autoProgress}%` }}
-                  />
-                </div>
-              </div>
+              )}
+            </>
+          )}
+          {mode === "auto" && !autoDisplaySrc && (
+            <div className="flex items-center justify-center h-24">
+              <span className="text-[10px] text-zinc-600">No image source</span>
             </div>
           )}
 
-          {/* Lasso mode */}
+          {/* Lasso canvas */}
           {mode === "lasso" && (
-            <>
+            <div className="relative">
               <canvas
                 ref={lassoRef}
                 width={CW}
                 height={CH}
-                className="absolute inset-0 w-full h-full"
-                style={{ cursor: "crosshair" }}
+                className="w-full block"
+                style={{ maxHeight: 300, cursor: "crosshair" }}
                 onMouseDown={onLassoDown}
                 onMouseMove={onLassoMove}
                 onMouseUp={onLassoUp}
@@ -593,228 +612,225 @@ export function CutoutModal({
                   <img src={lassoPreviewUrl} alt="lasso cutout" className="max-w-full max-h-full object-contain" />
                 </div>
               )}
-              <div className="absolute top-2 left-2 text-[9px] text-zinc-500 pointer-events-none select-none">
-                {lassoHint()}
+              <div className="absolute top-2 left-2 text-[9px] text-zinc-500 pointer-events-none select-none bg-black/40 px-1 rounded">
+                {lassoPoints.length === 0 ? "Click and drag to draw selection" :
+                 isLassoing && lassoSnap ? "Release to close" :
+                 isLassoing ? "Keep dragging…" :
+                 lassoPreviewUrl ? "Cutout ready" : "Selection closed"}
               </div>
-            </>
+            </div>
           )}
 
-          {/* Brush mode */}
+          {/* Brush canvas */}
           {mode === "brush" && (
-            <div className="relative w-full h-full">
+            <div className="relative">
               <canvas
                 ref={brushRef}
                 width={CW}
                 height={CH}
-                className="absolute inset-0 w-full h-full"
-                style={{ cursor: "none" }}
+                className="w-full block"
+                style={{ maxHeight: 300, cursor: "none" }}
                 onMouseDown={onBrushDown}
                 onMouseMove={onBrushMove}
                 onMouseUp={onBrushUp}
                 onMouseLeave={() => {
                   setIsBrushing(false);
-                  setCursorPx(null);
+                  setBrushCursor(null);
                   if (hasStrokes) exportBrushPreview();
                 }}
               />
-              {cursorPx && (
+              {brushCursor && (
                 <div
                   className="absolute rounded-full pointer-events-none"
                   style={{
-                    width:      brushSize,
-                    height:     brushSize,
-                    left:       cursorPx.x - brushSize / 2,
-                    top:        cursorPx.y - brushSize / 2,
+                    width:      brushSize * brushCursor.scale,
+                    height:     brushSize * brushCursor.scale,
+                    left:       brushCursor.x - (brushSize * brushCursor.scale) / 2,
+                    top:        brushCursor.y - (brushSize * brushCursor.scale) / 2,
                     border:     `1.5px solid ${brushMode === "erase" ? "rgba(239,68,68,0.85)" : "rgba(74,222,128,0.85)"}`,
                     background: brushMode === "erase" ? "rgba(239,68,68,0.07)" : "rgba(74,222,128,0.07)",
                   }}
                 />
               )}
-              <div className="absolute top-2 left-2 text-[9px] text-zinc-500 pointer-events-none select-none">
+              <div className="absolute top-2 left-2 text-[9px] text-zinc-500 pointer-events-none select-none bg-black/40 px-1 rounded">
                 {brushMode === "erase" ? "Paint to erase background" : "Paint to restore"}
               </div>
             </div>
           )}
         </div>
 
-        {/* ── Right: controls ───────────────────────────────────────────────── */}
+        {/* Scrollable controls area */}
+        <div className="flex-1 overflow-y-auto min-h-0 px-4 py-3 space-y-2.5">
+          {mode === "auto" && (
+            <>
+              {autoStatus === "idle" && (
+                <>
+                  <p className="text-[9px] text-zinc-500 leading-relaxed">
+                    AI-powered extraction runs locally in your browser — no API key needed, handles hair and complex edges.
+                  </p>
+                  <p className="text-[9px] text-zinc-600 leading-relaxed">
+                    First run downloads the model (~40 MB) and caches it. Subsequent runs are fast.
+                  </p>
+                </>
+              )}
+              {autoStatus === "extracting" && (
+                <p className="text-[9px] text-zinc-400 leading-relaxed">
+                  {autoProgress < 10
+                    ? "Downloading AI model (~40 MB, cached after first use)…"
+                    : "Removing background…"}
+                </p>
+              )}
+              {autoStatus === "done" && (
+                <p className="text-[9px] text-green-400/80 leading-relaxed">
+                  Subject extracted. Click Apply to add as a new layer.
+                </p>
+              )}
+              {autoStatus === "failed" && (
+                <p className="text-[9px] text-red-400/80 leading-relaxed">
+                  Extraction failed. Try the Lasso tool for manual selection.
+                </p>
+              )}
+            </>
+          )}
+
+          {mode === "lasso" && (
+            <LassoControls
+              hasPoints={lassoPoints.length > 0}
+              hasCutout={!!lassoPreviewUrl}
+              onClear={clearLasso}
+            />
+          )}
+
+          {mode === "brush" && (
+            <BrushControls
+              brushMode={brushMode}
+              setBrushMode={setBrushMode}
+              brushSize={brushSize}
+              setBrushSize={setBrushSize}
+              hasStrokes={hasStrokes}
+              onReset={resetBrush}
+            />
+          )}
+        </div>
+
+        {/* Sticky footer — always visible */}
         <div
-          className="w-60 flex-none flex flex-col"
-          style={{ borderLeft: "1px solid rgba(255,255,255,0.07)" }}
+          className="flex-none px-4 py-3 flex gap-2"
+          style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}
         >
-          {/* Header */}
-          <div
-            className="flex-none flex items-center justify-between px-4 py-3"
-            style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}
-          >
-            <span className="text-[10px] tracking-[0.15em] uppercase text-zinc-400">Cutout</span>
-            <button
-              onClick={onClose}
-              className="text-[11px] text-zinc-600 hover:text-zinc-300 transition-colors"
-            >
-              ✕
-            </button>
-          </div>
+          {mode === "auto" && autoStatus === "idle" && (
+            <>
+              <button
+                onClick={handleAutoExtract}
+                className="flex-1 text-[10px] tracking-wide uppercase py-2 transition-colors"
+                style={{
+                  background: "rgba(255,255,255,0.08)",
+                  border: "1px solid rgba(255,255,255,0.18)",
+                  color: "#e4e4e7",
+                }}
+              >
+                Extract Subject
+              </button>
+              <button
+                onClick={onClose}
+                className="flex-1 border border-zinc-800 hover:border-zinc-600 text-[10px] tracking-wide uppercase text-zinc-500 hover:text-zinc-300 py-2 transition-colors"
+              >
+                Cancel
+              </button>
+            </>
+          )}
 
-          {/* Tabs */}
-          <div className="flex-none flex" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
-            <Tab id="auto"  label="Auto"  />
-            <Tab id="lasso" label="Lasso" />
-            <Tab id="brush" label="Brush" />
-          </div>
+          {mode === "auto" && autoStatus === "extracting" && (
+            <>
+              <button
+                disabled
+                className="flex-1 text-[10px] tracking-wide uppercase py-2 opacity-30 cursor-not-allowed"
+                style={{
+                  background: "rgba(255,255,255,0.04)",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  color: "#71717a",
+                }}
+              >
+                Extracting…
+              </button>
+            </>
+          )}
 
-          {/* Tab body */}
-          <div className="flex-1 overflow-y-auto py-4 px-4 space-y-3">
-            {mode === "auto" && (
-              <AutoPanel
-                status={autoStatus}
-                progress={autoProgress}
-                onExtract={handleAutoExtract}
-                onReset={resetAuto}
-              />
-            )}
+          {mode === "auto" && autoStatus === "done" && (
+            <>
+              <button
+                onClick={applyAsNewLayer}
+                className="flex-1 text-[10px] tracking-wide uppercase py-2 transition-colors"
+                style={{
+                  background: "rgba(255,255,255,0.1)",
+                  border: "1px solid rgba(255,255,255,0.22)",
+                  color: "#e4e4e7",
+                }}
+              >
+                Apply to Canvas
+              </button>
+              <button
+                onClick={resetAuto}
+                className="flex-1 border border-zinc-800 hover:border-zinc-600 text-[10px] tracking-wide uppercase text-zinc-500 hover:text-zinc-300 py-2 transition-colors"
+              >
+                Try Again
+              </button>
+            </>
+          )}
 
-            {mode === "lasso" && (
-              <LassoPanel
-                hasPoints={lassoPoints.length > 0}
-                hasCutout={!!lassoPreviewUrl}
-                onClear={clearLasso}
-              />
-            )}
+          {mode === "auto" && autoStatus === "failed" && (
+            <>
+              <button
+                onClick={handleAutoExtract}
+                className="flex-1 text-[10px] tracking-wide uppercase py-2 transition-colors"
+                style={{
+                  background: "rgba(255,255,255,0.08)",
+                  border: "1px solid rgba(255,255,255,0.18)",
+                  color: "#e4e4e7",
+                }}
+              >
+                Retry
+              </button>
+              <button
+                onClick={onClose}
+                className="flex-1 border border-zinc-800 hover:border-zinc-600 text-[10px] tracking-wide uppercase text-zinc-500 hover:text-zinc-300 py-2 transition-colors"
+              >
+                Cancel
+              </button>
+            </>
+          )}
 
-            {mode === "brush" && (
-              <BrushPanel
-                brushMode={brushMode}
-                setBrushMode={setBrushMode}
-                brushSize={brushSize}
-                setBrushSize={setBrushSize}
-                hasStrokes={hasStrokes}
-                onReset={resetBrush}
-              />
-            )}
-          </div>
-
-          {/* Footer */}
-          <div
-            className="flex-none px-4 py-3 flex flex-col gap-2"
-            style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}
-          >
-            {canApply && (
-              <div className="text-[9px] text-green-400/70 text-center">Cutout ready</div>
-            )}
-            <button
-              onClick={applyAsNewLayer}
-              disabled={!canApply}
-              className="w-full text-[10px] tracking-wide uppercase py-2 transition-all disabled:opacity-25"
-              style={{
-                background: canApply ? "rgba(255,255,255,0.1)"  : "rgba(255,255,255,0.03)",
-                border:     `1px solid ${canApply ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.07)"}`,
-                color:      canApply ? "#e4e4e7" : "#52525b",
-              }}
-            >
-              Apply as New Layer
-            </button>
-            <button
-              onClick={onClose}
-              className="w-full border border-zinc-800 hover:border-zinc-600 text-[10px] tracking-wide uppercase text-zinc-600 hover:text-zinc-300 py-2 transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
+          {mode !== "auto" && (
+            <>
+              <button
+                onClick={applyAsNewLayer}
+                disabled={!canApply}
+                className="flex-1 text-[10px] tracking-wide uppercase py-2 transition-all disabled:opacity-25 disabled:cursor-not-allowed"
+                style={{
+                  background: canApply ? "rgba(255,255,255,0.1)"  : "rgba(255,255,255,0.03)",
+                  border:     `1px solid ${canApply ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.07)"}`,
+                  color:      canApply ? "#e4e4e7" : "#52525b",
+                }}
+              >
+                Apply to Canvas
+              </button>
+              <button
+                onClick={onClose}
+                className="flex-1 border border-zinc-800 hover:border-zinc-600 text-[10px] tracking-wide uppercase text-zinc-500 hover:text-zinc-300 py-2 transition-colors"
+              >
+                Cancel
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-// ─── Auto panel ───────────────────────────────────────────────────────────────
+// ─── Lasso controls ───────────────────────────────────────────────────────────
 
-function AutoPanel({
-  status,
-  progress,
-  onExtract,
-  onReset,
-}: {
-  status: AutoStatus;
-  progress: number;
-  onExtract: () => void;
-  onReset: () => void;
-}) {
-  return (
-    <div className="space-y-3">
-      {status === "idle" && (
-        <>
-          <p className="text-[9px] text-zinc-500 leading-relaxed">
-            AI-powered extraction runs locally in your browser — no API key needed, handles hair and complex edges.
-          </p>
-          <p className="text-[9px] text-zinc-600 leading-relaxed">
-            First run downloads the model (~40 MB) and caches it. Subsequent runs are fast.
-          </p>
-          <button
-            onClick={onExtract}
-            className="w-full border border-zinc-700 hover:border-zinc-400 text-zinc-300 hover:text-zinc-100 text-[10px] tracking-wide uppercase py-2 transition-colors"
-          >
-            Extract Subject
-          </button>
-        </>
-      )}
-
-      {status === "extracting" && (
-        <div className="space-y-3">
-          <p className="text-[9px] text-zinc-400 leading-relaxed">
-            {progress < 10
-              ? "Downloading AI model (~40 MB, cached after first use)…"
-              : "Removing background…"}
-          </p>
-          <div className="space-y-1.5">
-            <div className="flex justify-between font-mono text-[9px] text-zinc-500">
-              <span>Progress</span>
-              <span>{progress}%</span>
-            </div>
-            <div className="h-0.5 bg-zinc-800 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-zinc-400 rounded-full transition-all duration-150"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {status === "done" && (
-        <>
-          <p className="text-[9px] text-green-400/80 leading-relaxed">
-            Subject extracted. Click Apply to add as a new layer.
-          </p>
-          <button
-            onClick={onReset}
-            className="w-full border border-zinc-800 hover:border-zinc-600 text-zinc-500 hover:text-zinc-200 text-[10px] tracking-wide uppercase py-1.5 transition-colors"
-          >
-            Try Again
-          </button>
-        </>
-      )}
-
-      {status === "failed" && (
-        <>
-          <p className="text-[9px] text-red-400/80 leading-relaxed">
-            Extraction failed. Check the console for details, or use Lasso for manual selection.
-          </p>
-          <button
-            onClick={onExtract}
-            className="w-full border border-zinc-700 hover:border-zinc-500 text-zinc-400 hover:text-zinc-100 text-[10px] tracking-wide uppercase py-2 transition-colors"
-          >
-            Retry
-          </button>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ─── Lasso panel ──────────────────────────────────────────────────────────────
-
-function LassoPanel({
+function LassoControls({
   hasPoints,
   hasCutout,
   onClear,
@@ -824,12 +840,10 @@ function LassoPanel({
   onClear: () => void;
 }) {
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
       <p className="text-[9px] text-zinc-500 leading-relaxed">
-        Click and drag over the subject to draw a freeform selection.
-        Release near the start point to snap-close, or release anywhere to auto-close.
+        Click and drag over the subject to draw a freeform selection. Release near the start to snap-close.
       </p>
-
       {(hasPoints || hasCutout) && (
         <button
           onClick={onClear}
@@ -838,23 +852,18 @@ function LassoPanel({
           Clear Selection
         </button>
       )}
-
-      <div
-        className="space-y-1 text-[9px] text-zinc-600 leading-relaxed"
-        style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 10 }}
-      >
+      <div className="space-y-0.5 text-[9px] text-zinc-700 leading-relaxed">
         <div>· Drag to draw path</div>
-        <div>· Release to close selection</div>
         <div>· Blue dot = snap to start</div>
-        <div>· Clear to start over</div>
+        <div>· Release to close &amp; cut</div>
       </div>
     </div>
   );
 }
 
-// ─── Brush panel ──────────────────────────────────────────────────────────────
+// ─── Brush controls ───────────────────────────────────────────────────────────
 
-function BrushPanel({
+function BrushControls({
   brushMode,
   setBrushMode,
   brushSize,
@@ -870,7 +879,7 @@ function BrushPanel({
   onReset: () => void;
 }) {
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
       <div className="flex gap-1.5">
         {(["erase", "restore"] as const).map((m) => (
           <button
@@ -911,13 +920,9 @@ function BrushPanel({
         </button>
       )}
 
-      <div
-        className="space-y-1 text-[9px] text-zinc-600 leading-relaxed"
-        style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 10 }}
-      >
+      <div className="space-y-0.5 text-[9px] text-zinc-700 leading-relaxed">
         <div>· Erase: paint to remove background</div>
         <div>· Restore: paint to bring back areas</div>
-        <div>· Reset clears all brush strokes</div>
       </div>
     </div>
   );
