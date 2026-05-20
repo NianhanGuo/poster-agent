@@ -162,7 +162,7 @@ export function ImageEditModal({ layerId, onClose }: { layerId: string; onClose:
 
         {/* Controls pane */}
         <div
-          className="w-64 flex-none flex flex-col"
+          className="w-64 flex-none flex flex-col overflow-hidden"
           style={{ borderLeft: "1px solid rgba(255,255,255,0.07)" }}
         >
           {/* Header */}
