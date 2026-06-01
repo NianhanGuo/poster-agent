@@ -334,7 +334,7 @@ export function EditorClient() {
   const LEFT_TABS: { id: LeftTab; label: string }[] = [
     { id: "layers",    label: "Layers" },
     { id: "assets",    label: "Assets" },
-    { id: "reference", label: "Ref" },
+    { id: "reference", label: "Reference" },
   ];
 
   const QUICK_ACTIONS = [
@@ -351,38 +351,35 @@ export function EditorClient() {
 
       {/* ── Top bar ─────────────────────────────────────────────────────────── */}
       <header
-        className="flex-none h-12 flex items-center gap-3 px-4 z-20"
-        style={{ background: "rgba(0,0,0,0.75)", borderBottom: `1px solid ${BORDER}`, backdropFilter: "blur(20px)" }}
+        className="flex-none h-11 flex items-center gap-3 px-4 z-20 bg-zinc-950 border-b border-zinc-800/60"
+        style={{ backdropFilter: "blur(20px)" }}
       >
         {/* Left: back + title */}
-        <div className="flex items-center gap-3 flex-none">
+        <div className="flex items-center gap-2 flex-none">
           <button
             onClick={() => usePosterStore.getState().clearProject()}
-            className="text-[11px] tracking-[0.08em] uppercase text-zinc-500 hover:text-zinc-200 transition-colors"
+            className="flex items-center gap-1.5 text-zinc-500 hover:text-zinc-200 transition-colors px-2 py-1 rounded-md hover:bg-zinc-800/60"
           >
-            ← New
+            <span className="text-[14px] leading-none">←</span>
+            <span className="text-[12px] font-medium hidden sm:block">New</span>
           </button>
-          <span style={{ color: "rgba(255,255,255,0.1)" }}>|</span>
+          <span className="text-zinc-800 select-none">|</span>
           <TitleEditor />
         </div>
 
         {/* Center: mode + prompt input */}
         <div className="flex-1 flex items-center gap-2 mx-2">
           {/* Generation mode pills */}
-          <div
-            className="flex-none flex gap-px rounded-md overflow-hidden"
-            style={{ border: "1px solid rgba(255,255,255,0.09)" }}
-          >
-            {([ ["full", "Layout"], ["image", "Image"], ["type", "Type"] ] as const).map(([id, label]) => (
+          <div className="flex-none flex items-center gap-0.5 bg-zinc-800/80 rounded-md p-0.5">
+            {([ ["full", "Generate"], ["image", "Image"], ["type", "Type"] ] as const).map(([id, label]) => (
               <button
                 key={id}
                 onClick={() => setGenMode(id)}
-                className="px-2.5 h-7 text-[10px] tracking-[0.04em] uppercase transition-colors"
-                style={{
-                  background: genMode === id ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.02)",
-                  color: genMode === id ? "#f0f0f2" : "#71717a",
-                  borderRight: id !== "type" ? "1px solid rgba(255,255,255,0.08)" : "none",
-                }}
+                className={`px-2.5 h-6 text-[11px] font-medium rounded transition-colors ${
+                  genMode === id
+                    ? "bg-zinc-700 text-zinc-100"
+                    : "text-zinc-500 hover:text-zinc-300"
+                }`}
               >
                 {label}
               </button>
@@ -390,81 +387,56 @@ export function EditorClient() {
           </div>
 
           {/* Prompt input */}
-          <div
-            className="flex-1 flex items-center gap-2 h-7 rounded-md px-3"
-            style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)" }}
-          >
+          <div className="flex-1 flex items-center gap-2 h-7 rounded-md px-3 bg-zinc-900 border border-zinc-800 focus-within:border-zinc-600 transition-colors">
             <input
               type="text"
               value={command}
               onChange={(e) => setCommand(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
               placeholder={
-                genMode === "image" ? "Image style hint (optional)…"
-                : genMode === "type"  ? "Type style hint, e.g. 'cinematic'…"
-                : "Describe a change, mood, or direction…"
+                genMode === "image" ? "Describe image style (optional)…"
+                : genMode === "type"  ? "Describe type style, e.g. 'cinematic'…"
+                : "Describe what to change or create…"
               }
               disabled={isGenerating}
-              className="flex-1 bg-transparent text-[11px] text-zinc-200 placeholder:text-zinc-500 outline-none disabled:opacity-40"
+              className="flex-1 bg-transparent text-[12px] text-zinc-200 placeholder:text-zinc-600 outline-none disabled:opacity-40"
             />
             <button
               onClick={handleGenerate}
               disabled={isGenerating}
-              className="flex-none text-[11px] tracking-[0.06em] uppercase text-zinc-400 hover:text-zinc-100 disabled:opacity-30 transition-colors pl-2 ml-0.5"
+              className="flex-none text-[11px] font-medium text-zinc-400 hover:text-zinc-100 disabled:opacity-30 transition-colors pl-2"
               style={{ borderLeft: "1px solid rgba(255,255,255,0.08)" }}
             >
-              {genMode === "full" ? "Generate" : genMode === "image" ? "Regen Image" : "Retype"}
+              {isGenerating ? (
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full border border-zinc-600 border-t-zinc-300 animate-spin inline-block" />
+                  <span className="text-zinc-500">{generatingStep}</span>
+                </span>
+              ) : (
+                genMode === "full" ? "Run" : genMode === "image" ? "Regen" : "Retype"
+              )}
             </button>
           </div>
         </div>
 
-        {/* Right: brief + status + export + user */}
-        <div className="flex items-center gap-4 flex-none">
-          {/* Current design brief mood */}
+        {/* Right: brief + error + canvas size + export + user */}
+        <div className="flex items-center gap-2 flex-none">
           {designBrief && !isGenerating && (
-            <span
-              className="text-[10px] text-zinc-500 italic max-w-[120px] truncate hidden lg:block"
-              title={designBrief.designRationale}
-            >
+            <span className="text-[11px] text-zinc-600 italic max-w-[100px] truncate hidden lg:block" title={designBrief.designRationale}>
               {designBrief.mood}
             </span>
           )}
-
           {isDemo && (
-            <span className="text-[10px] text-zinc-500" title="Add OPENAI_API_KEY for AI generation">
-              ○ demo
-            </span>
-          )}
-          {isGenerating && (
-            <span className="text-[11px] text-zinc-400 flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full border border-zinc-600 border-t-zinc-300 animate-spin inline-block" />
-              {generatingStep}
-            </span>
+            <span className="text-[11px] text-zinc-700 hidden sm:block" title="Add OPENAI_API_KEY for AI generation">demo</span>
           )}
           {genError && !isGenerating && (
             <span className="text-[11px] text-red-400/90">{genError}</span>
           )}
-
-          {/* Canvas size */}
           <CanvasSizeMenu />
-
-          {/* Export dropdown */}
           <ExportMenu onPng={handleExport} onJson={exportJSON} />
-
           <PanelErrorBoundary name="UserMenu"><UserMenu /></PanelErrorBoundary>
         </div>
       </header>
-
-      {/* ── AI usage feedback strip ──────────────────────────────────────────── */}
-      {aiUsedLabel && (
-        <div
-          className="flex-none h-6 flex items-center px-4 gap-2"
-          style={{ background: "rgba(74,222,128,0.04)", borderBottom: "1px solid rgba(74,222,128,0.12)" }}
-        >
-          <span className="w-1.5 h-1.5 rounded-full bg-green-400/60 flex-none" />
-          <span className="text-[10px] text-green-400/80 tracking-wide">AI used: {aiUsedLabel}</span>
-        </div>
-      )}
 
 
       {/* ── Body ────────────────────────────────────────────────────────────── */}
@@ -472,37 +444,29 @@ export function EditorClient() {
 
         {/* Left sidebar */}
         <aside
-          className="w-56 flex-none flex flex-col"
-          style={{ background: PANEL_BG, borderRight: `1px solid ${BORDER}` }}
+          className="w-52 flex-none flex flex-col bg-zinc-950 border-r border-zinc-800/60"
         >
-          <div className="flex-none flex" style={{ borderBottom: `1px solid ${BORDER}` }}>
+          <div className="flex-none flex px-1 border-b border-zinc-800/60">
             {LEFT_TABS.map(({ id, label }) => {
               const isRef = id === "reference";
               const refCount = isRef ? (reference.images ?? []).length : 0;
+              const active = leftTab === id;
               return (
                 <button
                   key={id}
                   onClick={() => setLeftTab(id)}
-                  className={`flex-1 py-2.5 text-[10px] tracking-[0.08em] uppercase transition-colors relative ${
-                    leftTab === id ? "text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
+                  className={`relative flex-1 flex items-center justify-center gap-1 px-2 py-2.5 text-[12px] font-medium transition-colors ${
+                    active ? "text-zinc-100" : "text-zinc-500 hover:text-zinc-300"
                   }`}
                 >
-                  <span className="flex items-center justify-center gap-1">
-                    {label}
-                    {isRef && refCount > 0 && (
-                      <span
-                        className="w-3.5 h-3.5 rounded-full font-mono text-[7px] flex items-center justify-center"
-                        style={{ background: "rgba(74,222,128,0.15)", color: "#4ade80", border: "1px solid rgba(74,222,128,0.3)" }}
-                      >
-                        {refCount}
-                      </span>
-                    )}
-                  </span>
-                  {leftTab === id && (
-                    <span
-                      className="absolute bottom-0 left-0 right-0 h-px"
-                      style={{ background: "rgba(161,161,170,0.6)" }}
-                    />
+                  {label}
+                  {isRef && refCount > 0 && (
+                    <span className="w-3.5 h-3.5 rounded-full text-[8px] flex items-center justify-center bg-green-500/20 text-green-400 border border-green-500/30">
+                      {refCount}
+                    </span>
+                  )}
+                  {active && (
+                    <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-zinc-300 rounded-full" />
                   )}
                 </button>
               );
@@ -519,39 +483,31 @@ export function EditorClient() {
         <main className="flex-1 flex flex-col min-w-0">
 
           {/* Action bar: quick-actions + alignment + guides */}
-          <div
-            className="flex-none h-8 flex items-center px-3 gap-0"
-            style={{ borderBottom: `1px solid rgba(255,255,255,0.05)`, background: "rgba(0,0,0,0.25)" }}
-          >
+          <div className="flex-none h-8 flex items-center px-3 gap-0 border-b border-zinc-800/40 bg-zinc-950/50">
             {/* Quick generation actions */}
             {QUICK_ACTIONS.map((a, i) => (
               <span key={a.label} className="flex items-center">
-                {i > 0 && <span className="mx-2.5" style={{ color: "#27272a" }}>·</span>}
+                {i > 0 && <span className="mx-2 text-zinc-800 select-none">·</span>}
                 <button
                   onClick={a.fn}
                   disabled={isGenerating}
-                  className="text-[10px] tracking-[0.06em] uppercase text-zinc-500 hover:text-zinc-200 disabled:opacity-30 transition-colors"
+                  className="text-[11px] font-medium text-zinc-600 hover:text-zinc-200 disabled:opacity-30 transition-colors"
                 >
                   {a.label}
                 </button>
               </span>
             ))}
 
-            {/* Separator */}
-            <span className="mx-3" style={{ color: "#27272a" }}>|</span>
-
-            {/* Alignment tools */}
+            <span className="mx-3 text-zinc-800 select-none">|</span>
             <AlignmentBar />
 
-            {/* Guide toggle */}
-            <span className="mx-2" style={{ color: "#27272a" }}>|</span>
+            <span className="mx-2 text-zinc-800 select-none">|</span>
             <button
               onClick={() => setShowGuides((g) => !g)}
               title="Toggle safe margin guides"
-              className="text-[10px] tracking-wide uppercase transition-colors"
-              style={{ color: showGuides ? "#a1a1aa" : "#52525b" }}
+              className={`text-[11px] font-medium transition-colors ${showGuides ? "text-zinc-400" : "text-zinc-700 hover:text-zinc-400"}`}
             >
-              guides
+              Guides
             </button>
           </div>
 
@@ -569,8 +525,7 @@ export function EditorClient() {
 
         {/* Right inspector */}
         <aside
-          className="w-60 flex-none overflow-y-auto"
-          style={{ background: PANEL_BG, borderLeft: `1px solid ${BORDER}` }}
+          className="w-56 flex-none overflow-y-auto bg-zinc-950 border-l border-zinc-800/60"
         >
           <PanelErrorBoundary name="ToolPanel"><ToolPanel onTypography={runTypography} onEditImage={setEditImageLayerId} onCutout={setCutoutLayerId} /></PanelErrorBoundary>
         </aside>
@@ -656,7 +611,8 @@ function TitleEditor() {
           if (s.project) s.project.title = e.target.value;
         })
       }
-      className="bg-transparent text-[13px] tracking-wide text-zinc-300 outline-none focus:text-zinc-100 transition-colors w-44 truncate"
+      placeholder="Untitled poster"
+      className="bg-transparent text-[13px] font-medium text-zinc-300 outline-none focus:text-zinc-100 transition-colors w-40 truncate placeholder:text-zinc-700"
     />
   );
 }
@@ -683,19 +639,18 @@ function CanvasSizeMenu() {
     <div className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="text-[10px] tracking-[0.08em] uppercase text-zinc-500 hover:text-zinc-200 transition-colors flex items-center gap-1"
-        style={{ border: "1px solid rgba(255,255,255,0.09)", padding: "3px 8px", borderRadius: 4 }}
+        className="flex items-center gap-1 text-[12px] font-medium text-zinc-500 hover:text-zinc-200 transition-colors px-2 py-1 rounded-md border border-zinc-800 hover:border-zinc-600"
         title="Change canvas size"
       >
         {currentLabel}
-        <span style={{ opacity: 0.4 }}>▾</span>
+        <span className="text-zinc-700 text-[10px]">▾</span>
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div
-            className="absolute right-0 top-full mt-1.5 w-44 rounded-sm overflow-hidden z-50"
-            style={{ background: "#141416", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 12px 32px rgba(0,0,0,0.6)" }}
+            className="absolute right-0 top-full mt-1.5 w-44 rounded-lg overflow-hidden z-50 border border-zinc-700/80"
+            style={{ background: "#141416", boxShadow: "0 12px 32px rgba(0,0,0,0.6)" }}
           >
             {Object.entries(CANVAS_PRESETS).map(([key, cfg]) => {
               const active = project.canvas.size === key;
@@ -703,16 +658,12 @@ function CanvasSizeMenu() {
                 <button
                   key={key}
                   onClick={() => { resizeCanvas(cfg); setOpen(false); }}
-                  className="w-full text-left px-3 py-2 text-[10px] transition-colors flex justify-between items-center"
-                  style={{
-                    color: active ? "#f0f0f2" : "#a1a1aa",
-                    background: active ? "rgba(255,255,255,0.07)" : "transparent",
-                  }}
-                  onMouseEnter={(e) => { if (!active) (e.currentTarget as HTMLElement).style.color = "#e4e4e7"; }}
-                  onMouseLeave={(e) => { if (!active) (e.currentTarget as HTMLElement).style.color = "#a1a1aa"; }}
+                  className={`w-full text-left px-3 py-2.5 text-[12px] font-medium transition-colors flex justify-between items-center ${
+                    active ? "text-zinc-100 bg-zinc-800/60" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/40"
+                  }`}
                 >
                   <span>{CANVAS_SIZE_LABELS[key] ?? key}</span>
-                  <span style={{ opacity: 0.4 }}>{cfg.width}×{cfg.height}</span>
+                  <span className="text-zinc-600 font-mono text-[10px]">{cfg.width}×{cfg.height}</span>
                 </button>
               );
             })}
@@ -731,16 +682,17 @@ function ExportMenu({ onPng, onJson }: { onPng: () => void; onJson: () => void }
     <div className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="text-[11px] tracking-[0.1em] uppercase text-zinc-400 hover:text-zinc-100 transition-colors"
+        className="bg-white text-zinc-900 hover:bg-zinc-100 text-[12px] font-semibold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1"
       >
-        Export →
+        Export
+        <span className="text-zinc-500 text-[10px]">▾</span>
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div
-            className="absolute right-0 top-full mt-1.5 w-32 rounded-sm overflow-hidden z-50"
-            style={{ background: "#141416", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 12px 32px rgba(0,0,0,0.6)" }}
+            className="absolute right-0 top-full mt-1.5 w-36 rounded-lg overflow-hidden z-50 border border-zinc-700/80"
+            style={{ background: "#141416", boxShadow: "0 12px 32px rgba(0,0,0,0.6)" }}
           >
             {[
               { label: "PNG image",    fn: () => { setOpen(false); onPng(); } },
@@ -749,8 +701,7 @@ function ExportMenu({ onPng, onJson }: { onPng: () => void; onJson: () => void }
               <button
                 key={label}
                 onClick={fn}
-                className="w-full text-left px-3 py-2 text-[10px] text-zinc-400 hover:text-zinc-100 transition-colors"
-                style={{ display: "block" }}
+                className="w-full text-left px-3 py-2.5 text-[12px] font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors"
               >
                 {label}
               </button>

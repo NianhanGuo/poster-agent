@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import { usePosterStore } from "@/store/posterStore";
 import { RECIPES } from "@/lib/styleRecipes";
 import type { StyleRecipe } from "@/types/poster";
@@ -15,76 +16,105 @@ function relativeTime(iso: string): string {
 
 export function VersionStrip() {
   const { projectVersions, currentVersionIndex, restoreVersion } = usePosterStore();
+  const [showPopover, setShowPopover] = useState(false);
 
   if (projectVersions.length === 0) return null;
 
   return (
-    <div
-      className="flex-none flex items-center gap-2 px-4 overflow-x-auto"
-      style={{
-        height: "64px",
-        borderTop: "1px solid rgba(255,255,255,0.06)",
-        background: "#040406",
-        scrollbarWidth: "none",
-      }}
-    >
-      <span className="font-mono text-[8px] tracking-[0.25em] uppercase text-zinc-700 flex-none pr-1">
-        Versions
+    <div className="flex-none h-8 flex items-center px-3 gap-3 bg-zinc-950 border-t border-zinc-800/60">
+      <span className="text-[11px] font-medium text-zinc-600 flex-none">History</span>
+
+      {/* Dot indicators */}
+      <div className="flex items-center gap-1.5">
+        {projectVersions.map((v, i) => {
+          const isCurrent = i === currentVersionIndex;
+          return (
+            <button
+              key={i}
+              onClick={() => restoreVersion(i)}
+              title={`v${i + 1}${v.brief?.mood ? ` — ${v.brief.mood}` : ""}\n${new Date(v.timestamp).toLocaleTimeString()}`}
+              className={`rounded-full transition-all duration-150 ${
+                isCurrent
+                  ? "w-2 h-2 bg-zinc-200"
+                  : "w-1.5 h-1.5 bg-zinc-600 hover:bg-zinc-400"
+              }`}
+            />
+          );
+        })}
+      </div>
+
+      {/* Current version label */}
+      <span className="text-[11px] font-mono text-zinc-600">
+        v{currentVersionIndex + 1}
+        {projectVersions[currentVersionIndex]?.brief?.mood && (
+          <span className="text-zinc-700 ml-1 italic">
+            — {projectVersions[currentVersionIndex].brief!.mood}
+          </span>
+        )}
       </span>
 
-      {projectVersions.map((v, i) => {
-        const recipe = RECIPES[(v.project.styleRecipe as StyleRecipe)] ?? RECIPES["cinematic-rain"];
-        const isCurrent = i === currentVersionIndex;
-        const mood = v.brief?.mood;
+      {/* Spacer */}
+      <div className="flex-1" />
 
-        return (
-          <button
-            key={i}
-            onClick={() => restoreVersion(i)}
-            title={`${mood ?? recipe.name}\n${new Date(v.timestamp).toLocaleTimeString()}`}
-            className="flex-none flex flex-col items-start gap-1 px-2.5 py-1.5 rounded-sm transition-all"
-            style={{
-              minWidth: "72px",
-              background: isCurrent ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.02)",
-              border: `1px solid ${isCurrent ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.06)"}`,
-            }}
+      {/* View all button */}
+      <button
+        onClick={() => setShowPopover((p) => !p)}
+        className="text-[11px] font-medium text-zinc-600 hover:text-zinc-300 transition-colors"
+      >
+        View all →
+      </button>
+
+      {/* Popover */}
+      {showPopover && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowPopover(false)} />
+          <div
+            className="absolute bottom-9 right-3 z-50 w-72 rounded-lg border border-zinc-700/80 overflow-hidden"
+            style={{ background: "#141416", boxShadow: "0 -8px 32px rgba(0,0,0,0.7)" }}
           >
-            {/* Color gradient swatch from recipe palette */}
-            <div
-              className="w-full h-3 rounded-sm"
-              style={{
-                background: `linear-gradient(90deg, ${recipe.palette.bg} 0%, ${recipe.palette.accent} 60%, ${recipe.palette.text}33 100%)`,
-              }}
-            />
-            <div className="flex items-baseline gap-1 w-full">
-              <span
-                className="font-mono text-[9px] flex-none"
-                style={{ color: isCurrent ? "#a1a1aa" : "#52525b" }}
-              >
-                v{i + 1}
-              </span>
-              {mood ? (
-                <span
-                  className="font-mono text-[8px] truncate flex-1"
-                  style={{ color: isCurrent ? "#71717a" : "#3f3f46" }}
-                >
-                  {mood}
-                </span>
-              ) : (
-                <span
-                  className="font-mono text-[8px] truncate flex-1"
-                  style={{ color: isCurrent ? "#71717a" : "#3f3f46" }}
-                >
-                  {recipe.name}
-                </span>
-              )}
-              <span className="font-mono text-[7px] flex-none" style={{ color: "#3f3f46" }}>
-                {relativeTime(v.timestamp)}
-              </span>
+            <div className="px-3 py-2 border-b border-zinc-800/60">
+              <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest">Version history</span>
             </div>
-          </button>
-        );
-      })}
+            <div className="overflow-y-auto max-h-52 py-1">
+              {projectVersions.map((v, i) => {
+                const recipe = RECIPES[(v.project.styleRecipe as StyleRecipe)] ?? RECIPES["cinematic-rain"];
+                const isCurrent = i === currentVersionIndex;
+                return (
+                  <button
+                    key={i}
+                    onClick={() => { restoreVersion(i); setShowPopover(false); }}
+                    className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${
+                      isCurrent ? "bg-zinc-800/60" : "hover:bg-zinc-800/40"
+                    }`}
+                  >
+                    {/* Color swatch */}
+                    <div
+                      className="w-8 h-5 rounded flex-none"
+                      style={{
+                        background: `linear-gradient(90deg, ${recipe.palette.bg} 0%, ${recipe.palette.accent} 100%)`,
+                      }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className={`text-[12px] font-medium ${isCurrent ? "text-zinc-200" : "text-zinc-400"}`}>
+                          v{i + 1}
+                        </span>
+                        {v.brief?.mood && (
+                          <span className="text-[11px] text-zinc-500 truncate italic">{v.brief.mood}</span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-zinc-700 font-mono">{relativeTime(v.timestamp)}</div>
+                    </div>
+                    {isCurrent && (
+                      <span className="text-[10px] font-medium text-zinc-400 flex-none">current</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

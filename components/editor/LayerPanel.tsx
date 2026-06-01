@@ -21,6 +21,25 @@ import { CSS } from "@dnd-kit/utilities";
 import { usePosterStore } from "@/store/posterStore";
 import type { PosterLayer, GradientColorStop } from "@/types/poster";
 
+const TYPE_ICON: Record<string, string> = {
+  backgroundImage:  "🖼",
+  subjectImage:     "👤",
+  titleText:        "T",
+  subtitleText:     "T",
+  metaText:         "t",
+  bodyText:         "¶",
+  foregroundCutout: "✂",
+  userText:         "T",
+  userImage:        "🖼",
+  drawingLayer:     "✏",
+  gradientLayer:    "◑",
+  textureLayer:     "⣿",
+  colorOverlay:     "▣",
+  geometricShape:   "◻",
+  accentLine:       "—",
+  solidBackground:  "■",
+};
+
 const TYPE_LABEL: Record<string, string> = {
   backgroundImage:  "bg",
   subjectImage:     "subject",
@@ -32,11 +51,15 @@ const TYPE_LABEL: Record<string, string> = {
   userText:         "text",
   userImage:        "image",
   drawingLayer:     "draw",
-  gradientLayer:    "grad",
+  gradientLayer:    "gradient",
   textureLayer:     "grain",
+  colorOverlay:     "overlay",
+  geometricShape:   "shape",
+  accentLine:       "line",
+  solidBackground:  "solid",
 };
 
-// ─── Grain generator (client-side, runs in browser) ───────────────────────────
+// ─── Grain generator ───────────────────────────────────────────────────────────
 
 function generateGrainDataUrl(width: number, height: number, intensity: number, scale: number): string {
   const s = Math.max(1, Math.round(scale));
@@ -94,7 +117,6 @@ export function LayerPanel() {
 
   if (!project) return null;
 
-  // Display order: highest zIndex first (top of stack = top of list)
   const layers = [...getSortedLayers()].reverse();
   const layerIds = layers.map((l) => l.id);
   const canvas = project.canvas;
@@ -113,7 +135,6 @@ export function LayerPanel() {
     const newIndex = layers.findIndex((l) => l.id === over.id);
     const newDisplayOrder = arrayMove(layers, oldIndex, newIndex);
 
-    // Normalise zIndex: top item (index 0) = highest value
     const n = newDisplayOrder.length;
     const reindexed = newDisplayOrder.map((layer, i) => ({
       ...layer,
@@ -164,7 +185,6 @@ export function LayerPanel() {
   }
 
   function addAtmosphericPreset() {
-    // Layer 1: soft radial gradient (deep violet → transparent) on soft-light
     const gradLayer: PosterLayer = {
       id: crypto.randomUUID(),
       type: "gradientLayer",
@@ -183,7 +203,6 @@ export function LayerPanel() {
         angle: 0,
       },
     };
-    // Layer 2: fine grain texture on overlay
     const grainSrc = generateGrainDataUrl(canvas.width, canvas.height, 22, 1);
     const grainLayer: PosterLayer = {
       id: crypto.randomUUID(),
@@ -268,11 +287,14 @@ export function LayerPanel() {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex-1 py-3 overflow-y-auto">
-        <div className="px-4 pb-2 text-[10px] tracking-[0.1em] uppercase text-zinc-500">
+      {/* Section header */}
+      <div className="px-3 pt-3 pb-1">
+        <span className="text-[11px] font-semibold tracking-widest uppercase text-zinc-500">
           Layers
-        </div>
+        </span>
+      </div>
 
+      <div className="flex-1 py-1 overflow-y-auto">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -297,17 +319,9 @@ export function LayerPanel() {
             ))}
           </SortableContext>
 
-          {/* Floating drag preview */}
           <DragOverlay dropAnimation={{ duration: 150, easing: "ease" }}>
             {activeLayer ? (
-              <div
-                className="rounded-sm"
-                style={{
-                  background: "rgba(24,24,27,0.97)",
-                  border: "1px solid rgba(255,255,255,0.18)",
-                  boxShadow: "0 8px 32px rgba(0,0,0,0.7)",
-                }}
-              >
+              <div className="rounded-md bg-zinc-800 border border-zinc-600/60 shadow-xl">
                 <LayerRow
                   layer={activeLayer}
                   selected={false}
@@ -327,27 +341,22 @@ export function LayerPanel() {
       </div>
 
       {/* Add layer footer */}
-      <div
-        className="flex-none px-3 py-2 space-y-1.5"
-        style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}
-      >
-        <div className="text-[10px] tracking-[0.08em] uppercase text-zinc-500">Add layer</div>
-        <div className="flex gap-1">
-          <AddBtn onClick={addTextLayer}                   title="Text layer">T</AddBtn>
-          <AddBtn onClick={() => fileInputRef.current?.click()} title="Image layer">⬡</AddBtn>
-          <AddBtn onClick={addDrawingLayer}                title="Drawing / brush layer">✏</AddBtn>
-          <AddBtn onClick={addGradientLayer}               title="Gradient layer">◈</AddBtn>
-          <AddBtn onClick={addTextureLayer}                title="Grain / texture layer">⣿</AddBtn>
+      <div className="flex-none px-3 py-3 space-y-2 border-t border-zinc-800/60">
+        <span className="text-[11px] font-semibold tracking-widest uppercase text-zinc-500">Add layer</span>
+        <div className="grid grid-cols-5 gap-1">
+          <AddBtn onClick={addTextLayer} title="Text layer" label="T" />
+          <AddBtn onClick={() => fileInputRef.current?.click()} title="Image" label="🖼" />
+          <AddBtn onClick={addDrawingLayer} title="Draw / brush" label="✏" />
+          <AddBtn onClick={addGradientLayer} title="Gradient" label="◑" />
+          <AddBtn onClick={addTextureLayer} title="Grain / texture" label="⣿" />
         </div>
 
-        <div className="text-[10px] tracking-[0.08em] uppercase text-zinc-500 pt-1">Preset</div>
         <button
           onClick={addAtmosphericPreset}
-          className="w-full py-1 text-[10px] tracking-wide uppercase text-zinc-500 hover:text-zinc-100 transition-colors rounded-sm"
-          style={{ border: "1px solid rgba(255,255,255,0.06)" }}
+          className="w-full py-1.5 text-[12px] font-medium text-zinc-500 hover:text-zinc-200 transition-colors rounded-md border border-zinc-800/80 hover:border-zinc-600"
           title="Adds a violet radial gradient + film grain layer stack"
         >
-          + Atmospheric blur
+          + Atmospheric preset
         </button>
 
         <input
@@ -395,7 +404,7 @@ function SortableLayerRow(props: Omit<LayerRowProps, "isDragging" | "dragHandle"
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition: transition ?? undefined,
-    opacity: isDragging ? 0.35 : 1,
+    opacity: isDragging ? 0.3 : 1,
     zIndex: isDragging ? 10 : undefined,
     position: "relative",
   };
@@ -405,7 +414,7 @@ function SortableLayerRow(props: Omit<LayerRowProps, "isDragging" | "dragHandle"
       {...attributes}
       {...listeners}
       tabIndex={-1}
-      className="flex-none w-4 h-full flex items-center justify-center cursor-grab active:cursor-grabbing select-none text-zinc-600 hover:text-zinc-400 transition-colors"
+      className="flex-none w-4 h-full flex items-center justify-center cursor-grab active:cursor-grabbing select-none text-zinc-700 opacity-0 group-hover:opacity-100 transition-opacity hover:text-zinc-400"
       title="Drag to reorder"
       onClick={(e) => e.stopPropagation()}
     >
@@ -427,93 +436,123 @@ function LayerRow({
   onSelect, onToggleLock, onToggleVisibility,
   onDelete, onDuplicate, onMoveUp, onMoveDown,
 }: LayerRowProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
   return (
-    <div
-      onClick={onSelect}
-      className={`group flex items-center gap-1.5 pl-1 pr-3 py-1.5 transition-colors ${
-        isDragging
-          ? "bg-zinc-800 text-zinc-100"
-          : selected
-          ? "bg-zinc-900 text-zinc-100 cursor-pointer"
-          : "hover:bg-zinc-900/50 text-zinc-400 cursor-pointer"
-      } ${!layer.visible ? "opacity-30" : ""}`}
-    >
-      {/* Drag handle */}
-      {dragHandle ?? <span className="w-4 flex-none" />}
+    <div className="relative px-1.5">
+      <div
+        onClick={onSelect}
+        className={`group flex items-center gap-1.5 h-8 px-1.5 rounded-md cursor-pointer transition-colors ${
+          isDragging
+            ? "bg-zinc-800 text-zinc-200"
+            : selected
+            ? "bg-zinc-800 text-zinc-100"
+            : "hover:bg-zinc-800/50 text-zinc-400"
+        } ${!layer.visible ? "opacity-40" : ""}`}
+      >
+        {/* Drag handle */}
+        {dragHandle ?? <span className="w-4 flex-none" />}
 
-      {/* Type badge */}
-      <span className={`font-mono text-[9px] tracking-wide w-10 flex-none ${selected ? "text-zinc-400" : "text-zinc-600"}`}>
-        {TYPE_LABEL[layer.type] ?? layer.type.slice(0, 5)}
-      </span>
+        {/* Type icon */}
+        <span className="text-[11px] w-4 flex-none text-center text-zinc-600 group-hover:text-zinc-500">
+          {TYPE_ICON[layer.type] ?? "◻"}
+        </span>
 
-      {/* Label */}
-      <span className="text-[11px] truncate flex-1 min-w-0">
-        {layer.label}
-      </span>
+        {/* Label */}
+        <span className="text-[12px] font-medium truncate flex-1 min-w-0">
+          {layer.label}
+        </span>
 
-      {/* Persistent lock indicator */}
-      {layer.locked && (
-        <span className="text-[9px] text-zinc-500 flex-none group-hover:hidden" title="locked">■</span>
-      )}
+        {/* Lock indicator (always visible when locked, hidden on hover) */}
+        {layer.locked && !menuOpen && (
+          <span className="text-[9px] text-zinc-600 flex-none group-hover:hidden">🔒</span>
+        )}
 
-      {/* Controls */}
-      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-        <Btn title={layer.visible ? "hide" : "show"} onClick={(e) => { e.stopPropagation(); onToggleVisibility(); }}>
-          {layer.visible ? "○" : "◌"}
-        </Btn>
-        <Btn title={layer.locked ? "unlock" : "lock"} onClick={(e) => { e.stopPropagation(); onToggleLock(); }}>
-          {layer.locked ? "■" : "□"}
-        </Btn>
-        <Btn title="up" onClick={(e) => { e.stopPropagation(); onMoveUp(); }}>↑</Btn>
-        <Btn title="down" onClick={(e) => { e.stopPropagation(); onMoveDown(); }}>↓</Btn>
-        <Btn title="dupe" onClick={(e) => { e.stopPropagation(); onDuplicate(); }}>+</Btn>
-        <button
-          title="Merge coming soon"
-          disabled
-          onClick={(e) => e.stopPropagation()}
-          className="w-4 h-4 flex items-center justify-center font-mono text-[10px] text-zinc-800 cursor-not-allowed"
-        >⊕</button>
-        <Btn
-          title="delete"
-          onClick={(e) => { e.stopPropagation(); if (confirm(`Delete "${layer.label}"?`)) onDelete(); }}
-          className="hover:text-red-500"
-        >×</Btn>
+        {/* Hover controls */}
+        <div className={`flex items-center gap-0.5 ${menuOpen ? "flex" : "hidden group-hover:flex"}`}>
+          {/* Visibility */}
+          <button
+            title={layer.visible ? "Hide layer" : "Show layer"}
+            onClick={(e) => { e.stopPropagation(); onToggleVisibility(); }}
+            className="w-5 h-5 flex items-center justify-center text-[11px] text-zinc-500 hover:text-zinc-200 transition-colors rounded"
+          >
+            {layer.visible ? "○" : "◌"}
+          </button>
+
+          {/* Lock */}
+          <button
+            title={layer.locked ? "Unlock" : "Lock"}
+            onClick={(e) => { e.stopPropagation(); onToggleLock(); }}
+            className="w-5 h-5 flex items-center justify-center text-[11px] text-zinc-500 hover:text-zinc-200 transition-colors rounded"
+          >
+            {layer.locked ? "🔒" : "🔓"}
+          </button>
+
+          {/* ··· Menu */}
+          <div className="relative">
+            <button
+              title="More options"
+              onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
+              className="w-5 h-5 flex items-center justify-center text-[13px] text-zinc-500 hover:text-zinc-200 transition-colors rounded leading-none"
+            >
+              ···
+            </button>
+            {menuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setMenuOpen(false); }} />
+                <div
+                  className="absolute right-0 top-full mt-0.5 w-32 rounded-lg overflow-hidden z-50 border border-zinc-700/80"
+                  style={{ background: "#141416", boxShadow: "0 8px 24px rgba(0,0,0,0.6)" }}
+                >
+                  {[
+                    { label: "Duplicate", fn: () => { onDuplicate(); setMenuOpen(false); } },
+                    { label: "Move up",   fn: () => { onMoveUp();    setMenuOpen(false); } },
+                    { label: "Move down", fn: () => { onMoveDown();  setMenuOpen(false); } },
+                  ].map(({ label, fn }) => (
+                    <button
+                      key={label}
+                      onClick={(e) => { e.stopPropagation(); fn(); }}
+                      className="w-full text-left px-3 py-2 text-[12px] font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/60 transition-colors"
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  <div className="border-t border-zinc-800/60 my-0.5" />
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm(`Delete "${layer.label}"?`)) { onDelete(); }
+                      setMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 text-[12px] font-medium text-red-400/70 hover:text-red-400 hover:bg-zinc-800/60 transition-colors"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Add button ───────────────────────────────────────────────────────────────
 
-function Btn({ children, onClick, title, className = "" }: {
-  children: React.ReactNode;
-  onClick: (e: React.MouseEvent) => void;
-  title: string;
-  className?: string;
-}) {
-  return (
-    <button
-      title={title}
-      onClick={onClick}
-      className={`w-5 h-5 flex items-center justify-center text-[11px] text-zinc-500 hover:text-zinc-200 transition-colors ${className}`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function AddBtn({ children, onClick, title }: {
-  children: React.ReactNode;
+function AddBtn({ children, onClick, title, label }: {
+  children?: React.ReactNode;
   onClick: () => void;
   title: string;
+  label?: string;
 }) {
   return (
     <button
       title={title}
       onClick={onClick}
-      className="flex-1 py-1.5 text-[13px] text-zinc-500 hover:text-zinc-200 transition-colors border border-zinc-800 hover:border-zinc-600 rounded-sm"
+      className="py-1.5 text-[13px] text-zinc-500 hover:text-zinc-200 transition-colors border border-zinc-800/80 hover:border-zinc-600 rounded-md"
     >
-      {children}
+      {label ?? children}
     </button>
   );
 }
