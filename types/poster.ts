@@ -23,6 +23,14 @@ export type CanvasSize =
 
 export type ImageSource = "generate" | "upload" | "reference";
 
+/**
+ * Single source of truth for what drives the visual style of the poster.
+ * "preset"    — the selected StyleRecipe drives all design decisions.
+ * "reference" — uploaded reference images drive all design decisions;
+ *               the selected preset is NOT sent to the model.
+ */
+export type StyleSource = "preset" | "reference";
+
 export type ImageStyle =
   | "cinematic-photography"
   | "abstract"
@@ -256,6 +264,11 @@ export interface PosterSetupConfig {
   customHeight?: number;
   language: Language;
   styleRecipe: StyleRecipe;
+  /**
+   * Which source drives the visual style sent to the model.
+   * Defaults to "preset" for backward compatibility when absent.
+   */
+  styleSource?: StyleSource;
   imageSource: ImageSource;
   imageStyle: ImageStyle;
   customImagePrompt?: string;

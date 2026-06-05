@@ -3,7 +3,7 @@ import type { PosterSetupConfig, PosterLayer, CanvasConfig, CanvasSize, DesignBr
 import { CANVAS_SIZES } from "@/types/poster";
 import { v4 as uuidv4 } from "uuid";
 import { mockLayout } from "@/lib/mockLayout";
-import { buildReferenceSection } from "@/lib/referencePrompt";
+import { buildReferenceSection, buildReferenceStyleInstruction } from "@/lib/referencePrompt";
 import type { EnrichedRefCtx } from "@/lib/referencePrompt";
 
 function getCanvasConfig(setup: PosterSetupConfig): CanvasConfig {
@@ -122,16 +122,48 @@ function buildUserPrompt(
   canvas: CanvasConfig,
   reference?: EnrichedRefCtx,
 ): string {
-  const refSection = reference ? buildReferenceSection(reference, "layout") : "";
   const hasUserImage = !!(setup.imageSource === "upload" || setup.imageSource === "reference");
+
+  // ── Determine style source ─────────────────────────────────────────────────
+  const isReferenceMode =
+    setup.styleSource === "reference" &&
+    !!reference?.references &&
+    reference.references.length > 0;
+
+  // ── Server-side debug log (always emitted — check server stdout) ───────────
+  const debugInfo = {
+    styleSource:           setup.styleSource ?? "preset (default — styleSource not set)",
+    selectedPreset:        isReferenceMode ? "(SUPPRESSED — reference mode active)" : setup.styleRecipe,
+    referenceCount:        reference?.references?.length ?? 0,
+    referenceAnalysisExists: reference?.references?.some((r) => r.analysis != null) ?? false,
+    styleInstruction:      isReferenceMode ? "REFERENCE — preset recipe omitted from prompt" : "PRESET — recipe included in prompt",
+  };
+  console.log("[layout/route] ── STYLE SOURCE DEBUG ──");
+  console.log(JSON.stringify(debugInfo, null, 2));
+
+  // ── Build style section ────────────────────────────────────────────────────
+  let styleSection: string;
+
+  if (isReferenceMode) {
+    // Reference mode: build complete style spec from analysis, omit preset entirely
+    const instruction = buildReferenceStyleInstruction(reference!.references!);
+    styleSection = instruction || "STYLE SOURCE: REFERENCE IMAGE (analysis pending — preserve palette if extracted)";
+    console.log("[layout/route] Reference style instruction length:", styleSection.length, "chars");
+  } else {
+    // Preset mode: use recipe, optionally blend reference as supplementary guidance
+    styleSection = `Style recipe: "${setup.styleRecipe}"`;
+    if (reference) {
+      const refSection = buildReferenceSection(reference, "layout");
+      if (refSection) styleSection += "\n" + refSection;
+    }
+  }
 
   return `Design a professional poster layout.
 
 Canvas: ${canvas.width} × ${canvas.height}px
-Style recipe: "${setup.styleRecipe}"
+${styleSection}
 Concept: ${setup.prompt || "an intentionally designed poster"}
 ${setup.posterType && setup.posterType !== "poster" ? `Event type: ${setup.posterType}\n` : ""}User image provided: ${hasUserImage ? "YES — backgroundImage src will be filled later, design around it" : "NO — backgroundImage src will be AI-generated, design around the fluxPrompt atmosphere"}
-${refSection}
 
 Return ONLY this JSON structure (no markdown, no code fences):
 {

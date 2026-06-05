@@ -262,6 +262,123 @@ function buildLegacySection(
   return lines.join("\n");
 }
 
+// ── Reference-as-style-source ─────────────────────────────────────────────────
+
+/**
+ * Builds a COMPLETE style specification from reference image analysis.
+ * Used when styleSource === "reference" — this REPLACES the preset recipe entirely.
+ *
+ * The output covers all 8 dimensions needed by GPT-4o to generate without a recipe:
+ * typography, layout structure, image treatment, color palette, composition,
+ * mood, hierarchy, and poster genre signals.
+ */
+export function buildReferenceStyleInstruction(references: RefImageCtx[]): string {
+  const sorted = [...references].sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role]);
+  const primary = sorted.find((r) => r.role === "primary") ?? sorted[0];
+
+  if (!primary) return "";
+
+  const a = primary.analysis;
+  const p = primary.palette ?? [];
+
+  const lines: string[] = [
+    "═══════════════════════════════════════════════════════",
+    "STYLE SOURCE: REFERENCE IMAGE — NO PRESET RECIPE ACTIVE",
+    "Derive ALL design decisions from this analysis.",
+    "CRITICAL: The font pairing table in the system prompt is INACTIVE.",
+    "Choose fonts that match the reference typography, not any named recipe.",
+    "═══════════════════════════════════════════════════════",
+  ];
+
+  // ── Genre + overall aesthetic ──────────────────────────────────────────────
+  if (a?.styleClass)    lines.push(`Poster genre:     ${a.styleClass}`);
+  if (a?.visualSummary) lines.push(`Overall aesthetic: "${a.visualSummary}"`);
+  if (a?.mood)          lines.push(`Mood:             ${a.mood}`);
+  if (a?.brightness)    lines.push(`Brightness:       ${a.brightness}`);
+  if (a?.contrast)      lines.push(`Contrast:         ${a.contrast}`);
+
+  // ── Color palette (mandatory) ──────────────────────────────────────────────
+  if (p.length > 0) {
+    lines.push("");
+    lines.push("COLOR PALETTE — use only these colors, no exceptions:");
+    p.forEach((c) => lines.push(`  ${c.hex}  (${c.role})`));
+
+    const dominant = p[0]?.hex;
+    const accent   = p.find((c) => c.role === "accent")?.hex
+                  ?? p.find((c) => c.role === "highlight")?.hex
+                  ?? p[1]?.hex;
+    const body     = p.find((c) => c.role === "highlight")?.hex ?? p[2]?.hex;
+    if (dominant) lines.push(`  → solidBackground / dominant field: ${dominant}`);
+    if (accent)   lines.push(`  → accent / title fill:              ${accent}`);
+    if (body)     lines.push(`  → body / secondary fill:            ${body}`);
+    if (a?.palette?.length) lines.push(`  Vision-confirmed: ${a.palette.join(", ")}`);
+  }
+
+  // ── Layout / composition ───────────────────────────────────────────────────
+  if (a?.composition) {
+    lines.push("");
+    lines.push("LAYOUT STRUCTURE — mirror this spatial hierarchy exactly:");
+    lines.push(`  "${a.composition}"`);
+  }
+
+  // ── Typography system ──────────────────────────────────────────────────────
+  lines.push("");
+  if (a?.typographyExtract) {
+    const te = a.typographyExtract;
+    lines.push("TYPOGRAPHY — match these parameters:");
+    lines.push(`  Hierarchy:   ${te.hierarchy}   (how text blocks relate in scale)`);
+    lines.push(`  Alignment:   ${te.alignment}`);
+    lines.push(`  Orientation: ${te.orientation}`);
+    lines.push(`  Scale:       ${te.scale}`);
+    lines.push(`  Spacing:     ${te.spacing}`);
+    lines.push(`  Density:     ${te.density}`);
+    lines.push(`  Positioning: ${te.positioning}`);
+    lines.push(`  Style:       ${te.style}  → choose fonts that embody this aesthetic`);
+    lines.push(`  Rotation:    ${te.rotation}`);
+    if (a.typographyStyle && a.typographyStyle !== "no text visible") {
+      lines.push(`  Raw description: "${a.typographyStyle}"`);
+    }
+  } else if (a?.typographyStyle && a.typographyStyle !== "no text visible") {
+    lines.push("TYPOGRAPHY:");
+    lines.push(`  "${a.typographyStyle}"`);
+  } else {
+    lines.push("TYPOGRAPHY: no text detected in reference — design clean typographic hierarchy");
+  }
+
+  // ── Image treatment ────────────────────────────────────────────────────────
+  lines.push("");
+  lines.push("IMAGE TREATMENT:");
+  if (a?.shapes)  lines.push(`  Geometry/shapes: "${a.shapes}"`);
+  if (a?.blurMap) lines.push(`  Blur map:        "${a.blurMap}"`);
+  if (a?.texture) lines.push(`  Surface texture: "${a.texture}"`);
+  if (a?.lighting)lines.push(`  Lighting:        "${a.lighting}"`);
+
+  // ── Secondary / accent references ─────────────────────────────────────────
+  if (sorted.length > 1) {
+    lines.push("");
+    lines.push("SUPPLEMENTARY REFERENCES:");
+    for (let i = 1; i < sorted.length; i++) {
+      const ref = sorted[i];
+      const ra = ref.analysis;
+      const rp = ref.palette ?? [];
+      lines.push(`  [${ref.role.toUpperCase()}]:`);
+      if (ra?.visualSummary) lines.push(`    Visual: "${ra.visualSummary}"`);
+      if (ra?.mood)          lines.push(`    Mood: ${ra.mood}`);
+      if (rp.length > 0)     lines.push(`    Accent colors: ${rp.slice(0, 3).map((c) => c.hex).join(", ")}`);
+    }
+  }
+
+  // ── Forbidden terms ────────────────────────────────────────────────────────
+  const forbidden = a?.forbiddenDrift ?? [];
+  if (forbidden.length > 0) {
+    lines.push("");
+    lines.push("FORBIDDEN — output must NEVER become any of these:");
+    forbidden.forEach((f) => lines.push(`  - ${f}`));
+  }
+
+  return lines.join("\n");
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**

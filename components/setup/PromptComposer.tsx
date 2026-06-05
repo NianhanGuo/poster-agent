@@ -12,6 +12,7 @@ import type {
   PosterType,
   Language,
   StyleRecipe,
+  StyleSource,
   CanvasSize,
   ImageSource,
   ImageStyle,
@@ -112,6 +113,7 @@ export function PromptComposer() {
     canvasSize:  "a4",
     language:    "en",
     styleRecipe: "cinematic-rain",
+    styleSource: "preset",
     imageSource: "generate",
     imageStyle:  "cinematic-photography",
     prompt:      "",
@@ -176,9 +178,40 @@ export function PromptComposer() {
     setRefImages((prev) => prev.filter((r) => r.id !== id));
   }
 
+  /**
+   * Builds the reference context sent to the API.
+   * In "reference" style mode: builds the full `references` array so
+   * `buildReferenceStyleInstruction()` on the server can synthesize a complete
+   * style spec. All targets are enabled — the reference drives everything.
+   * In "preset" style mode: builds the legacy flat format for blended guidance.
+   */
   function buildRefCtx() {
     if (refImages.length === 0) return undefined;
 
+    const isRefMode = cfg.styleSource === "reference";
+
+    if (isRefMode) {
+      // Reference mode: full multi-ref format with all targets active
+      const allTargets = {
+        mood: true, color: true, backgroundStyle: true,
+        typography: true, layout: true, texture: true, lighting: true,
+      };
+      return {
+        strength: 100,
+        targets: allTargets,
+        references: refImages.map((img, i) => ({
+          id: img.id,
+          mode: "strict" as const,
+          role: (i === 0 ? "primary" : i === 1 ? "secondary" : "accent") as "primary" | "secondary" | "accent",
+          strength: 100,
+          targets: allTargets,
+          palette: img.palette,
+          analysis: img.analysis,
+        })),
+      };
+    }
+
+    // Preset mode: legacy flat format — blended guidance only
     const merged: PaletteColor[] = [];
     for (const img of refImages) {
       for (const color of img.palette) {
@@ -198,24 +231,42 @@ export function PromptComposer() {
         }
       }
     }
-
-    const analysis = refImages[0]?.analysis ?? null;
     return {
       strength: refStrength,
       targets: refTargets,
       palette: merged,
-      analysis,
+      analysis: refImages[0]?.analysis ?? null,
       instruction: `${refImages.length} reference image${refImages.length > 1 ? "s" : ""} provided`,
     };
   }
 
-  const noTargetsSelected = refImages.length > 0 && !Object.values(refTargets).some(Boolean);
+  const noTargetsSelected =
+    cfg.styleSource !== "reference" &&
+    refImages.length > 0 &&
+    !Object.values(refTargets).some(Boolean);
+
   const analysisAvailable = refImages.some((r) => r.analysis !== null);
 
   async function generate() {
     setBusy(true);
     setError("");
     const refCtx = buildRefCtx();
+
+    // Client-side debug — visible in browser DevTools console
+    console.group("[PromptComposer] Generation debug");
+    console.log("styleSource:    ", cfg.styleSource ?? "preset (default)");
+    console.log("selectedPreset: ", cfg.styleSource === "reference" ? "(SUPPRESSED)" : cfg.styleRecipe);
+    console.log("referenceAnalysisExists:", refImages.some((r) => r.analysis != null));
+    console.log("refCtx.references:", (refCtx as { references?: unknown })?.references ?? "(none — legacy format)");
+    console.log("full refCtx:", refCtx);
+    console.groupEnd();
+
+    // Guard: warn if reference mode selected but no images uploaded
+    if (cfg.styleSource === "reference" && refImages.length === 0) {
+      setError("Upload at least one reference poster before generating in reference style mode.");
+      setBusy(false);
+      return;
+    }
 
     try {
       const layoutRes = await fetch("/api/generate/layout", {
@@ -302,192 +353,238 @@ export function PromptComposer() {
             />
           </div>
 
-          {/* ── Style ────────────────────────────────────────────────────── */}
+          {/* ── Style source — explicit single choice ────────────────────── */}
           <div className={t.gap.group}>
-            <SectionLabel>Style</SectionLabel>
-            <div className="flex flex-wrap gap-2">
-              {RECIPE_LIST.map((r) => (
-                <Chip
-                  key={r.id}
-                  active={cfg.styleRecipe === r.id}
-                  onClick={() => set({ styleRecipe: r.id as StyleRecipe })}
-                >
-                  {r.name}
-                </Chip>
-              ))}
+            <SectionLabel>Style source</SectionLabel>
+            <p className={`${t.mutedText} -mt-1`}>
+              Choose where the visual style comes from.
+            </p>
+
+            {/* Source selector */}
+            <div className="grid grid-cols-2 gap-2">
+              {(
+                [
+                  {
+                    value: "preset" as StyleSource,
+                    label: "Preset",
+                    desc: "Pick from 8 curated design recipes",
+                  },
+                  {
+                    value: "reference" as StyleSource,
+                    label: "Reference image",
+                    desc: "Upload a poster — AI extracts and applies its style",
+                  },
+                ] as const
+              ).map(({ value, label, desc }) => {
+                const active = cfg.styleSource === value;
+                return (
+                  <button
+                    key={value}
+                    onClick={() => set({ styleSource: value })}
+                    className={`text-left px-3 py-2.5 rounded-lg border transition-all ${
+                      active
+                        ? "border-zinc-400 bg-zinc-900 text-zinc-100"
+                        : "border-zinc-800 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300"
+                    }`}
+                  >
+                    <div className={`${t.scale.base} font-semibold mb-0.5`}>{label}</div>
+                    <div className={`${t.scale.xs} leading-snug opacity-70`}>{desc}</div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          {/* ── Image ────────────────────────────────────────────────────── */}
-          <div className={t.gap.group}>
-            <SectionLabel>Image</SectionLabel>
-            <div className="flex gap-2">
-              {(["generate", "upload", "reference"] as ImageSource[]).map((s) => (
-                <Chip key={s} active={cfg.imageSource === s} onClick={() => set({ imageSource: s })}>
-                  {s.charAt(0).toUpperCase() + s.slice(1)}
-                </Chip>
-              ))}
-            </div>
-
-            {cfg.imageSource === "generate" && (
-              <div className="flex flex-wrap gap-2 pt-1">
-                {IMAGE_STYLES.map((s) => (
+          {/* ── Preset recipe (only when styleSource === "preset") ────────── */}
+          {cfg.styleSource !== "reference" && (
+            <div className={t.gap.group}>
+              <SectionLabel>Style</SectionLabel>
+              <div className="flex flex-wrap gap-2">
+                {RECIPE_LIST.map((r) => (
                   <Chip
-                    key={s.value}
-                    active={cfg.imageStyle === s.value}
-                    onClick={() => set({ imageStyle: s.value })}
-                    small
+                    key={r.id}
+                    active={cfg.styleRecipe === r.id}
+                    onClick={() => set({ styleRecipe: r.id as StyleRecipe })}
                   >
-                    {s.label}
+                    {r.name}
                   </Chip>
                 ))}
               </div>
-            )}
-
-            {cfg.imageSource === "generate" && cfg.imageStyle === "custom" && (
-              <input
-                type="text"
-                value={cfg.customImagePrompt ?? ""}
-                onChange={(e) => set({ customImagePrompt: e.target.value })}
-                placeholder="Describe the image style…"
-                className={t.input.underline}
-              />
-            )}
-          </div>
-
-          {/* ── Reference images ─────────────────────────────────────────── */}
-          <div className={t.gap.group}>
-            <SectionLabel optional>Reference images</SectionLabel>
-
-            <div
-              {...getRefRootProps()}
-              className={`py-4 text-center border border-dashed rounded-md cursor-pointer transition-colors ${
-                isRefDragActive
-                  ? "border-zinc-500 bg-zinc-900/50"
-                  : "border-zinc-800 hover:border-zinc-600"
-              }`}
-            >
-              <input {...getRefInputProps()} />
-              <span className={`${t.mutedText} font-mono`}>
-                {refExtracting
-                  ? "analyzing…"
-                  : isRefDragActive
-                  ? "drop"
-                  : "drop images here, or click to browse"}
-              </span>
             </div>
+          )}
 
-            {noTargetsSelected && (
-              <div className={`flex items-center gap-2 ${t.scale.xs} font-mono text-amber-600/80`}>
-                <span>⚠</span>
-                <span>Reference image not applied — select at least one target below</span>
+          {/* ── Reference style upload (only when styleSource === "reference") */}
+          {cfg.styleSource === "reference" && (
+            <div className={t.gap.group}>
+              <SectionLabel>Reference poster</SectionLabel>
+              <p className={`${t.mutedText} -mt-1`}>
+                Upload a poster whose style you want to replicate. The AI will analyze typography,
+                layout, color palette, image treatment, composition, and mood — and use that as the
+                complete style specification. No preset recipe will be applied.
+              </p>
+
+              {/* Drop zone */}
+              <div
+                {...getRefRootProps()}
+                className={`py-5 text-center border border-dashed rounded-lg cursor-pointer transition-colors ${
+                  isRefDragActive
+                    ? "border-zinc-400 bg-zinc-800/30"
+                    : refImages.length > 0
+                    ? "border-zinc-700 hover:border-zinc-500"
+                    : "border-zinc-800 hover:border-zinc-600"
+                }`}
+              >
+                <input {...getRefInputProps()} />
+                <div className="space-y-1">
+                  <div className={`${t.scale.base} font-medium text-zinc-400`}>
+                    {refExtracting
+                      ? "Analyzing style…"
+                      : isRefDragActive
+                      ? "Drop to analyze"
+                      : refImages.length > 0
+                      ? "Drop another poster to add"
+                      : "Drop a poster here, or click to browse"}
+                  </div>
+                  {!refExtracting && refImages.length === 0 && (
+                    <div className={`${t.mutedText}`}>JPG, PNG · up to 5 posters</div>
+                  )}
+                </div>
               </div>
-            )}
 
-            {refImages.length > 0 && (
-              <>
-                <div className="flex gap-1.5 flex-wrap">
-                  {refImages.map((img) => (
-                    <div key={img.id} className="relative group w-14 h-14 flex-none">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={img.url}
-                        alt="reference"
-                        className="w-full h-full object-cover rounded-md border border-zinc-800/60"
-                      />
-                      <span
-                        className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full"
-                        style={{
-                          background: img.analysis ? "#4ade80" : img.analysisError ? "#f59e0b" : "#52525b",
-                        }}
-                        title={img.analysis ? "Vision analysis complete" : (img.analysisError || "Analyzing…")}
-                      />
-                      <button
-                        onClick={() => removeRefImage(img.id)}
-                        className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-zinc-800 text-zinc-400 font-mono text-[9px] items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity flex"
-                      >×</button>
-                      {img.palette.length > 0 && (
-                        <div className="absolute bottom-0 left-0 right-0 flex rounded-b-md overflow-hidden">
-                          {img.palette.slice(0, 5).map((c, i) => (
-                            <div key={i} className="flex-1 h-1" style={{ background: c.hex }} />
-                          ))}
+              {/* Uploaded thumbnails + analysis status */}
+              {refImages.length > 0 && (
+                <div className={t.gap.tight}>
+                  <div className="flex gap-2 flex-wrap">
+                    {refImages.map((img) => (
+                      <div key={img.id} className="relative group flex-none" style={{ width: 56 }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={img.url}
+                          alt="reference"
+                          className="w-full rounded-md border border-zinc-800/60 object-cover"
+                          style={{ aspectRatio: "3/4" }}
+                        />
+                        {/* Analysis status dot */}
+                        <span
+                          className="absolute top-1 right-1 w-2 h-2 rounded-full border border-zinc-900"
+                          style={{
+                            background: img.analysis ? "#4ade80" : img.analysisError ? "#f59e0b" : "#71717a",
+                          }}
+                          title={img.analysis ? "Style analyzed" : (img.analysisError || "Analyzing…")}
+                        />
+                        {/* Palette strip */}
+                        {img.palette.length > 0 && (
+                          <div className="absolute bottom-0 left-0 right-0 flex rounded-b-md overflow-hidden h-1">
+                            {img.palette.slice(0, 5).map((c, i) => (
+                              <div key={i} className="flex-1" style={{ background: c.hex }} />
+                            ))}
+                          </div>
+                        )}
+                        {/* Remove */}
+                        <button
+                          onClick={() => removeRefImage(img.id)}
+                          className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-300 text-[9px] items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity flex"
+                        >×</button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Analysis summary line */}
+                  <div className="flex items-center justify-between pt-1">
+                    <span className={`${t.scale.xs} font-mono ${
+                      analysisAvailable ? "text-green-400/80" : "text-zinc-600"
+                    }`}>
+                      {analysisAvailable
+                        ? `✓ Style analyzed — ${refImages.filter((r) => r.analysis).length}/${refImages.length} poster${refImages.length > 1 ? "s" : ""}`
+                        : refImages[0]?.analysisError
+                        ? `⚠ ${refImages[0].analysisError}`
+                        : "Analyzing…"}
+                    </span>
+                    <button
+                      onClick={() => setShowDebug((v) => !v)}
+                      className={`${t.scale.xs} font-mono text-zinc-700 hover:text-zinc-500 transition-colors`}
+                    >
+                      {showDebug ? "hide debug" : "debug output"}
+                    </button>
+                  </div>
+
+                  {/* Debug panel */}
+                  {showDebug && (
+                    <div className="rounded-md p-2.5 space-y-1 font-mono bg-zinc-950 border border-zinc-800/60">
+                      <div className={`${t.scale.xs} text-zinc-500 uppercase tracking-widest mb-1`}>debug — style extraction</div>
+                      <div className={`${t.scale.xs} text-zinc-600`}>
+                        styleSource: <span className="text-green-400/80">reference</span> · preset: <span className="text-red-400/70">suppressed</span>
+                      </div>
+                      {refImages.map((img, i) => (
+                        <div key={img.id} className={`${t.scale.xs} text-zinc-600`}>
+                          [img {i + 1}]
+                          {img.analysis
+                            ? ` ✓ ${img.analysis.styleClass} · ${img.analysis.mood}`
+                            : img.analysisError
+                            ? ` ⚠ ${img.analysisError}`
+                            : " analyzing…"}
+                          {img.palette.length > 0 && ` · palette: ${img.palette.slice(0, 3).map((p) => p.hex).join(", ")}`}
                         </div>
+                      ))}
+                      {refImages[0]?.analysis && (
+                        <>
+                          <div className={`${t.scale.xs} text-zinc-600 pt-1`}>visual summary: {refImages[0].analysis.visualSummary}</div>
+                          <div className={`${t.scale.xs} text-zinc-600`}>composition: {refImages[0].analysis.composition}</div>
+                          <div className={`${t.scale.xs} text-zinc-600`}>typography: {refImages[0].analysis.typographyStyle}</div>
+                        </>
                       )}
                     </div>
-                  ))}
+                  )}
                 </div>
+              )}
 
-                <div className="flex items-center justify-between">
-                  <span className={`${t.mutedText} font-mono`}>
-                    {analysisAvailable
-                      ? `● Vision analysis complete — ${Object.values(refTargets).filter(Boolean).length} target${Object.values(refTargets).filter(Boolean).length !== 1 ? "s" : ""} active`
-                      : refImages[0]?.analysisError
-                      ? `⚠ ${refImages[0].analysisError}`
-                      : "Analyzing…"}
-                  </span>
-                  <button
-                    onClick={() => setShowDebug((v) => !v)}
-                    className={`${t.scale.xs} font-mono text-zinc-700 hover:text-zinc-500 transition-colors`}
-                  >
-                    {showDebug ? "hide debug" : "debug"}
-                  </button>
-                </div>
+              {/* Warning: no images uploaded yet */}
+              {refImages.length === 0 && !refExtracting && (
+                <p className={`${t.scale.xs} font-mono text-amber-600/70`}>
+                  ⚠ Upload at least one reference poster before generating.
+                </p>
+              )}
+            </div>
+          )}
 
-                {showDebug && (
-                  <div className="rounded-md p-2.5 space-y-1.5 font-mono bg-zinc-950 border border-zinc-800/60">
-                    <div className={`${t.scale.xs} text-zinc-600`}>Images: {refImages.length} · Strength: {refStrength}%</div>
-                    <div className={`${t.scale.xs} text-zinc-600`}>Targets: {Object.entries(refTargets).filter(([,v])=>v).map(([k])=>k).join(", ") || "none"}</div>
-                    {refImages[0]?.palette.length > 0 && (
-                      <div className={`${t.scale.xs} text-zinc-600`}>Palette: {refImages[0].palette.map((p) => p.hex).join(", ")}</div>
-                    )}
-                    {refImages[0]?.analysis && (
-                      <>
-                        <div className={`${t.scale.xs} text-zinc-600`}>── Vision analysis ──</div>
-                        <div className={`${t.scale.xs} text-zinc-600`}>Summary: {refImages[0].analysis.visualSummary}</div>
-                        <div className={`${t.scale.xs} text-zinc-600`}>Mood: {refImages[0].analysis.mood}</div>
-                        <div className={`${t.scale.xs} text-zinc-600`}>Composition: {refImages[0].analysis.composition}</div>
-                      </>
-                    )}
-                    {refImages[0]?.analysisError && (
-                      <div className={`${t.scale.xs} text-amber-600/70`}>⚠ {refImages[0].analysisError}</div>
-                    )}
-                  </div>
-                )}
+          {/* ── Image source (only shown in preset mode) ─────────────────── */}
+          {cfg.styleSource !== "reference" && (
+            <div className={t.gap.group}>
+              <SectionLabel>Image</SectionLabel>
+              <div className="flex gap-2">
+                {(["generate", "upload"] as ImageSource[]).map((s) => (
+                  <Chip key={s} active={cfg.imageSource === s} onClick={() => set({ imageSource: s })}>
+                    {s === "generate" ? "AI generate" : "Upload"}
+                  </Chip>
+                ))}
+              </div>
 
-                {/* Influence strength */}
-                <div className={t.gap.tight}>
-                  <div className="flex items-center justify-between">
-                    <span className={t.controlLabel}>Influence</span>
-                    <span className={t.monoNumber}>
-                      {refStrength}%
-                      {refStrength >= 71 ? " strict" : refStrength >= 31 ? " noticeable" : " loose"}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0} max={100}
-                    value={refStrength}
-                    onChange={(e) => setRefStrength(Number(e.target.value))}
-                    className="w-full cursor-pointer accent-zinc-400"
-                  />
-                </div>
-
-                {/* Targets */}
-                <div className="flex flex-wrap gap-1.5">
-                  {REF_TARGET_OPTIONS.map((target) => (
+              {cfg.imageSource === "generate" && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {IMAGE_STYLES.map((s) => (
                     <Chip
-                      key={target.key}
-                      active={refTargets[target.key]}
-                      onClick={() => setRefTargets((prev) => ({ ...prev, [target.key]: !prev[target.key] }))}
+                      key={s.value}
+                      active={cfg.imageStyle === s.value}
+                      onClick={() => set({ imageStyle: s.value })}
                       small
                     >
-                      {target.label}
+                      {s.label}
                     </Chip>
                   ))}
                 </div>
-              </>
-            )}
-          </div>
+              )}
+
+              {cfg.imageSource === "generate" && cfg.imageStyle === "custom" && (
+                <input
+                  type="text"
+                  value={cfg.customImagePrompt ?? ""}
+                  onChange={(e) => set({ customImagePrompt: e.target.value })}
+                  placeholder="Describe the image style…"
+                  className={t.input.underline}
+                />
+              )}
+            </div>
+          )}
 
           {/* ── Language + Canvas ────────────────────────────────────────── */}
           <div className="grid grid-cols-2 gap-8">
