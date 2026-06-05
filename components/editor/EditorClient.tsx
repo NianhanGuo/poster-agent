@@ -32,8 +32,6 @@ const DEFAULT_TARGETS: ReferenceTargets = {
 type LeftTab = "layers" | "assets" | "reference";
 type GenMode = "full" | "image" | "type";
 
-const PANEL_BG = "#0b0b0d";
-const BORDER   = "rgba(255,255,255,0.07)";
 
 export function EditorClient() {
   const {
