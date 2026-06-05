@@ -283,8 +283,8 @@ export function buildReferenceStyleInstruction(references: RefImageCtx[]): strin
 
   const lines: string[] = [
     "═══════════════════════════════════════════════════════",
-    "STYLE SOURCE: REFERENCE IMAGE — NO PRESET RECIPE ACTIVE",
-    "Derive ALL design decisions from this analysis.",
+    "REFERENCE STYLE TO FOLLOW — NO PRESET RECIPE ACTIVE",
+    "ALL design decisions must be derived from this analysis.",
     "CRITICAL: The font pairing table in the system prompt is INACTIVE.",
     "Choose fonts that match the reference typography, not any named recipe.",
     "═══════════════════════════════════════════════════════",
@@ -368,12 +368,20 @@ export function buildReferenceStyleInstruction(references: RefImageCtx[]): strin
     }
   }
 
+  // ── Affirmative rules extracted from reference ─────────────────────────────
+  const rulesTo = a?.rulesToFollow ?? [];
+  if (rulesTo.length > 0) {
+    lines.push("");
+    lines.push("RULES TO FOLLOW (extracted from reference — apply exactly):");
+    rulesTo.forEach((r) => lines.push(`  ✓ ${r}`));
+  }
+
   // ── Forbidden terms ────────────────────────────────────────────────────────
   const forbidden = a?.forbiddenDrift ?? [];
   if (forbidden.length > 0) {
     lines.push("");
-    lines.push("FORBIDDEN — output must NEVER become any of these:");
-    forbidden.forEach((f) => lines.push(`  - ${f}`));
+    lines.push("RULES TO AVOID (must NEVER appear in output):");
+    forbidden.forEach((f) => lines.push(`  ✗ ${f}`));
   }
 
   return lines.join("\n");

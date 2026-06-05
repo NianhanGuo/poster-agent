@@ -352,7 +352,8 @@ export interface ReferenceAnalysis {
   brightness: "light" | "medium" | "dark";
   contrast: "low" | "medium" | "high";
   styleClass: "abstract-poster" | "blurred-gradient" | "geometric-graphic" | "photographic" | "illustration" | "typographic";
-  forbiddenDrift: string[];  // auto-generated terms the output must never become
+  forbiddenDrift: string[];  // terms the output must NEVER become (negative constraints)
+  rulesToFollow: string[];   // explicit affirmative design rules derived from the reference
   typographyExtract?: TypographyExtract | null; // structured typography properties extracted from image
 }
 

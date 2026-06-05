@@ -279,15 +279,22 @@ export function PromptComposer() {
 
       let finalLayers = layers;
 
-      if (cfg.imageSource === "generate") {
+      const isRefMode = cfg.styleSource === "reference";
+
+      if (cfg.imageSource === "generate" || isRefMode) {
+        // In reference mode, always generate image from reference (imageSource may be "reference")
         const imgRes = await fetch("/api/generate/image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             prompt: imagePrompt,
-            styleRecipe: cfg.styleRecipe,
-            imageStyle: cfg.imageStyle,
-            customImagePrompt: cfg.customImagePrompt,
+            // IMPORTANT: only send styleRecipe in preset mode — reference mode must not receive it
+            ...(isRefMode ? {} : {
+              styleRecipe: cfg.styleRecipe,
+              imageStyle: cfg.imageStyle,
+              customImagePrompt: cfg.customImagePrompt,
+            }),
+            styleSource: cfg.styleSource ?? "preset",
             width: canvas.width,
             height: canvas.height,
             reference: refCtx,

@@ -75,6 +75,18 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+// ── Structured analysis insight row ──────────────────────────────────────────
+
+function InsightRow({ label, value }: { label: string; value: string }) {
+  if (!value || value === "no text visible") return null;
+  return (
+    <div className="flex items-start gap-2">
+      <span className="text-[10px] font-semibold text-zinc-600 w-20 flex-none pt-0.5 uppercase tracking-wide">{label}</span>
+      <span className="text-[11px] text-zinc-400 leading-relaxed flex-1 min-w-0">{value}</span>
+    </div>
+  );
+}
+
 // ── Analysis Insights Card ────────────────────────────────────────────────────
 
 function AnalysisInsights({ image }: { image: ReferenceImage }) {
@@ -83,51 +95,107 @@ function AnalysisInsights({ image }: { image: ReferenceImage }) {
   if (!a && !hasPalette) return null;
 
   return (
-    <div className="space-y-2">
-      {/* Palette chips */}
-      {hasPalette && (
+    <div className="space-y-3">
+
+      {/* Visual summary quote */}
+      {a?.visualSummary && (
+        <p className="text-[11px] text-zinc-400 italic leading-relaxed border-l-2 border-zinc-700 pl-2.5">
+          &ldquo;{a.visualSummary}&rdquo;
+        </p>
+      )}
+
+      {/* ── Color palette ──── */}
+      {(hasPalette || (a?.palette && a.palette.length > 0)) && (
         <div>
-          <div className="text-[10px] font-medium text-zinc-600 mb-1.5">Extracted palette</div>
-          <div className="flex gap-1 flex-wrap">
+          <div className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-1.5">Color palette</div>
+          <div className="flex gap-1 flex-wrap items-center">
             {image.palette.map((c) => (
-              <div
-                key={c.hex}
-                className="w-5 h-5 rounded-sm flex-none border border-zinc-900"
-                title={`${c.hex} · ${c.role}`}
-                style={{ background: c.hex }}
-              />
+              <div key={c.hex} title={`${c.hex} (${c.role})`}
+                className="w-6 h-6 rounded flex-none border border-zinc-900/80"
+                style={{ background: c.hex }} />
             ))}
-            <div className="flex items-center gap-1 ml-1 flex-wrap">
-              {image.palette.slice(0, 3).map((c) => (
-                <span key={c.hex} className="font-mono text-[9px] text-zinc-600">{c.hex}</span>
-              ))}
+          </div>
+          <div className="flex flex-wrap gap-x-2 mt-1">
+            {image.palette.map((c) => (
+              <span key={c.hex} className="font-mono text-[9px] text-zinc-600">{c.hex}</span>
+            ))}
+          </div>
+          {a?.palette && a.palette.length > 0 && (
+            <div className="text-[9px] text-zinc-700 font-mono mt-0.5">
+              vision: {a.palette.join("  ")}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Poster genre ──── */}
+      <div className="flex items-center gap-2">
+        {a?.styleClass && (
+          <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-300 border border-zinc-700/60">
+            {a.styleClass}
+          </span>
+        )}
+        {a?.brightness && (
+          <span className="text-[10px] text-zinc-600 font-mono">{a.brightness}</span>
+        )}
+        {a?.contrast && (
+          <span className="text-[10px] text-zinc-600 font-mono">{a.contrast} contrast</span>
+        )}
+      </div>
+
+      {/* ── Structured fields ──── */}
+      <div className="space-y-1.5">
+        <InsightRow label="Mood"        value={a?.mood ?? ""} />
+        <InsightRow label="Composition" value={a?.composition ?? ""} />
+        <InsightRow label="Typography"  value={a?.typographyStyle ?? ""} />
+        <InsightRow label="Geometry"    value={a?.shapes ?? ""} />
+        <InsightRow label="Blur map"    value={a?.blurMap ?? ""} />
+        <InsightRow label="Texture"     value={a?.texture ?? ""} />
+        <InsightRow label="Lighting"    value={a?.lighting ?? ""} />
+      </div>
+
+      {/* ── Typography extract (structured) ──── */}
+      {a?.typographyExtract && (
+        <div>
+          <div className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-1.5">Typography system</div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+            {(Object.entries(a.typographyExtract) as [string, string][]).map(([k, v]) => (
+              <div key={k} className="flex items-center gap-1.5">
+                <span className="text-[9px] text-zinc-700 font-mono w-14 flex-none">{k}</span>
+                <span className="text-[10px] text-zinc-500">{v}</span>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {/* Style class badge */}
-      {a?.styleClass && (
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] font-medium text-zinc-600">Style</span>
-          <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-300 border border-zinc-700/60">
-            {a.styleClass}
-          </span>
+      {/* ── Rules to follow ──── */}
+      {a?.rulesToFollow && a.rulesToFollow.length > 0 && (
+        <div>
+          <div className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-1.5">Rules to follow</div>
+          <ul className="space-y-1">
+            {a.rulesToFollow.map((rule, i) => (
+              <li key={i} className="flex items-start gap-1.5">
+                <span className="text-green-500/70 text-[10px] flex-none mt-0.5">✓</span>
+                <span className="text-[11px] text-zinc-400 leading-snug">{rule}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
-      {/* Visual summary */}
-      {a?.visualSummary && (
-        <div className="text-[11px] text-zinc-500 italic leading-relaxed border-l-2 border-zinc-800 pl-2">
-          &ldquo;{a.visualSummary}&rdquo;
-        </div>
-      )}
-
-      {/* Typography note */}
-      {a?.typographyStyle && a.typographyStyle !== "no text visible" && (
-        <div className="flex items-start gap-2">
-          <span className="text-[10px] font-medium text-zinc-600 flex-none">Type</span>
-          <span className="text-[10px] text-zinc-500">{a.typographyStyle}</span>
+      {/* ── Rules to avoid ──── */}
+      {a?.forbiddenDrift && a.forbiddenDrift.length > 0 && (
+        <div>
+          <div className="text-[10px] font-semibold text-zinc-600 uppercase tracking-wide mb-1.5">Rules to avoid</div>
+          <ul className="space-y-1">
+            {a.forbiddenDrift.map((rule, i) => (
+              <li key={i} className="flex items-start gap-1.5">
+                <span className="text-red-500/60 text-[10px] flex-none mt-0.5">✗</span>
+                <span className="text-[11px] text-zinc-500 leading-snug">{rule}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>
@@ -190,7 +258,7 @@ function RefImageCard({
   onUpdate: (updates: Partial<ReferenceImage>) => void;
   onRemove: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true); // default open so user can verify extraction
   const [showDebug, setShowDebug] = useState(false);
   const analysisReady = !image.analyzing && (image.analysis !== null || image.palette.length > 0);
 
@@ -814,6 +882,14 @@ export function ReferencePanel() {
         {/* ── Generate CTAs ────────────────────────────────────────────────── */}
         {project && hasImages && (
           <div className="space-y-2 pt-1 border-t border-zinc-800/60">
+
+            {/* Generation mode indicator */}
+            <div className="flex items-center gap-2 px-0.5 pb-1">
+              <div className="w-1.5 h-1.5 rounded-full bg-green-400 flex-none" />
+              <span className="text-[11px] font-medium text-zinc-400">
+                Reference style active · preset suppressed
+              </span>
+            </div>
 
             {/* Apply palette to text */}
             {hasPalette && (

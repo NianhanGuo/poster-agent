@@ -32,7 +32,8 @@ Return exactly this JSON (all fields required):
   "brightness": "light",
   "contrast": "low",
   "styleClass": "abstract-poster",
-  "forbiddenDrift": ["term1", "term2", "term3"]
+  "forbiddenDrift": ["term1", "term2", "term3"],
+  "rulesToFollow": ["rule1", "rule2", "rule3"]
 }
 
 FIELD RULES:
@@ -83,7 +84,26 @@ Examples:
   — dark/moody photograph → ["white background", "pastel graphic", "flat illustration", "bright overexposed look"]
   — photographic image → ["abstract blob", "flat graphic design", "typographic poster"]
 
-Be specific and concrete — these drive hard constraints in an AI image generator.`;
+Be specific and concrete — these drive hard constraints in an AI image generator.
+
+rulesToFollow: list exactly 5–8 explicit, affirmative design rules that MUST be followed to replicate this poster's aesthetic.
+These are positive constraints. Each rule must be actionable and specific.
+Each rule must begin with a verb and describe a concrete visual decision.
+Examples for a dark typographic poster:
+  ["Use a black or very dark background (brightness: dark)",
+   "Apply high contrast between background and foreground elements",
+   "Center-align dominant text at large scale (>60% canvas width)",
+   "Use tight letter-spacing on headline text",
+   "Keep the palette to 2–3 colors maximum",
+   "Render the background as flat color with minimal texture",
+   "Position primary text in the bottom third"]
+Examples for an abstract blurred poster:
+  ["Generate soft-focus abstract color fields with no recognizable objects",
+   "Use the extracted palette as the ONLY color source",
+   "Apply heavy blur and gradient transitions throughout",
+   "Maintain low contrast with gentle tonal gradations",
+   "Occupy at least 60% of the frame with the dominant color",
+   "Leave generous negative space in the upper third"]`;
 
 const HIERARCHY_VALUES  = ["dominant-title", "distributed", "minimal", "dense"] as const;
 const ALIGNMENT_VALUES  = ["center", "left", "mixed", "edge-aligned"] as const;
@@ -173,6 +193,7 @@ export async function POST(req: NextRequest) {
       styleClass:      ["abstract-poster","blurred-gradient","geometric-graphic","photographic","illustration","typographic"].includes(raw.styleClass)
                          ? raw.styleClass : "abstract-poster",
       forbiddenDrift:  Array.isArray(raw.forbiddenDrift) ? raw.forbiddenDrift : [],
+      rulesToFollow:   Array.isArray(raw.rulesToFollow)  ? raw.rulesToFollow  : [],
       typographyExtract: normaliseTypographyExtract(raw.typographyExtract),
     };
 

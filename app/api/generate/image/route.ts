@@ -145,7 +145,7 @@ function buildImagePrompt(
 // ─── Route handler ────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
-  const { prompt, fluxPrompt, styleRecipe, style, width, height, brief, reference } = await req.json();
+  const { prompt, fluxPrompt, styleRecipe, style, styleSource, width, height, brief, reference } = await req.json();
   const recipe = styleRecipe ?? style ?? "cinematic-rain";
 
   if (!process.env.FAL_KEY) {
@@ -156,8 +156,11 @@ export async function POST(req: NextRequest) {
   const refCtx = reference as EnrichedRefCtx | undefined;
   const hardMode = refCtx ? isHardConstraintMode(refCtx) : false;
 
-  // Closing suffix — always appended to ensure no text in image
-  const refCtxForBrief = refCtx;
+  // Reference mode is active when styleSource === "reference" OR when references exist in hard mode
+  const isReferenceMode =
+    styleSource === "reference" ||
+    (hardMode && !!refCtx?.references && refCtx.references.length > 0);
+
   const spacePlacement = negativeSpacePlacement(brief as DesignBrief | undefined);
   const closingSuffix = [
     "No text, no letters, no typography, no words.",
@@ -165,30 +168,48 @@ export async function POST(req: NextRequest) {
     `Intentional empty negative space in the ${spacePlacement} for typography overlay.`,
   ].join(" ");
 
-  const recipeStyleDir = RECIPE_STYLE_DIRECTION[recipe] ?? "";
+  // CRITICAL: Recipe style direction is SUPPRESSED in reference mode.
+  // The reference analysis must drive the image, not the preset aesthetic.
+  const recipeStyleDir = isReferenceMode ? "" : (RECIPE_STYLE_DIRECTION[recipe] ?? "");
 
   let finalPrompt: string;
-  if (fluxPrompt) {
+
+  if (isReferenceMode && refCtx) {
+    // Reference mode: constraint block FIRST (max token weight), then fluxPrompt if GPT-4o provided one
+    const constraintBlock = buildImageConstraintPrefix(refCtx, prompt ?? fluxPrompt ?? "");
+    const basePrompt = fluxPrompt || buildImagePrompt(prompt ?? "", brief as DesignBrief | undefined, refCtx);
+    finalPrompt = [constraintBlock, basePrompt, closingSuffix, GRAPHIC_QUALITY_SUFFIX]
+      .filter(Boolean)
+      .join(" ");
+  } else if (fluxPrompt) {
+    // Preset mode with GPT-4o-generated fluxPrompt
     finalPrompt = [fluxPrompt, recipeStyleDir, closingSuffix, GRAPHIC_QUALITY_SUFFIX]
       .filter(Boolean)
       .join(" ");
   } else {
+    // Preset mode, no fluxPrompt — build from prompt + brief + reference
     const basePrompt = buildImagePrompt(
       prompt ?? "",
       brief as DesignBrief | undefined,
-      refCtxForBrief,
+      refCtx,
     );
     finalPrompt = [basePrompt, recipeStyleDir, GRAPHIC_QUALITY_SUFFIX]
       .filter(Boolean)
       .join(" ");
   }
 
-  if (process.env.NODE_ENV !== "production") {
-    console.log("[image/route] Hard constraint mode:", hardMode);
-    console.log("[image/route] Using fluxPrompt from layout:", !!fluxPrompt);
-    console.log("[image/route] Final Flux prompt length:", finalPrompt.length);
-    console.log("[image/route] Final prompt:\n", finalPrompt);
-  }
+  // Always log — visible in Next.js server stdout
+  console.log("[image/route] ── IMAGE GENERATION DEBUG ──");
+  console.log("[image/route] styleSource:       ", styleSource ?? "(not provided — defaults to preset)");
+  console.log("[image/route] isReferenceMode:   ", isReferenceMode);
+  console.log("[image/route] hardMode:          ", hardMode);
+  console.log("[image/route] recipe:            ", isReferenceMode ? "(SUPPRESSED)" : recipe);
+  console.log("[image/route] recipeStyleDir:    ", isReferenceMode ? "(SUPPRESSED)" : (recipeStyleDir ? recipeStyleDir.slice(0, 60) + "…" : "(none)"));
+  console.log("[image/route] fluxPrompt from layout:", !!fluxPrompt);
+  console.log("[image/route] reference.references count:", refCtx?.references?.length ?? 0);
+  console.log("[image/route] reference analysis exists:", refCtx?.references?.some((r: {analysis?: unknown}) => r.analysis != null) ?? false);
+  console.log("[image/route] Final prompt (" + finalPrompt.length + " chars):\n", finalPrompt);
+  console.log("[image/route] ──────────────────────────────");
 
   try {
     const { fal } = await import("@fal-ai/client");

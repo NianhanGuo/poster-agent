@@ -186,9 +186,23 @@ Return ONLY this JSON structure (no markdown, no code fences):
   ],
   "fonts": { "display": "Font Name", "body": "Font Name" },
   "palette": { "dominant": "#hex", "secondary": "#hex", "accent": "#hex", "background": "#hex" },
-  "fluxPrompt": "80-100 word atmospheric background description. No text, no typography, no letters. Pure atmospheric image only.",
+  "fluxPrompt": "<SEE INSTRUCTIONS BELOW>",
   "designRationale": "2 sentence explanation of key design decision and tension used"
 }
+
+FLUXPROMPT GENERATION RULES:
+If a REFERENCE STYLE TO FOLLOW section exists above:
+  → The fluxPrompt MUST describe an abstract background image that EXACTLY matches the reference:
+     - Use ONLY the reference color palette (hex values above)
+     - Reproduce the reference's blur treatment, depth-of-field character, and geometric structure
+     - Match the reference's brightness and contrast levels
+     - Match the reference's surface texture and lighting atmosphere
+     - Do NOT produce a cinematic scene, realistic landscape, or any subject the reference doesn't contain
+     - This prompt will be sent directly to Flux image generation — be concrete and specific
+  Example for a dark blurred abstract reference:
+    "Deep indigo and violet color field. Heavy blur throughout, no sharp edges. Radial gradient from deep purple center bleeding to transparent edges. Fine film grain overlay. Abstract, non-representational. Dark background. No objects, no faces, no text."
+If NO reference section exists (preset mode):
+  → Write an 80-100 word atmospheric background description matching the style recipe and concept.
 
 Layer type rules:
 - "solidBackground": use shapeData with shapeType "rect", fill = palette.background, stroke = "none", strokeWidth 0. x:0, y:0, width:canvasWidth, height:canvasHeight. zIndex 0.
@@ -249,6 +263,14 @@ export async function POST(req: NextRequest) {
     const userContent = buildUserPrompt(setup, canvas, reference)
       + (brief ? "\n\n" + buildBriefSection(brief) : "");
 
+    // Always log the full prompt — critical for debugging reference mode
+    console.log("[layout/route] ── GPT-4o LAYOUT PROMPT ──");
+    console.log("[layout/route] styleSource:", setup.styleSource ?? "preset (default)");
+    console.log("[layout/route] isReferenceMode:", setup.styleSource === "reference" && !!reference?.references?.length);
+    console.log("[layout/route] reference.references count:", reference?.references?.length ?? 0);
+    console.log("[layout/route] User prompt (" + userContent.length + " chars):\n", userContent.slice(0, 2000));
+    if (userContent.length > 2000) console.log("[layout/route] ... (truncated, full length:", userContent.length, ")");
+
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
       max_tokens: 4096,
@@ -260,6 +282,7 @@ export async function POST(req: NextRequest) {
     });
 
     const text = completion.choices[0]?.message?.content ?? "{}";
+    console.log("[layout/route] GPT-4o raw response length:", text.length, "chars");
     const parsed: {
       layers: PosterLayer[];
       fluxPrompt: string;
@@ -267,6 +290,9 @@ export async function POST(req: NextRequest) {
       fonts?: { display?: string; body?: string };
       palette?: { dominant: string; secondary: string; accent: string; background: string };
     } = JSON.parse(text);
+    console.log("[layout/route] fluxPrompt from GPT-4o:", parsed.fluxPrompt?.slice(0, 200));
+    console.log("[layout/route] palette from GPT-4o:", parsed.palette);
+    console.log("[layout/route] fonts from GPT-4o:", parsed.fonts);
 
     const newLayers = parsed.layers.map((l) => ({
       ...l,
