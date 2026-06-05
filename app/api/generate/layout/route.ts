@@ -5,6 +5,12 @@ import { v4 as uuidv4 } from "uuid";
 import { mockLayout } from "@/lib/mockLayout";
 import { buildReferenceSection, buildReferenceStyleInstruction, ROLE_ORDER } from "@/lib/referencePrompt";
 import type { EnrichedRefCtx, RefImageCtx } from "@/lib/referencePrompt";
+import {
+  validatePosterLayout,
+  formatIssuesForDirector,
+  summariseIssues,
+  type ValidationIssue,
+} from "@/lib/posterValidation";
 
 function getCanvasConfig(setup: PosterSetupConfig): CanvasConfig {
   if (setup.canvasSize === "custom") {
@@ -309,6 +315,108 @@ async function selfCheckLayout(
   };
 }
 
+// ─── Creative Director Agent ───────────────────────────────────────────────────
+
+/**
+ * Sends draft layers + validation issues to GPT-4o as a layout supervisor.
+ * The Director makes targeted repairs: moves/resizes layers, fixes margins,
+ * adjusts opacity and z-index. It does NOT redesign — only repairs listed issues.
+ *
+ * Returns corrected layers and a one-line summary of changes made.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function runCreativeDirector(
+  draftLayers: PosterLayer[],
+  issues: ValidationIssue[],
+  canvas: CanvasConfig,
+  concept: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  openai: any,
+): Promise<{ layers: PosterLayer[]; directorNotes: string }> {
+  const W = canvas.width;
+  const H = canvas.height;
+  const errorCount   = issues.filter((i) => i.severity === "error").length;
+  const warningCount = issues.filter((i) => i.severity === "warning").length;
+
+  const systemPrompt = `You are a Creative Director and Layout Supervisor reviewing a poster composition.
+Your task is to fix specific geometric layout issues in a poster layer JSON.
+You have expert-level knowledge of poster design, typography placement, and spatial composition.
+Return ONLY valid JSON — no markdown, no explanation.`;
+
+  const userPrompt = `CANVAS: ${W} × ${H}px
+SAFE MARGINS: 40px on all sides (text layers must stay within these)
+USER CONCEPT: "${concept || "poster"}"
+
+ISSUES TO FIX (${errorCount} errors, ${warningCount} warnings — fix ALL errors):
+${formatIssuesForDirector(issues)}
+
+CURRENT LAYERS (repair these and return all of them):
+${JSON.stringify(draftLayers, null, 2)}
+
+REPAIR RULES — apply exactly:
+
+For out-of-canvas errors:
+  x ≥ 0, y ≥ 0, x + width ≤ ${W}, y + height ≤ ${H}
+  For rotated layers: rotated AABB must also fit within canvas.
+    Estimated AABB width = layer.width × |cos(rotation°)| + layer.height × |sin(rotation°)|
+    If AABB overflows: reduce rotation toward 0° until it fits, OR shrink width/height.
+
+For safe-margin errors (text only):
+  x ≥ 40, y ≥ 40, x + width ≤ ${W - 40}, y + height ≤ ${H - 40}
+  If text is too wide: reduce width to ${W - 80}, then reduce fontSize proportionally.
+  If y is too low: move y up to ${H - 80} at most.
+
+For small-font warnings:
+  Increase fontSize to the minimum in the issue description.
+
+For low-opacity errors:
+  Set opacity ≥ 0.2.
+
+For focal-overlap warnings:
+  Reduce opacity of the decorative layer to ≤ 0.35.
+
+For z-order errors:
+  Set titleText zIndex ≥ solidBackground zIndex + 3.
+
+COMPOSITION PRINCIPLES (maintain):
+  - Title must remain the largest, most prominent text element
+  - Do NOT change layer types, textData.text content, or colors
+  - Do NOT move background layers (solidBackground, backgroundImage, noiseTexture)
+  - Maintain relative hierarchy: title above subtitle above metaText
+  - titleText fontSize must remain ≥ 32px after any adjustment
+  - All visible text layers must have opacity ≥ 0.15
+
+Return JSON: {
+  "layers": [ ...corrected full layers array — include ALL layers, not just changed ones... ],
+  "directorNotes": "one-line summary: which layers were changed and how"
+}`;
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o",
+    max_tokens: 4096,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user",   content: userPrompt },
+    ],
+  });
+
+  const text = completion.choices[0]?.message?.content ?? "{}";
+  const result = JSON.parse(text) as { layers?: PosterLayer[]; directorNotes?: string };
+
+  const repairedLayers = (result.layers ?? draftLayers).map((l) => ({
+    ...l,
+    id:      l.id      || uuidv4(),
+    visible: l.visible ?? true,
+    locked:  l.locked  ?? false,
+  }));
+
+  return {
+    layers:        repairedLayers,
+    directorNotes: result.directorNotes ?? "(no notes)",
+  };
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const setup: PosterSetupConfig = body.setup;
@@ -455,6 +563,84 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── Creative Director: validate draft layers + repair if needed ──────────
+    console.log("[layout/route] ═══ LAYOUT VALIDATION START ═══");
+    console.log("[layout/route] Draft layers:", resultLayers.length, "total");
+    console.log(
+      "[layout/route] Draft summary:",
+      resultLayers.map((l) => ({
+        type: l.type, label: l.label,
+        x: Math.round(l.x), y: Math.round(l.y),
+        w: Math.round(l.width), h: Math.round(l.height),
+        rot: l.rotation ?? 0, font: (l as PosterLayer).textData?.fontSize,
+        opacity: l.opacity,
+      })),
+    );
+
+    let validationIssues = validatePosterLayout(resultLayers as PosterLayer[], canvas);
+    console.log("[layout/route] Initial validation:", summariseIssues(validationIssues));
+    if (validationIssues.length > 0) {
+      console.log("[layout/route] Issues detail:", validationIssues.map((i) => `[${i.severity}] ${i.type}: ${i.message}`));
+    }
+
+    const MAX_REPAIR_ATTEMPTS = 2;
+    for (let attempt = 0; attempt < MAX_REPAIR_ATTEMPTS; attempt++) {
+      const errorCount = validationIssues.filter((i) => i.severity === "error").length;
+      if (errorCount === 0) break;
+
+      console.log(`[layout/route] ─── Director repair attempt ${attempt + 1}/${MAX_REPAIR_ATTEMPTS} — ${errorCount} error(s) ───`);
+      try {
+        const repair = await runCreativeDirector(
+          resultLayers as PosterLayer[],
+          validationIssues,
+          canvas,
+          setup.prompt ?? "",
+          openai,
+        );
+
+        console.log("[layout/route] Director notes:", repair.directorNotes);
+        console.log(
+          "[layout/route] Repaired layers summary:",
+          repair.layers.map((l) => ({
+            type: l.type, label: l.label,
+            x: Math.round(l.x), y: Math.round(l.y),
+            w: Math.round(l.width), h: Math.round(l.height),
+            rot: l.rotation ?? 0,
+          })),
+        );
+
+        resultLayers = repair.layers;
+        // Attach director notes to rationale
+        resultRationale = (resultRationale ?? "") + ` [Director: ${repair.directorNotes}]`;
+
+        const remainingIssues = validatePosterLayout(resultLayers, canvas);
+        const remainingErrors = remainingIssues.filter((i) => i.severity === "error").length;
+        console.log(`[layout/route] After repair ${attempt + 1}: ${summariseIssues(remainingIssues)}`);
+
+        validationIssues = remainingIssues;
+        if (remainingErrors === 0) {
+          console.log(`[layout/route] ✓ All errors resolved after ${attempt + 1} repair attempt(s)`);
+          break;
+        }
+      } catch (dirErr) {
+        console.error("[layout/route] Director repair error:", dirErr);
+        break;
+      }
+    }
+
+    console.log("[layout/route] ═══ FINAL APPROVED LAYOUT ═══");
+    console.log(
+      "[layout/route] Final layers:",
+      resultLayers.map((l) => ({
+        type: l.type, label: l.label,
+        x: Math.round(l.x), y: Math.round(l.y),
+        w: Math.round(l.width), h: Math.round(l.height),
+        visible: l.visible, zIndex: l.zIndex,
+      })),
+    );
+    const finalValidation = summariseIssues(validationIssues);
+    console.log("[layout/route] Final validation:", finalValidation);
+
     const finalLayers = [
       ...lockedLayers,
       ...resultLayers.filter((l) => !lockedLayers.find((ll) => ll.id === l.id)),
@@ -464,11 +650,12 @@ export async function POST(req: NextRequest) {
       layers: finalLayers,
       canvas,
       imagePrompt: resultFluxPrompt,
-      fluxPrompt: resultFluxPrompt,
-      fonts: resultFonts ?? {},
-      palette: resultPalette ?? {},
+      fluxPrompt:  resultFluxPrompt,
+      fonts:       resultFonts ?? {},
+      palette:     resultPalette ?? {},
       designRationale: resultRationale,
-      designNotes: resultRationale,
+      designNotes:     resultRationale,
+      validationSummary: finalValidation,
       demo: false,
     });
   } catch (err) {
