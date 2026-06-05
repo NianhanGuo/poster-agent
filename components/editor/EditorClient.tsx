@@ -188,6 +188,8 @@ export function EditorClient() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          // userPrompt = original user concept so Flux always sees the subject
+          userPrompt: promptOverride ?? project.promptHistory.at(-1) ?? "",
           fluxPrompt,
           prompt: imagePrompt,
           styleRecipe: project.styleRecipe,
@@ -199,7 +201,6 @@ export function EditorClient() {
       });
       const { url } = await imgRes.json();
       if (url) {
-        // Update only the backgroundImage layer src
         const updatedLayers = (layers as { type: string; imageData?: Record<string, unknown> }[]).map((l) =>
           l.type === "backgroundImage"
             ? { ...l, imageData: { ...(l.imageData ?? {}), src: url } }
@@ -246,11 +247,13 @@ export function EditorClient() {
     setGenerating(true, "generating image…");
     setGenError("");
     try {
+      const lastPrompt = project.promptHistory.at(-1) ?? "";
       const res = await fetch("/api/generate/image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          prompt: project.promptHistory.at(-1) ?? "",
+          userPrompt: lastPrompt,
+          prompt: lastPrompt,
           styleRecipe: project.styleRecipe,
           width: project.canvas.width,
           height: project.canvas.height,

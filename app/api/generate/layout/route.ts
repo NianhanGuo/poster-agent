@@ -3,8 +3,8 @@ import type { PosterSetupConfig, PosterLayer, CanvasConfig, CanvasSize, DesignBr
 import { CANVAS_SIZES } from "@/types/poster";
 import { v4 as uuidv4 } from "uuid";
 import { mockLayout } from "@/lib/mockLayout";
-import { buildReferenceSection, buildReferenceStyleInstruction } from "@/lib/referencePrompt";
-import type { EnrichedRefCtx } from "@/lib/referencePrompt";
+import { buildReferenceSection, buildReferenceStyleInstruction, ROLE_ORDER } from "@/lib/referencePrompt";
+import type { EnrichedRefCtx, RefImageCtx } from "@/lib/referencePrompt";
 
 function getCanvasConfig(setup: PosterSetupConfig): CanvasConfig {
   if (setup.canvasSize === "custom") {
@@ -114,6 +114,13 @@ DESIGN PRINCIPLES YOU ALWAYS FOLLOW:
    - A text layer with very high letter-spacing used as a texture
    - A thin accentLine that cuts across the entire canvas width
 
+REFERENCE MODE LAYOUT RULES (applied when a REFERENCE STYLE TO FOLLOW section is present):
+- Every geometricShape, colorOverlay, and gradientLayer you add MUST be justified by the reference composition OR the user's concept. No decorative color blocks that don't exist in the reference or concept.
+- Layer fills and palette MUST use the reference color palette — not invent new colors.
+- Typography style MUST match the reference typographic system — not default to preset recipe fonts.
+- The solidBackground fill MUST be the dominant reference color.
+- The fluxPrompt you generate MUST explicitly include the user's concept AND the reference style.
+
 Return ONLY valid JSON. No markdown, no explanation.`;
 }
 
@@ -191,18 +198,21 @@ Return ONLY this JSON structure (no markdown, no code fences):
 }
 
 FLUXPROMPT GENERATION RULES:
-If a REFERENCE STYLE TO FOLLOW section exists above:
-  → The fluxPrompt MUST describe an abstract background image that EXACTLY matches the reference:
-     - Use ONLY the reference color palette (hex values above)
-     - Reproduce the reference's blur treatment, depth-of-field character, and geometric structure
-     - Match the reference's brightness and contrast levels
-     - Match the reference's surface texture and lighting atmosphere
-     - Do NOT produce a cinematic scene, realistic landscape, or any subject the reference doesn't contain
-     - This prompt will be sent directly to Flux image generation — be concrete and specific
-  Example for a dark blurred abstract reference:
-    "Deep indigo and violet color field. Heavy blur throughout, no sharp edges. Radial gradient from deep purple center bleeding to transparent edges. Fine film grain overlay. Abstract, non-representational. Dark background. No objects, no faces, no text."
+The fluxPrompt is sent directly to Flux image generation. It MUST include BOTH:
+  (A) The user's concept/subject — explicitly named so it is visually present in the generated image
+  (B) The style treatment — palette, blur, texture, mood
+
+If a REFERENCE STYLE TO FOLLOW section exists:
+  → Start with the user's concept (Concept: "${setup.prompt || "the poster subject"}")
+  → Then describe how that concept looks rendered in the reference style
+  → Include specific hex palette values from the reference
+  → Include the reference's blur and texture treatment
+  → The concept must remain visually present — do NOT replace it with unrelated scenery
+  Example for concept="rain" + blurred watery reference:
+    "Rain. Falling rain and mist rendered as blurred abstract streaks. Blue-green water palette: #1a4a6a, #2a7a9a. Heavy soft-focus blur, diffused light through rain. Dark background #0a1a28. Water droplets and mist. Fine grain texture. No text."
+
 If NO reference section exists (preset mode):
-  → Write an 80-100 word atmospheric background description matching the style recipe and concept.
+  → Write an 80-100 word atmospheric description including the concept and the recipe aesthetic.
 
 Layer type rules:
 - "solidBackground": use shapeData with shapeType "rect", fill = palette.background, stroke = "none", strokeWidth 0. x:0, y:0, width:canvasWidth, height:canvasHeight. zIndex 0.
@@ -224,6 +234,79 @@ IMPORTANT: clipShape coordinates are relative to the CANVAS origin (0,0), not re
 IMPORTANT: The solidBackground + clipped backgroundImage together replace the old full-bleed backgroundImage + colorOverlay pattern.
 
 Only include the relevant data field for each layer type. Do not put textData on shape layers or shapeData on text layers.`;
+}
+
+// ─── Post-generation self-check ───────────────────────────────────────────────
+
+interface SelfCheckResult {
+  passed: boolean;
+  subjectPresent: boolean;
+  paletteUsed: boolean;
+  noPresetLeakage: boolean;
+  failures: string[];
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function selfCheckLayout(
+  fluxPrompt: string,
+  layers: PosterLayer[],
+  userPrompt: string,
+  refPalette: string[],
+  openai: any,
+): Promise<SelfCheckResult> {
+  const PRESET_LEAK_TERMS = [
+    "woodblock", "rothko", "constructivist", "risograph", "bauhaus",
+    "cinematic rain", "gallery minimal", "brutalist wall",
+    "rodchenko", "el lissitzky", "turrell",
+  ];
+
+  const presetLeakInFlux = PRESET_LEAK_TERMS.some((term) =>
+    fluxPrompt.toLowerCase().includes(term),
+  );
+
+  // Quick local checks first — avoid an extra API call if possible
+  const subjectWords = userPrompt.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+  const subjectInFlux = subjectWords.some((w) => fluxPrompt.toLowerCase().includes(w));
+
+  const flatColors = layers
+    .flatMap((l) => [
+      l.textData?.fill,
+      l.shapeData?.fill,
+      l.shapeData?.stroke,
+    ])
+    .filter(Boolean) as string[];
+
+  // Rough palette check: at least one layer fill should be close to reference
+  const paletteOk = refPalette.length === 0 || flatColors.length === 0 || (() => {
+    const refHexLower = refPalette.map((h) => h.toLowerCase().replace("#", ""));
+    return flatColors.some((fill) => {
+      const fillHex = fill.toLowerCase().replace("#", "").slice(0, 6);
+      return refHexLower.some((ref) => {
+        const r1 = parseInt(fillHex.slice(0, 2), 16);
+        const g1 = parseInt(fillHex.slice(2, 4), 16);
+        const b1 = parseInt(fillHex.slice(4, 6), 16);
+        const r2 = parseInt(ref.slice(0, 2), 16);
+        const g2 = parseInt(ref.slice(2, 4), 16);
+        const b2 = parseInt(ref.slice(4, 6), 16);
+        return Math.sqrt((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2) < 80;
+      });
+    });
+  })();
+
+  const failures: string[] = [];
+  if (!subjectInFlux && userPrompt.trim()) failures.push(`fluxPrompt does not mention user subject "${userPrompt}"`);
+  if (!paletteOk) failures.push("layout fill colors do not match reference palette");
+  if (presetLeakInFlux) failures.push("fluxPrompt contains preset recipe style terms");
+
+  console.log("[layout/route] Self-check:", { subjectInFlux, paletteOk, noPresetLeakage: !presetLeakInFlux, failures });
+
+  return {
+    passed: failures.length === 0,
+    subjectPresent: subjectInFlux || !userPrompt.trim(),
+    paletteUsed: paletteOk,
+    noPresetLeakage: !presetLeakInFlux,
+    failures,
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -294,27 +377,98 @@ export async function POST(req: NextRequest) {
     console.log("[layout/route] palette from GPT-4o:", parsed.palette);
     console.log("[layout/route] fonts from GPT-4o:", parsed.fonts);
 
-    const newLayers = parsed.layers.map((l) => ({
+    let resultLayers = parsed.layers.map((l) => ({
       ...l,
       id: l.id || uuidv4(),
       visible: true,
       locked: false,
     }));
+    let resultFluxPrompt = parsed.fluxPrompt;
+    let resultPalette = parsed.palette;
+    let resultFonts = parsed.fonts;
+    let resultRationale = parsed.designRationale;
+
+    // ── Post-generation self-check (reference mode only) ──────────────────
+    const isReferenceMode = setup.styleSource === "reference" && !!reference?.references?.length;
+    if (isReferenceMode) {
+      const refImages = reference!.references as RefImageCtx[];
+      const sorted = [...refImages].sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role]);
+      const primary = sorted[0];
+      const refPaletteHex = (primary?.palette ?? []).map((p) => p.hex);
+
+      const check = await selfCheckLayout(
+        resultFluxPrompt ?? "",
+        resultLayers as PosterLayer[],
+        setup.prompt ?? "",
+        refPaletteHex,
+        openai,
+      );
+
+      if (!check.passed) {
+        console.log("[layout/route] ⚠ Self-check FAILED — regenerating with stricter prompt");
+        console.log("[layout/route] Failures:", check.failures);
+
+        const stricterContent = userContent
+          + `\n\n=== REGENERATION — PREVIOUS OUTPUT FAILED QUALITY CHECK ===\n`
+          + `Failures to fix:\n`
+          + check.failures.map((f) => `  ✗ ${f}`).join("\n")
+          + `\n\nFix these SPECIFICALLY:\n`
+          + (!check.subjectPresent && setup.prompt
+              ? `  • The fluxPrompt MUST contain the word "${setup.prompt}" and visual terms for it.\n`
+              : "")
+          + (!check.paletteUsed && refPaletteHex.length > 0
+              ? `  • Fill colors in solidBackground and shapes MUST use palette: ${refPaletteHex.join(", ")}.\n`
+              : "")
+          + (!check.noPresetLeakage
+              ? `  • Remove all preset recipe style terms from fluxPrompt.\n`
+              : "")
+          + `\nGenerate a corrected version now.`;
+
+        try {
+          const retryCompletion = await openai.chat.completions.create({
+            model: "gpt-4o",
+            max_tokens: 4096,
+            response_format: { type: "json_object" },
+            messages: [
+              { role: "system", content: systemContent },
+              { role: "user",   content: stricterContent },
+            ],
+          });
+          const retryText = retryCompletion.choices[0]?.message?.content ?? "{}";
+          const retryParsed = JSON.parse(retryText);
+          console.log("[layout/route] Retry fluxPrompt:", retryParsed.fluxPrompt?.slice(0, 200));
+
+          resultLayers = retryParsed.layers.map((l: PosterLayer) => ({
+            ...l,
+            id: l.id || uuidv4(),
+            visible: true,
+            locked: false,
+          }));
+          resultFluxPrompt = retryParsed.fluxPrompt ?? resultFluxPrompt;
+          resultPalette = retryParsed.palette ?? resultPalette;
+          resultFonts = retryParsed.fonts ?? resultFonts;
+          resultRationale = retryParsed.designRationale ?? resultRationale;
+        } catch (retryErr) {
+          console.error("[layout/route] Retry failed:", retryErr);
+          // Fall through — use original result
+        }
+      }
+    }
 
     const finalLayers = [
       ...lockedLayers,
-      ...newLayers.filter((l) => !lockedLayers.find((ll) => ll.id === l.id)),
+      ...resultLayers.filter((l) => !lockedLayers.find((ll) => ll.id === l.id)),
     ];
 
     return NextResponse.json({
       layers: finalLayers,
       canvas,
-      imagePrompt: parsed.fluxPrompt,
-      fluxPrompt: parsed.fluxPrompt,
-      fonts: parsed.fonts ?? {},
-      palette: parsed.palette ?? {},
-      designRationale: parsed.designRationale,
-      designNotes: parsed.designRationale,
+      imagePrompt: resultFluxPrompt,
+      fluxPrompt: resultFluxPrompt,
+      fonts: resultFonts ?? {},
+      palette: resultPalette ?? {},
+      designRationale: resultRationale,
+      designNotes: resultRationale,
       demo: false,
     });
   } catch (err) {

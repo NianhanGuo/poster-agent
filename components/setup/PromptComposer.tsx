@@ -287,6 +287,9 @@ export function PromptComposer() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            // userPrompt = the original user-typed concept ("rain") — must reach Flux
+            userPrompt: cfg.prompt,
+            // prompt = GPT-4o's atmospheric fluxPrompt (style context, may differ from subject)
             prompt: imagePrompt,
             // IMPORTANT: only send styleRecipe in preset mode — reference mode must not receive it
             ...(isRefMode ? {} : {

@@ -28,7 +28,7 @@ export interface EnrichedRefCtx {
 
 // ── Role priority for ordering ────────────────────────────────────────────────
 
-const ROLE_ORDER: Record<ReferenceRole, number> = { primary: 0, secondary: 1, accent: 2 };
+export const ROLE_ORDER: Record<ReferenceRole, number> = { primary: 0, secondary: 1, accent: 2 };
 
 // ── Mode labels ───────────────────────────────────────────────────────────────
 
@@ -593,15 +593,13 @@ export function buildImageConstraintPrefix(ref: EnrichedRefCtx, subject: string)
     for (const f of forbidden) lines.push(`  - ${f}`);
   }
 
-  // Subject abstraction — reframe the concept so it doesn't override the reference aesthetic
-  const isAbstract = analysis?.styleClass ? isAbstractStyleClass(analysis.styleClass) : false;
-  if (isAbstract && subject.trim()) {
+  // Subject — must be visible. Styled using the reference aesthetic, not suppressed.
+  if (subject.trim()) {
     lines.push(``);
-    lines.push(`SUBJECT INTERPRETATION:`);
-    lines.push(`Interpret "${subject}" as an abstract graphic design concept — NOT a literal scene.`);
-    lines.push(`Do NOT generate a realistic or photographic depiction of "${subject}".`);
-    lines.push(`Instead: render it as abstract forms, blurred shapes, or graphic geometry in the palette above.`);
-    lines.push(`This is a graphic design piece, not nature photography or a cinematic scene.`);
+    lines.push(`SUBJECT TO VISUALIZE:`);
+    lines.push(`The user's subject is "${subject}". This MUST be visually present in the output.`);
+    lines.push(`Apply the reference style treatment (palette, blur, texture) to the visualization of "${subject}".`);
+    lines.push(`Do NOT replace or ignore "${subject}". The final image must reflect this subject.`);
   }
 
   // Global instruction (highest priority user intent)
@@ -612,6 +610,47 @@ export function buildImageConstraintPrefix(ref: EnrichedRefCtx, subject: string)
   }
 
   return lines.join("\n");
+}
+
+// ── Flux-optimized style block ────────────────────────────────────────────────
+
+/**
+ * Builds a concise Flux-prompt-style description of the reference aesthetic.
+ * Suitable for embedding directly in a Flux image generation prompt.
+ * Separate from the GPT-4o instruction format — Flux responds to natural
+ * descriptive language, not structured constraint blocks.
+ */
+export function buildFluxStyleBlock(ref: EnrichedRefCtx): string {
+  const refs = ref.references ?? [];
+  const sorted = [...refs].sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role]);
+  const primary = sorted[0];
+  if (!primary) return "";
+
+  const a = primary.analysis;
+  const p = primary.palette ?? [];
+  const parts: string[] = [];
+
+  if (a?.styleClass)   parts.push(`Style: ${a.styleClass}.`);
+  if (a?.visualSummary) parts.push(a.visualSummary);
+  if (a?.mood)         parts.push(`Mood: ${a.mood}.`);
+  if (a?.blurMap)      parts.push(`Depth/blur: ${a.blurMap}.`);
+  if (a?.shapes)       parts.push(`Geometry: ${a.shapes}.`);
+  if (a?.texture)      parts.push(`Surface: ${a.texture}.`);
+  if (a?.lighting)     parts.push(`Lighting: ${a.lighting}.`);
+  if (a?.brightness)   parts.push(`Brightness: ${a.brightness}.`);
+  if (a?.contrast)     parts.push(`Contrast: ${a.contrast}.`);
+
+  if (p.length > 0) {
+    parts.push(`Color palette (mandatory — no other colors): ${p.map((c) => c.hex).join(", ")}.`);
+  } else if (a?.palette?.length) {
+    parts.push(`Colors: ${a.palette.join(", ")}.`);
+  }
+
+  if (a?.rulesToFollow && a.rulesToFollow.length > 0) {
+    parts.push(...a.rulesToFollow.slice(0, 4));
+  }
+
+  return parts.join(" ");
 }
 
 /**
