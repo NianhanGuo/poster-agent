@@ -17,20 +17,20 @@ import { getAutoForbiddenTerms } from "@/lib/referencePrompt";
 
 type TargetKey = keyof ReferenceTargets;
 
-const TARGETS: { key: TargetKey; label: string }[] = [
-  { key: "mood",            label: "Mood" },
-  { key: "color",           label: "Color" },
-  { key: "backgroundStyle", label: "Background" },
-  { key: "layout",          label: "Composition" },
-  { key: "typography",      label: "Typography" },
-  { key: "texture",         label: "Texture" },
-  { key: "lighting",        label: "Lighting" },
+const TARGETS: { key: TargetKey; label: string; icon: string }[] = [
+  { key: "mood",            label: "Mood",        icon: "◐" },
+  { key: "color",           label: "Color",       icon: "●" },
+  { key: "backgroundStyle", label: "Background",  icon: "□" },
+  { key: "layout",          label: "Composition", icon: "⊞" },
+  { key: "typography",      label: "Typography",  icon: "T" },
+  { key: "texture",         label: "Texture",     icon: "⣿" },
+  { key: "lighting",        label: "Lighting",    icon: "◑" },
 ];
 
 const MODES: { value: ReferenceMode; label: string; hint: string }[] = [
   { value: "loose",    label: "Loose",    hint: "Soft inspiration — mood and atmosphere only" },
   { value: "balanced", label: "Balanced", hint: "Strong influence — palette + partial structure" },
-  { value: "strict",   label: "Strict",   hint: "Exact constraints — composition, palette, hierarchy MUST match" },
+  { value: "strict",   label: "Strict",   hint: "Exact match — composition, palette, hierarchy MUST match" },
 ];
 
 const ROLES: { value: ReferenceRole; label: string }[] = [
@@ -75,7 +75,66 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
-// ── Analysis debug section ────────────────────────────────────────────────────
+// ── Analysis Insights Card ────────────────────────────────────────────────────
+
+function AnalysisInsights({ image }: { image: ReferenceImage }) {
+  const a = image.analysis;
+  const hasPalette = image.palette.length > 0;
+  if (!a && !hasPalette) return null;
+
+  return (
+    <div className="space-y-2">
+      {/* Palette chips */}
+      {hasPalette && (
+        <div>
+          <div className="text-[10px] font-medium text-zinc-600 mb-1.5">Extracted palette</div>
+          <div className="flex gap-1 flex-wrap">
+            {image.palette.map((c) => (
+              <div
+                key={c.hex}
+                className="w-5 h-5 rounded-sm flex-none border border-zinc-900"
+                title={`${c.hex} · ${c.role}`}
+                style={{ background: c.hex }}
+              />
+            ))}
+            <div className="flex items-center gap-1 ml-1 flex-wrap">
+              {image.palette.slice(0, 3).map((c) => (
+                <span key={c.hex} className="font-mono text-[9px] text-zinc-600">{c.hex}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Style class badge */}
+      {a?.styleClass && (
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-medium text-zinc-600">Style</span>
+          <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-zinc-800 text-zinc-300 border border-zinc-700/60">
+            {a.styleClass}
+          </span>
+        </div>
+      )}
+
+      {/* Visual summary */}
+      {a?.visualSummary && (
+        <div className="text-[11px] text-zinc-500 italic leading-relaxed border-l-2 border-zinc-800 pl-2">
+          &ldquo;{a.visualSummary}&rdquo;
+        </div>
+      )}
+
+      {/* Typography note */}
+      {a?.typographyStyle && a.typographyStyle !== "no text visible" && (
+        <div className="flex items-start gap-2">
+          <span className="text-[10px] font-medium text-zinc-600 flex-none">Type</span>
+          <span className="text-[10px] text-zinc-500">{a.typographyStyle}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Debug section (hidden by default) ─────────────────────────────────────────
 
 function AnalysisDebug({ image }: { image: ReferenceImage }) {
   const a = image.analysis;
@@ -89,102 +148,36 @@ function AnalysisDebug({ image }: { image: ReferenceImage }) {
   });
 
   return (
-    <div
-      className="mx-2 mb-2 rounded-sm space-y-1.5 text-[7px] font-mono"
-      style={{ border: "1px solid rgba(255,255,255,0.06)", background: "rgba(0,0,0,0.15)", padding: "6px 8px" }}
-    >
-      <div className="text-zinc-600 uppercase tracking-widest text-[6px]">debug · analysis</div>
-
-      {/* Palette */}
-      {image.palette.length > 0 && (
-        <div className="flex items-center gap-1 flex-wrap">
-          <span className="text-zinc-700 w-14 flex-none">palette</span>
-          <div className="flex gap-0.5 flex-wrap">
-            {image.palette.map((c) => (
-              <div
-                key={c.hex}
-                className="w-3.5 h-3.5 rounded-sm"
-                title={`${c.hex} (${c.role})`}
-                style={{ background: c.hex, border: "1px solid rgba(255,255,255,0.1)" }}
-              />
-            ))}
-          </div>
-          <span className="text-zinc-700">{image.palette.map((p) => p.hex).join(" ")}</span>
-        </div>
-      )}
-
-      {/* Brightness + Contrast + Style Class */}
+    <div className="rounded-md space-y-1 text-[9px] font-mono bg-zinc-950 border border-zinc-800/60 px-2.5 py-2 mt-2">
+      <div className="text-zinc-700 uppercase tracking-widest text-[8px] mb-1">debug · analysis output</div>
       {a && (
         <>
-          <div className="flex gap-3">
-            <span><span className="text-zinc-700">bright </span><span className="text-zinc-400">{a.brightness ?? "—"}</span></span>
-            <span><span className="text-zinc-700">contrast </span><span className="text-zinc-400">{a.contrast ?? "—"}</span></span>
-          </div>
-          <div>
-            <span className="text-zinc-700">style </span>
-            <span className="text-zinc-400">{a.styleClass ?? "—"}</span>
-          </div>
-          {a.composition && (
-            <div>
-              <span className="text-zinc-700">composition </span>
-              <span className="text-zinc-500">{a.composition}</span>
+          {a.brightness !== undefined && (
+            <div><span className="text-zinc-700">bright </span><span className="text-zinc-500">{a.brightness}</span>
+              <span className="text-zinc-700 ml-3">contrast </span><span className="text-zinc-500">{a.contrast ?? "—"}</span>
             </div>
           )}
-          {a.shapes && (
-            <div>
-              <span className="text-zinc-700">shapes </span>
-              <span className="text-zinc-500">{a.shapes}</span>
-            </div>
-          )}
-          {a.blurMap && (
-            <div>
-              <span className="text-zinc-700">blur map </span>
-              <span className="text-zinc-500">{a.blurMap}</span>
-            </div>
-          )}
-          {a.typographyStyle && a.typographyStyle !== "no text visible" && (
-            <div>
-              <span className="text-zinc-700">typography </span>
-              <span className="text-zinc-500">{a.typographyStyle}</span>
-            </div>
-          )}
-          {a.visualSummary && (
-            <div>
-              <span className="text-zinc-700">summary </span>
-              <span className="text-zinc-500 italic">"{a.visualSummary}"</span>
-            </div>
-          )}
+          {a.composition && <div><span className="text-zinc-700">composition </span><span className="text-zinc-500">{a.composition}</span></div>}
+          {a.blurMap && <div><span className="text-zinc-700">blur map </span><span className="text-zinc-500">{a.blurMap}</span></div>}
         </>
       )}
-
-      {/* Forbidden terms */}
       {forbidden.length > 0 && (
         <div>
           <div className="text-zinc-700 mb-0.5">auto-forbidden</div>
-          <div className="text-red-500/60 leading-relaxed">
-            {forbidden.map((f, i) => (
-              <span key={i} className="inline-block mr-1">— {f}</span>
-            ))}
-          </div>
+          <div className="text-red-400/60">{forbidden.map((f, i) => <span key={i} className="mr-1.5">— {f}</span>)}</div>
         </div>
       )}
-
-      {/* GPT forbiddenDrift */}
       {a?.forbiddenDrift && a.forbiddenDrift.length > 0 && (
         <div>
           <div className="text-zinc-700 mb-0.5">gpt forbidden drift</div>
-          <div className="text-amber-600/60 leading-relaxed">
-            {a.forbiddenDrift.map((f, i) => (
-              <span key={i} className="inline-block mr-1">— {f}</span>
-            ))}
-          </div>
+          <div className="text-amber-500/60">{a.forbiddenDrift.map((f, i) => <span key={i} className="mr-1.5">— {f}</span>)}</div>
         </div>
       )}
     </div>
   );
 }
 
-// ── Image card ────────────────────────────────────────────────────────────────
+// ── Poster Thumbnail Card ─────────────────────────────────────────────────────
 
 function RefImageCard({
   image,
@@ -197,173 +190,257 @@ function RefImageCard({
   onUpdate: (updates: Partial<ReferenceImage>) => void;
   onRemove: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  const analysisReady = !image.analyzing && (image.analysis !== null || image.palette.length > 0);
 
   return (
-    <div
-      className="rounded-sm overflow-hidden"
-      style={{ border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.02)" }}
-    >
-      {/* Thumbnail row */}
-      <div className="flex gap-2 p-2">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={image.imageUrl}
-          alt={`ref ${index + 1}`}
-          className="w-14 h-14 object-cover flex-none rounded-sm"
-          style={{ border: "1px solid rgba(255,255,255,0.06)" }}
-        />
+    <div className="rounded-xl overflow-hidden border border-zinc-800/60 bg-zinc-900/40">
 
-        <div className="flex-1 min-w-0 space-y-1.5">
-          {/* Mode selector */}
-          <div className="flex gap-0.5">
-            {MODES.map((m) => (
-              <button
-                key={m.value}
-                title={m.hint}
-                onClick={() => onUpdate({ mode: m.value })}
-                className="flex-1 py-0.5 font-mono text-[8px] uppercase tracking-wide transition-colors rounded-sm"
-                style={{
-                  background: image.mode === m.value ? "rgba(255,255,255,0.10)" : "transparent",
-                  border: `1px solid ${image.mode === m.value ? "rgba(161,161,170,0.4)" : "rgba(255,255,255,0.07)"}`,
-                  color: image.mode === m.value ? "#e4e4e7" : "#52525b",
-                }}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
+      {/* Top: thumbnail + primary controls */}
+      <div className="flex gap-3 p-3">
 
-          {/* Role + strength */}
-          <div className="flex items-center gap-2">
-            <select
-              value={image.role}
-              onChange={(e) => onUpdate({ role: e.target.value as ReferenceRole })}
-              className="bg-transparent font-mono text-[8px] text-zinc-500 outline-none cursor-pointer hover:text-zinc-300 transition-colors"
-              style={{ border: "none" }}
-            >
-              {ROLES.map((r) => (
-                <option key={r.value} value={r.value} className="bg-zinc-900">
-                  {r.label}
-                </option>
-              ))}
-            </select>
-            <span className="font-mono text-[8px] text-zinc-700 ml-auto">{image.strength}%</span>
-          </div>
-
-          {/* Strength slider */}
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={image.strength}
-            onChange={(e) => onUpdate({ strength: Number(e.target.value) })}
-            className="w-full h-0.5 accent-zinc-400"
+        {/* Poster thumbnail — taller aspect ratio */}
+        <div className="flex-none relative">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={image.imageUrl}
+            alt={`Reference ${index + 1}`}
+            className="w-16 rounded-lg object-cover border border-zinc-800/60"
+            style={{ aspectRatio: "3/4", objectPosition: "center top" }}
           />
-
-          {/* Analysis status + debug toggle */}
-          <div className="flex items-center justify-between">
-            <span
-              className="font-mono text-[7px] tracking-wide"
-              style={{
-                color: image.analyzing
-                  ? "#71717a"
-                  : image.analysis
-                  ? "#4ade80"
-                  : image.analysisError
-                  ? "#f59e0b"
-                  : "#3f3f46",
-              }}
-            >
-              {image.analyzing
-                ? "analyzing…"
-                : image.analysis
-                ? "vision ✓"
-                : image.analysisError
-                ? "palette only"
-                : image.palette.length > 0
-                ? `${image.palette.length} colors`
-                : ""}
-            </span>
-
-            {(image.palette.length > 0 || image.analysis) && (
-              <button
-                onClick={() => setShowDebug((v) => !v)}
-                className="font-mono text-[7px] transition-colors"
-                style={{ color: showDebug ? "#a1a1aa" : "#3f3f46" }}
-              >
-                {showDebug ? "hide debug" : "debug"}
-              </button>
-            )}
+          {/* Scanning overlay while analyzing */}
+          {image.analyzing && (
+            <div className="absolute inset-0 rounded-lg bg-zinc-950/70 flex flex-col items-center justify-center gap-1">
+              <span className="w-3 h-3 rounded-full border-2 border-zinc-600 border-t-zinc-200 animate-spin block" />
+              <span className="text-[8px] font-medium text-zinc-400">Analyzing</span>
+            </div>
+          )}
+          {/* Done checkmark */}
+          {analysisReady && !image.analyzing && (
+            <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-zinc-800 border border-zinc-600 flex items-center justify-center">
+              <span className="text-[8px] text-green-400">✓</span>
+            </div>
+          )}
+          {/* Index badge */}
+          <div className="absolute bottom-1 left-1 text-[8px] font-bold text-zinc-400 bg-zinc-950/80 rounded px-1">
+            {index + 1}
           </div>
         </div>
 
-        {/* Remove */}
-        <button
-          onClick={onRemove}
-          className="flex-none font-mono text-[12px] text-zinc-700 hover:text-red-400 transition-colors self-start pt-0.5 leading-none"
-          title="Remove"
-        >
-          ×
-        </button>
+        {/* Right: controls */}
+        <div className="flex-1 min-w-0 space-y-2">
+
+          {/* Analysis status line */}
+          <div className="flex items-center justify-between">
+            <span className={`text-[10px] font-medium ${
+              image.analyzing ? "text-zinc-500" :
+              analysisReady   ? "text-green-400/80" :
+              image.analysisError ? "text-amber-400/70" :
+              "text-zinc-600"
+            }`}>
+              {image.analyzing
+                ? "Scanning poster…"
+                : image.analysis
+                ? "Style analyzed ✓"
+                : image.analysisError
+                ? "Palette extracted"
+                : image.palette.length > 0
+                ? `${image.palette.length} colors found`
+                : "Processing…"}
+            </span>
+            <button
+              onClick={onRemove}
+              className="text-zinc-700 hover:text-red-400 transition-colors text-[16px] leading-none"
+              title="Remove"
+            >
+              ×
+            </button>
+          </div>
+
+          {/* Mode selector */}
+          <div>
+            <div className="text-[10px] font-medium text-zinc-600 mb-1">Influence strength</div>
+            <div className="flex gap-1">
+              {MODES.map((m) => (
+                <button
+                  key={m.value}
+                  title={m.hint}
+                  onClick={() => onUpdate({ mode: m.value })}
+                  className={`flex-1 py-1 text-[10px] font-medium rounded-md transition-colors border ${
+                    image.mode === m.value
+                      ? "bg-zinc-700 border-zinc-600 text-zinc-100"
+                      : "bg-transparent border-zinc-800 text-zinc-600 hover:text-zinc-400 hover:border-zinc-700"
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Role selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium text-zinc-600">Role</span>
+            <div className="flex gap-1">
+              {ROLES.map((r) => (
+                <button
+                  key={r.value}
+                  onClick={() => onUpdate({ role: r.value })}
+                  className={`px-2 py-0.5 text-[10px] font-medium rounded transition-colors border ${
+                    image.role === r.value
+                      ? "bg-zinc-700 border-zinc-600 text-zinc-200"
+                      : "border-zinc-800 text-zinc-600 hover:text-zinc-400"
+                  }`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Strength fine-tune */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-medium text-zinc-600">Fine-tune</span>
+              <span className="font-mono text-[10px] text-zinc-500">{image.strength}%</span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={image.strength}
+              onChange={(e) => onUpdate({ strength: Number(e.target.value) })}
+              className="w-full h-0.5 accent-zinc-400"
+            />
+          </div>
+        </div>
       </div>
 
-      {/* Debug panel (collapsible) */}
-      {showDebug && <AnalysisDebug image={image} />}
+      {/* Analysis insights (expand when ready) */}
+      {analysisReady && (
+        <>
+          <div className="border-t border-zinc-800/60 px-3 py-2">
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              className="flex items-center justify-between w-full"
+            >
+              <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest">
+                Extracted insights
+              </span>
+              <span className={`text-zinc-700 text-[9px] transition-transform duration-150 ${expanded ? "rotate-90" : ""}`}>
+                ▶
+              </span>
+            </button>
+
+            {expanded && (
+              <div className="mt-2 space-y-3">
+                <AnalysisInsights image={image} />
+
+                {/* Debug toggle */}
+                <button
+                  onClick={() => setShowDebug((v) => !v)}
+                  className="text-[9px] font-mono text-zinc-700 hover:text-zinc-500 transition-colors"
+                >
+                  {showDebug ? "hide debug" : "show debug output"}
+                </button>
+                {showDebug && <AnalysisDebug image={image} />}
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
       {/* Strict mode warning */}
       {image.mode === "strict" && !image.analysis && !image.analyzing && (
-        <div
-          className="mx-2 mb-2 px-2 py-1 font-mono text-[7px] text-amber-600/80 rounded-sm"
-          style={{ border: "1px solid rgba(245,158,11,0.2)", background: "rgba(245,158,11,0.04)" }}
-        >
-          Add API key for vision analysis — strict mode is most effective with visual analysis
+        <div className="mx-3 mb-3 px-2.5 py-1.5 text-[10px] font-medium text-amber-500/80 rounded-lg border border-amber-500/20 bg-amber-500/5">
+          ⚠ Add API key for vision analysis — strict mode works best with full analysis
         </div>
       )}
     </div>
   );
 }
 
-// ── Add-image dropzone ────────────────────────────────────────────────────────
+// ── Upload zone ───────────────────────────────────────────────────────────────
 
-function AddImageZone({
+function UploadZone({
   onAdd,
   disabled,
-  compact,
+  hasImages,
+  remaining,
 }: {
   onAdd: (files: File[]) => void;
   disabled: boolean;
-  compact?: boolean;
+  hasImages: boolean;
+  remaining: number;
 }) {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: onAdd,
     accept: { "image/*": [] },
-    maxFiles: 5,
+    maxFiles: remaining,
     disabled,
   });
+
+  if (hasImages) {
+    return (
+      <div
+        {...getRootProps()}
+        className={`flex items-center justify-center gap-2 rounded-xl border border-dashed py-2.5 cursor-pointer transition-all ${
+          isDragActive
+            ? "border-zinc-400 bg-zinc-800/40"
+            : "border-zinc-800 hover:border-zinc-600 hover:bg-zinc-800/20"
+        }`}
+      >
+        <input {...getInputProps()} />
+        <span className="text-[13px] text-zinc-600">+</span>
+        <span className="text-[11px] font-medium text-zinc-600">
+          {isDragActive ? "Drop to add" : `Add another poster (${remaining} remaining)`}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div
       {...getRootProps()}
-      className="rounded-sm text-center cursor-pointer transition-colors"
-      style={{
-        border: `1px dashed ${isDragActive ? "rgba(161,161,170,0.5)" : "rgba(255,255,255,0.1)"}`,
-        background: isDragActive ? "rgba(255,255,255,0.03)" : "transparent",
-        padding: compact ? "8px" : "20px 12px",
-      }}
+      className={`relative rounded-xl border-2 border-dashed cursor-pointer transition-all overflow-hidden ${
+        isDragActive
+          ? "border-zinc-400 bg-zinc-800/40"
+          : "border-zinc-800/80 hover:border-zinc-600 hover:bg-zinc-900/60"
+      }`}
+      style={{ padding: "28px 20px" }}
     >
       <input {...getInputProps()} />
-      <div className="space-y-1">
-        <div className="text-zinc-600 text-base leading-none">+</div>
-        <div className="font-mono text-[8px] text-zinc-700 tracking-wide">
-          {isDragActive ? "drop images" : compact ? "add image" : "drop up to 5 reference images"}
+      <div className="text-center space-y-3">
+        {/* Ghost poster placeholders */}
+        <div className="flex justify-center gap-2 mb-4">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="rounded-lg border border-zinc-800/60 bg-zinc-900/60"
+              style={{
+                width: 36,
+                height: 48,
+                opacity: 1 - i * 0.25,
+                transform: `rotate(${(i - 1) * 4}deg)`,
+              }}
+            />
+          ))}
+        </div>
+        <div>
+          <div className="text-[13px] font-medium text-zinc-400 mb-1">
+            {isDragActive ? "Drop your posters here" : "Drop posters to analyze"}
+          </div>
+          <div className="text-[11px] text-zinc-600">
+            or <span className="text-zinc-400 underline underline-offset-2">browse files</span> · up to 5 posters
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-// ── Main panel ────────────────────────────────────────────────────────────────
+// ── Main ReferencePanel ───────────────────────────────────────────────────────
 
 export function ReferencePanel() {
   const {
@@ -391,14 +468,15 @@ export function ReferencePanel() {
   const hasImages = images.length > 0;
   const anyTarget = Object.values(reference.targets).some(Boolean);
   const noTargetsWarning = hasImages && !anyTarget;
-
-  // ── Drop handler ──────────────────────────────────────────────────────────
+  const hasPalette   = images.some((i) => i.palette.length > 0);
+  const strictCount  = images.filter((i) => i.mode === "strict").length;
+  const hasAnalysis  = images.some((i) => i.analysis !== null);
+  const remaining    = 5 - images.length;
 
   const handleDrop = useCallback(
     async (files: File[]) => {
       if (adding) return;
       setAdding(true);
-      const remaining = 5 - images.length;
       const toAdd = files.slice(0, Math.max(0, remaining));
 
       await Promise.all(
@@ -443,10 +521,8 @@ export function ReferencePanel() {
 
       setAdding(false);
     },
-    [images, adding, addReferenceImage, updateReferenceImage],
+    [images, adding, remaining, addReferenceImage, updateReferenceImage],
   );
-
-  // ── Apply palette to text layers ──────────────────────────────────────────
 
   function applyPaletteToCanvas() {
     if (!project) return;
@@ -467,8 +543,6 @@ export function ReferencePanel() {
       });
   }
 
-  // ── Generate images from reference ───────────────────────────────────────
-
   async function generateFromReference(matchMode?: "max") {
     if (!project || !hasImages) return;
     if (!anyTarget && matchMode !== "max") {
@@ -480,7 +554,6 @@ export function ReferencePanel() {
     setGenToast("");
     setPromptPreview(null);
 
-    // "Match Reference More" forces strict mode + all targets + full strength
     const refForGeneration = matchMode === "max"
       ? {
           ...reference,
@@ -490,7 +563,6 @@ export function ReferencePanel() {
       : reference;
 
     const refCtx = buildEditorRefCtx(refForGeneration);
-    const imagePrompt = project.promptHistory.at(-1) ?? "";
 
     try {
       const results = await Promise.all(
@@ -499,7 +571,7 @@ export function ReferencePanel() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              prompt: imagePrompt,
+              prompt: project.promptHistory.at(-1) ?? "",
               styleRecipe: project.styleRecipe,
               width: project.canvas.width,
               height: project.canvas.height,
@@ -509,41 +581,28 @@ export function ReferencePanel() {
         ),
       );
 
-      // Capture prompt preview from first result
       const preview = results[0]?.promptPreview;
-      if (preview) {
-        setPromptPreview(preview);
-        setShowPrompt(false);
-      }
+      if (preview) { setPromptPreview(preview); setShowPrompt(false); }
 
       let added = 0;
       for (const { url } of results) {
         if (!url) continue;
-        const asset = {
-          id: uuidv4(),
-          userId: "local",
-          imageUrl: url,
-          fileName: `ref-gen-${Date.now()}`,
-          createdAt: new Date().toISOString(),
+        addAsset({
+          id: uuidv4(), userId: "local", imageUrl: url,
+          fileName: `ref-gen-${Date.now()}`, createdAt: new Date().toISOString(),
           generatedTag: matchMode === "max" ? "match-max" : "from reference",
-        };
-        addAsset(asset);
+        });
 
         if (added === 0) {
-          const layers = getSortedLayers();
-          const bgLayer = layers.find((l) => l.type === "backgroundImage");
+          const bgLayer = getSortedLayers().find((l) => l.type === "backgroundImage");
           if (bgLayer) {
             updateLayer(bgLayer.id, { imageData: { src: url, fit: "fill" } });
           } else {
             const canvas = project.canvas;
             const newLayer: PosterLayer = {
-              id: uuidv4(),
-              type: "backgroundImage",
-              label: "Background",
-              x: 0, y: 0,
-              width: canvas.width, height: canvas.height,
-              rotation: 0, opacity: 1,
-              visible: true, locked: false, zIndex: 1,
+              id: uuidv4(), type: "backgroundImage", label: "Background",
+              x: 0, y: 0, width: canvas.width, height: canvas.height,
+              rotation: 0, opacity: 1, visible: true, locked: false, zIndex: 1,
               imageData: { src: url, fit: "fill" },
             };
             addLayer(newLayer);
@@ -561,8 +620,6 @@ export function ReferencePanel() {
       setGenLoading(false);
     }
   }
-
-  // ── Generate Graphic Match (SVG fallback) ─────────────────────────────────
 
   async function generateGraphicMatch() {
     if (!project || !hasImages) return;
@@ -589,30 +646,21 @@ export function ReferencePanel() {
 
       if (!res.url) throw new Error("No URL returned");
 
-      const asset = {
-        id: uuidv4(),
-        userId: "local",
-        imageUrl: res.url,
-        fileName: `graphic-match-${Date.now()}`,
-        createdAt: new Date().toISOString(),
+      addAsset({
+        id: uuidv4(), userId: "local", imageUrl: res.url,
+        fileName: `graphic-match-${Date.now()}`, createdAt: new Date().toISOString(),
         generatedTag: "graphic match",
-      };
-      addAsset(asset);
+      });
 
-      const layers = getSortedLayers();
-      const bgLayer = layers.find((l) => l.type === "backgroundImage");
+      const bgLayer = getSortedLayers().find((l) => l.type === "backgroundImage");
       if (bgLayer) {
         updateLayer(bgLayer.id, { imageData: { src: res.url, fit: "fill" } });
       } else {
         const canvas = project.canvas;
         const newLayer: PosterLayer = {
-          id: uuidv4(),
-          type: "backgroundImage",
-          label: "Background",
-          x: 0, y: 0,
-          width: canvas.width, height: canvas.height,
-          rotation: 0, opacity: 1,
-          visible: true, locked: false, zIndex: 1,
+          id: uuidv4(), type: "backgroundImage", label: "Background",
+          x: 0, y: 0, width: canvas.width, height: canvas.height,
+          rotation: 0, opacity: 1, visible: true, locked: false, zIndex: 1,
           imageData: { src: res.url, fit: "fill" },
         };
         addLayer(newLayer);
@@ -632,220 +680,221 @@ export function ReferencePanel() {
     setReference({ targets: { ...reference.targets, [key]: !reference.targets[key] } });
   }
 
-  const hasPalette      = images.some((i) => i.palette.length > 0);
-  const strictCount     = images.filter((i) => i.mode === "strict").length;
-  const hasAnalysis     = images.some((i) => i.analysis !== null);
-
   return (
-    <div className="p-3 space-y-4">
+    <div className="flex flex-col h-full overflow-y-auto">
+      <div className="p-3 space-y-4">
 
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between pt-1">
-        <span className="font-mono text-[9px] tracking-[0.25em] uppercase text-zinc-600">Reference</span>
-        {images.length > 0 && (
-          <span className="font-mono text-[8px] text-zinc-700">
-            {images.length}/5 images
-            {strictCount > 0 && <span className="text-amber-600/70 ml-1">· {strictCount} strict</span>}
-          </span>
-        )}
-      </div>
-
-      {/* ── Image cards ────────────────────────────────────────────────────── */}
-      {images.length > 0 && (
-        <div className="space-y-2">
-          {images.map((img, i) => (
-            <RefImageCard
-              key={img.id}
-              image={img}
-              index={i}
-              onUpdate={(updates) => updateReferenceImage(img.id, updates)}
-              onRemove={() => removeReferenceImage(img.id)}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* ── Add zone ────────────────────────────────────────────────────────── */}
-      {images.length < 5 && (
-        <AddImageZone
-          onAdd={handleDrop}
-          disabled={adding}
-          compact={images.length > 0}
-        />
-      )}
-
-      {images.length === 0 && (
-        <p className="font-mono text-[8px] text-zinc-700 text-center pt-1">
-          Upload 1–5 images · vision analysis runs automatically
-        </p>
-      )}
-
-      {/* ── No targets warning ─────────────────────────────────────────────── */}
-      {noTargetsWarning && (
-        <div
-          className="flex items-center gap-2 px-2 py-1.5 rounded-sm font-mono text-[8px] text-amber-600/80"
-          style={{ border: "1px solid rgba(245,158,11,0.2)", background: "rgba(245,158,11,0.03)" }}
-        >
-          <span>⚠</span>
-          <span>Select at least one target below to apply reference to generation</span>
-        </div>
-      )}
-
-      {/* ── Global targets ──────────────────────────────────────────────────── */}
-      {hasImages && (
-        <div className="space-y-2">
-          <div className="font-mono text-[9px] tracking-[0.15em] uppercase text-zinc-600">Apply to</div>
-          <div className="grid grid-cols-2 gap-1">
-            {TARGETS.map(({ key, label }) => {
-              const active = reference.targets[key];
-              return (
-                <button
-                  key={key}
-                  onClick={() => toggleTarget(key)}
-                  className="flex items-center gap-1.5 text-left py-0.5"
-                >
-                  <span
-                    className="w-2.5 h-2.5 flex-none flex items-center justify-center text-[7px] transition-colors rounded-sm"
-                    style={{
-                      border: `1px solid ${active ? "rgba(161,161,170,0.5)" : "rgba(255,255,255,0.12)"}`,
-                      background: active ? "rgba(255,255,255,0.08)" : "transparent",
-                      color: active ? "#e4e4e7" : "transparent",
-                    }}
-                  >
-                    ✓
-                  </span>
-                  <span
-                    className="font-mono text-[8px] transition-colors"
-                    style={{ color: active ? "#a1a1aa" : "#52525b" }}
-                  >
-                    {label}
-                  </span>
-                </button>
-              );
-            })}
+        {/* ── Header ──────────────────────────────────────────────────────── */}
+        <div className="pt-1 space-y-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[11px] font-semibold tracking-widest uppercase text-zinc-400">
+                Reference Style Analyzer
+              </div>
+              {hasImages && (
+                <div className="text-[10px] text-zinc-600 mt-0.5">
+                  {images.length}/5 posters loaded
+                  {strictCount > 0 && <span className="text-amber-500/70 ml-1">· {strictCount} strict</span>}
+                </div>
+              )}
+            </div>
+            {/* Animated scan icon when any are analyzing */}
+            {images.some((i) => i.analyzing) && (
+              <span className="w-3 h-3 rounded-full border-2 border-zinc-700 border-t-zinc-300 animate-spin block flex-none" />
+            )}
           </div>
 
-          {/* Apply palette to text */}
-          {hasPalette && project && (
-            <button
-              onClick={applyPaletteToCanvas}
-              className="w-full py-1.5 font-mono text-[8px] tracking-wide uppercase transition-colors text-zinc-600 hover:text-zinc-200 rounded-sm"
-              style={{ border: "1px solid rgba(255,255,255,0.08)" }}
-            >
-              Apply primary palette to text layers
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* ── Global instruction ──────────────────────────────────────────────── */}
-      {hasImages && (
-        <div className="space-y-1.5">
-          <div className="font-mono text-[9px] tracking-[0.15em] uppercase text-zinc-600">Instruction</div>
-          <textarea
-            value={reference.globalInstruction || reference.instruction}
-            onChange={(e) => setReference({ globalInstruction: e.target.value, instruction: e.target.value })}
-            placeholder="e.g. Use only the color palette, keep composition loose…"
-            rows={2}
-            className="w-full bg-transparent text-zinc-300 font-mono text-[9px] leading-relaxed outline-none p-2 placeholder:text-zinc-700 resize-none rounded-sm"
-            style={{ border: "1px solid rgba(255,255,255,0.07)" }}
-          />
-        </div>
-      )}
-
-      {/* ── Generate CTAs ────────────────────────────────────────────────────── */}
-      {project && hasImages && (
-        <div className="space-y-2" style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: "12px" }}>
-
-          {/* Primary generate button */}
-          <button
-            onClick={() => generateFromReference()}
-            disabled={genLoading || graphicLoading || !hasImages}
-            className="w-full py-2.5 font-mono text-[9px] tracking-[0.15em] uppercase transition-all disabled:opacity-30 disabled:cursor-not-allowed rounded-sm"
-            style={{
-              background: genLoading ? "rgba(255,255,255,0.03)" : "rgba(255,255,255,0.07)",
-              border: "1px solid rgba(255,255,255,0.12)",
-              color: genLoading ? "#71717a" : "#e4e4e7",
-            }}
-          >
-            {genLoading ? (
-              <span className="flex items-center justify-center gap-2">
-                <span className="w-2 h-2 border border-zinc-600 border-t-zinc-300 rounded-full animate-spin inline-block" />
-                generating…
-              </span>
-            ) : (
-              "Generate from Reference →"
-            )}
-          </button>
-
-          {/* Match Reference More button */}
-          {hasAnalysis && (
-            <button
-              onClick={() => generateFromReference("max")}
-              disabled={genLoading || graphicLoading}
-              className="w-full py-2 font-mono text-[8px] tracking-[0.12em] uppercase transition-all disabled:opacity-30 disabled:cursor-not-allowed rounded-sm"
-              style={{
-                background: "rgba(251,191,36,0.04)",
-                border: "1px solid rgba(251,191,36,0.20)",
-                color: genLoading ? "#71717a" : "#fbbf24",
-              }}
-              title="Regenerates at strength 100 + strict mode + all visual targets enabled"
-            >
-              Match Reference More →
-            </button>
-          )}
-
-          {/* Generate Graphic Match (SVG fallback) */}
-          {hasPalette && (
-            <button
-              onClick={generateGraphicMatch}
-              disabled={genLoading || graphicLoading}
-              className="w-full py-2 font-mono text-[8px] tracking-[0.12em] uppercase transition-all disabled:opacity-30 disabled:cursor-not-allowed rounded-sm"
-              style={{
-                background: graphicLoading ? "rgba(255,255,255,0.02)" : "transparent",
-                border: "1px solid rgba(255,255,255,0.07)",
-                color: graphicLoading ? "#52525b" : "#71717a",
-              }}
-              title="Generates a blurred abstract SVG directly from the extracted palette — always matches reference colors and style"
-            >
-              {graphicLoading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="w-1.5 h-1.5 border border-zinc-700 border-t-zinc-400 rounded-full animate-spin inline-block" />
-                  building…
-                </span>
-              ) : (
-                "Generate Graphic Match →"
-              )}
-            </button>
-          )}
-
-          {/* Toast */}
-          {genToast && (
-            <p className="font-mono text-[8px] text-zinc-400 text-center">{genToast}</p>
-          )}
-
-          {/* Prompt preview (returned after generation) */}
-          {promptPreview && (
-            <div style={{ borderTop: "1px solid rgba(255,255,255,0.04)", paddingTop: "8px" }}>
-              <button
-                onClick={() => setShowPrompt((v) => !v)}
-                className="w-full text-left font-mono text-[7px] text-zinc-700 hover:text-zinc-500 transition-colors pb-1"
-              >
-                {showPrompt ? "▲ hide prompt sent to model" : "▼ show prompt sent to model"}
-              </button>
-              {showPrompt && (
-                <pre
-                  className="font-mono text-[7px] text-zinc-600 whitespace-pre-wrap leading-relaxed overflow-auto"
-                  style={{ maxHeight: "200px", border: "1px solid rgba(255,255,255,0.04)", padding: "6px", borderRadius: "2px" }}
-                >
-                  {promptPreview}
-                </pre>
-              )}
+          {/* Explanatory copy — shown only when empty */}
+          {!hasImages && (
+            <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/30 px-3 py-3 space-y-2">
+              <p className="text-[12px] font-medium text-zinc-400">
+                Upload 1–5 posters.
+              </p>
+              <p className="text-[11px] text-zinc-600 leading-relaxed">
+                Poster Agent will analyze:
+              </p>
+              <ul className="space-y-1">
+                {[
+                  "Typography & font character",
+                  "Layout structure & composition",
+                  "Color palette & mood",
+                  "Image treatment & texture",
+                  "Visual atmosphere",
+                ].map((item) => (
+                  <li key={item} className="flex items-center gap-2 text-[11px] text-zinc-500">
+                    <span className="w-1 h-1 rounded-full bg-zinc-600 flex-none" />
+                    {item}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-[11px] text-zinc-600 leading-relaxed pt-1 border-t border-zinc-800/60">
+                Results become a reusable style recipe applied to every AI generation.
+              </p>
             </div>
           )}
         </div>
-      )}
 
+        {/* ── Poster cards ────────────────────────────────────────────────── */}
+        {hasImages && (
+          <div className="space-y-3">
+            {images.map((img, i) => (
+              <RefImageCard
+                key={img.id}
+                image={img}
+                index={i}
+                onUpdate={(updates) => updateReferenceImage(img.id, updates)}
+                onRemove={() => removeReferenceImage(img.id)}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* ── Upload zone ─────────────────────────────────────────────────── */}
+        {remaining > 0 && (
+          <UploadZone
+            onAdd={handleDrop}
+            disabled={adding}
+            hasImages={hasImages}
+            remaining={remaining}
+          />
+        )}
+
+        {/* ── No targets warning ──────────────────────────────────────────── */}
+        {noTargetsWarning && (
+          <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-[11px] font-medium text-amber-400/80 border border-amber-500/20 bg-amber-500/5">
+            <span className="flex-none">⚠</span>
+            <span>Select at least one style target below so the AI knows what to extract.</span>
+          </div>
+        )}
+
+        {/* ── Style targets ────────────────────────────────────────────────── */}
+        {hasImages && (
+          <div className="space-y-2">
+            <div className="text-[11px] font-semibold tracking-widest uppercase text-zinc-500">
+              Extract from reference
+            </div>
+            <div className="grid grid-cols-2 gap-1">
+              {TARGETS.map(({ key, label, icon }) => {
+                const active = reference.targets[key];
+                return (
+                  <button
+                    key={key}
+                    onClick={() => toggleTarget(key)}
+                    className={`flex items-center gap-2 px-2.5 py-2 rounded-lg text-left transition-all border ${
+                      active
+                        ? "bg-zinc-800/80 border-zinc-600/60 text-zinc-200"
+                        : "bg-transparent border-zinc-800/60 text-zinc-600 hover:border-zinc-700 hover:text-zinc-400"
+                    }`}
+                  >
+                    <span className="text-[11px] w-3.5 text-center flex-none">{icon}</span>
+                    <span className="text-[11px] font-medium">{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ── Global instruction ──────────────────────────────────────────── */}
+        {hasImages && (
+          <div className="space-y-1.5">
+            <div className="text-[11px] font-semibold tracking-widest uppercase text-zinc-500">
+              Extra instruction
+            </div>
+            <textarea
+              value={reference.globalInstruction || reference.instruction}
+              onChange={(e) => setReference({ globalInstruction: e.target.value, instruction: e.target.value })}
+              placeholder="e.g. Use only the color palette, keep the composition loose…"
+              rows={2}
+              className="w-full bg-zinc-900/60 border border-zinc-800 rounded-xl text-zinc-300 text-[11px] leading-relaxed outline-none px-3 py-2 placeholder:text-zinc-700 resize-none focus:border-zinc-600 transition-colors"
+            />
+          </div>
+        )}
+
+        {/* ── Generate CTAs ────────────────────────────────────────────────── */}
+        {project && hasImages && (
+          <div className="space-y-2 pt-1 border-t border-zinc-800/60">
+
+            {/* Apply palette to text */}
+            {hasPalette && (
+              <button
+                onClick={applyPaletteToCanvas}
+                className="w-full py-2 text-[12px] font-medium text-zinc-500 hover:text-zinc-200 border border-zinc-800 hover:border-zinc-600 rounded-xl transition-colors"
+              >
+                Apply palette to text layers
+              </button>
+            )}
+
+            {/* Primary generate */}
+            <button
+              onClick={() => generateFromReference()}
+              disabled={genLoading || graphicLoading}
+              className="w-full py-3 text-[13px] font-semibold rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-zinc-100 text-zinc-900 hover:bg-white"
+            >
+              {genLoading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-3 h-3 border-2 border-zinc-400 border-t-zinc-800 rounded-full animate-spin inline-block" />
+                  Generating…
+                </span>
+              ) : (
+                "Generate from Reference →"
+              )}
+            </button>
+
+            {/* Match Reference More */}
+            {hasAnalysis && (
+              <button
+                onClick={() => generateFromReference("max")}
+                disabled={genLoading || graphicLoading}
+                className="w-full py-2.5 text-[12px] font-semibold rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed border border-amber-500/30 bg-amber-500/5 text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/50"
+                title="Regenerates at strength 100 + strict mode + all visual targets enabled"
+              >
+                Match Reference More →
+              </button>
+            )}
+
+            {/* Graphic match */}
+            {hasPalette && (
+              <button
+                onClick={generateGraphicMatch}
+                disabled={genLoading || graphicLoading}
+                className="w-full py-2 text-[12px] font-medium text-zinc-600 hover:text-zinc-300 border border-zinc-800 hover:border-zinc-600 rounded-xl transition-colors disabled:opacity-40"
+                title="Generates a blurred abstract SVG directly from the extracted palette"
+              >
+                {graphicLoading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-2.5 h-2.5 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin inline-block" />
+                    Building…
+                  </span>
+                ) : "Generate Graphic Match →"}
+              </button>
+            )}
+
+            {/* Toast feedback */}
+            {genToast && (
+              <p className="text-[11px] font-medium text-zinc-400 text-center py-1">{genToast}</p>
+            )}
+
+            {/* Prompt preview */}
+            {promptPreview && (
+              <div className="border-t border-zinc-800/60 pt-2">
+                <button
+                  onClick={() => setShowPrompt((v) => !v)}
+                  className="w-full text-left text-[10px] font-mono text-zinc-700 hover:text-zinc-500 transition-colors pb-1"
+                >
+                  {showPrompt ? "▲ hide prompt" : "▼ show prompt sent to model"}
+                </button>
+                {showPrompt && (
+                  <pre className="font-mono text-[9px] text-zinc-600 whitespace-pre-wrap leading-relaxed overflow-auto max-h-48 bg-zinc-950 border border-zinc-800/60 rounded-lg p-2.5">
+                    {promptPreview}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+      </div>
     </div>
   );
 }
@@ -870,7 +919,6 @@ export function buildEditorRefCtx(reference: ReferenceConfig) {
       })),
     };
   }
-  // Legacy single-ref fallback
   return {
     strength: reference.strength,
     targets: reference.targets ?? {},
