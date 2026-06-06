@@ -6,13 +6,14 @@ export type Language = "en" | "zh" | "mixed";
 export type StyleRecipe =
   | "collage-poster"
   | "product-exhibit"
+  | "atmospheric-event"
   | "gallery-minimal"
-  | "brutalist-wall"
   | "soft-editorial"
   | "archive-museum"
   | "experimental-type"
   | "blur-field"
   // kept for backward compatibility with existing saved projects
+  | "brutalist-wall"
   | "cinematic-rain"
   | "surreal-film";
 
@@ -281,6 +282,37 @@ export interface PosterSetupConfig {
   userSubtitle?: string;
   userDateLocation?: string;
   userCredits?: string;
+
+  // ── Module: Atmospheric Event ────────────────────────────────────────────────
+  eventName?: string;
+  eventType?: string;
+  eventDate?: string;
+  eventTime?: string;
+  eventLocation?: string;
+  eventDescription?: string;
+  eventLineup?: string;
+  ticketInfo?: string;
+  eventCta?: string;
+  eventOrganizer?: string;
+  eventWebsite?: string;
+  eventMood?: string;
+
+  // ── Module: Product Exhibit (structured fields) ──────────────────────────────
+  productName?: string;
+  productType?: string;
+  brandName?: string;
+  productTagline?: string;
+  productFeatures?: string;
+  priceOffer?: string;
+  productCta?: string;
+  productWebsite?: string;
+
+  // ── Module: Collage Poster (structured fields) ───────────────────────────────
+  collageTitle?: string;
+  collageConcept?: string;
+  collagePhrase?: string;
+  collageArchiveInfo?: string;
+  collageCredit?: string;
 }
 
 // ─── Project ──────────────────────────────────────────────────────────────────

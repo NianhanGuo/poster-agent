@@ -4,7 +4,7 @@ import { useDropzone } from "react-dropzone";
 import { v4 as uuidv4 } from "uuid";
 import { usePosterStore } from "@/store/posterStore";
 import { RECIPE_LIST } from "@/lib/styleRecipes";
-import { isCollageRecipe } from "@/lib/generationPipeline";
+import { isCollageRecipe, isProductExhibitRecipe, isAtmosphericEventRecipe } from "@/lib/generationPipeline";
 import { extractPaletteFromUrl } from "@/lib/colorExtract";
 import type { PaletteColor } from "@/lib/colorExtract";
 import type { ReferenceAnalysis } from "@/types/poster";
@@ -207,6 +207,29 @@ export function PromptComposer() {
   const [showDebug, setShowDebug]         = useState(false);
   const [collageImages, setCollageImages] = useState<CollageImageEntry[]>([]);
 
+  // ── Module-specific input state ─────────────────────────────────────────────
+
+  const [productFields, setProductFields] = useState({
+    name: "", type: "", brand: "", tagline: "",
+    features: "", priceOffer: "", cta: "", website: "", mood: "",
+  });
+  const setProduct = (p: Partial<typeof productFields>) =>
+    setProductFields((f) => ({ ...f, ...p }));
+
+  const [eventFields, setEventFields] = useState({
+    name: "", type: "", date: "", time: "", location: "",
+    description: "", lineup: "", ticketInfo: "", cta: "",
+    organizer: "", website: "", mood: "",
+  });
+  const setEvent = (p: Partial<typeof eventFields>) =>
+    setEventFields((f) => ({ ...f, ...p }));
+
+  const [collageFields, setCollageFields] = useState({
+    mainTitle: "", concept: "", shortPhrase: "", archiveInfo: "", credit: "",
+  });
+  const setCollage = (p: Partial<typeof collageFields>) =>
+    setCollageFields((f) => ({ ...f, ...p }));
+
   const set: Setter = (p) => setCfg((c) => ({ ...c, ...p }));
 
   const onRefDrop = useCallback(async (files: File[]) => {
@@ -387,26 +410,92 @@ export function PromptComposer() {
     refImages.length > 0 &&
     !Object.values(refTargets).some(Boolean);
 
-  const analysisAvailable = refImages.some((r) => r.analysis !== null);
+  const analysisAvailable  = refImages.some((r) => r.analysis !== null);
 
   async function generate() {
     setBusy(true);
     setError("");
     const refCtx = buildRefCtx();
 
-    const isCollageMode = isCollageRecipe(cfg.styleRecipe) && cfg.styleSource !== "reference";
-    const processedSubjects = isCollageMode
+    const isCollageMode        = isCollageRecipe(cfg.styleRecipe) && cfg.styleSource !== "reference";
+    const isProductMode        = isProductExhibitRecipe(cfg.styleRecipe);
+    const isEventMode          = isAtmosphericEventRecipe(cfg.styleRecipe);
+    const processedSubjects    = isCollageMode
       ? collageImages.filter((i) => i.status === "done" && i.processedUrl).map((i) => i.processedUrl!)
       : [];
 
-    // Client-side debug — visible in browser DevTools console
+    // ── Assemble module-specific prompt + structured fields ────────────────────
+    let finalCfg = { ...cfg };
+
+    if (isProductMode) {
+      const productPrompt = [
+        productFields.name && `PRODUCT: ${productFields.name}`,
+        productFields.type && `CATEGORY: ${productFields.type}`,
+        productFields.brand && `BRAND: ${productFields.brand}`,
+        productFields.tagline && `TAGLINE: ${productFields.tagline}`,
+        productFields.features && `FEATURES: ${productFields.features}`,
+        productFields.priceOffer && `PRICE/OFFER: ${productFields.priceOffer}`,
+        productFields.cta && `CTA: ${productFields.cta}`,
+        productFields.website && `WEBSITE: ${productFields.website}`,
+        productFields.mood && `MOOD: ${productFields.mood}`,
+      ].filter(Boolean).join("\n");
+      finalCfg = {
+        ...finalCfg,
+        prompt: productPrompt || cfg.prompt,
+        productName: productFields.name,
+        productType: productFields.type,
+        brandName: productFields.brand,
+        productTagline: productFields.tagline,
+        productFeatures: productFields.features,
+        priceOffer: productFields.priceOffer,
+        productCta: productFields.cta,
+        productWebsite: productFields.website,
+        imageSource: "generate" as const,
+      };
+    } else if (isEventMode) {
+      finalCfg = {
+        ...finalCfg,
+        prompt: eventFields.name || cfg.prompt,
+        eventName: eventFields.name,
+        eventType: eventFields.type,
+        eventDate: eventFields.date,
+        eventTime: eventFields.time,
+        eventLocation: eventFields.location,
+        eventDescription: eventFields.description,
+        eventLineup: eventFields.lineup,
+        ticketInfo: eventFields.ticketInfo,
+        eventCta: eventFields.cta || "Get Tickets",
+        eventOrganizer: eventFields.organizer,
+        eventWebsite: eventFields.website,
+        eventMood: eventFields.mood,
+        imageSource: "generate" as const,
+      };
+    } else if (isCollageMode) {
+      const collagePrompt = [
+        collageFields.mainTitle,
+        collageFields.concept,
+        collageFields.shortPhrase,
+      ].filter(Boolean).join(" — ") || cfg.prompt;
+      finalCfg = {
+        ...finalCfg,
+        prompt: collagePrompt,
+        collageTitle: collageFields.mainTitle,
+        collageConcept: collageFields.concept,
+        collagePhrase: collageFields.shortPhrase,
+        collageArchiveInfo: collageFields.archiveInfo,
+        collageCredit: collageFields.credit,
+      };
+    }
+
+    // Client-side debug
     console.group("[PromptComposer] Generation debug");
-    console.log("styleSource:    ", cfg.styleSource ?? "preset (default)");
-    console.log("selectedPreset: ", cfg.styleSource === "reference" ? "(SUPPRESSED)" : cfg.styleRecipe);
+    console.log("styleSource:    ", finalCfg.styleSource ?? "preset (default)");
+    console.log("selectedPreset: ", finalCfg.styleSource === "reference" ? "(SUPPRESSED)" : finalCfg.styleRecipe);
     console.log("isCollageMode:  ", isCollageMode, "subjects:", processedSubjects.length);
+    console.log("isProductMode:  ", isProductMode);
+    console.log("isEventMode:    ", isEventMode);
     console.log("referenceAnalysisExists:", refImages.some((r) => r.analysis != null));
     console.log("refCtx.references:", (refCtx as { references?: unknown })?.references ?? "(none — legacy format)");
-    console.log("full refCtx:", refCtx);
     console.groupEnd();
 
     // Guard: collage mode requires at least one processed image
@@ -416,8 +505,22 @@ export function PromptComposer() {
       return;
     }
 
+    // Guard: event mode requires event name
+    if (isEventMode && !eventFields.name.trim()) {
+      setError("Enter an event name before generating.");
+      setBusy(false);
+      return;
+    }
+
+    // Guard: product mode requires product name
+    if (isProductMode && !productFields.name.trim()) {
+      setError("Enter a product name before generating.");
+      setBusy(false);
+      return;
+    }
+
     // Guard: warn if reference mode selected but no images uploaded
-    if (cfg.styleSource === "reference" && refImages.length === 0) {
+    if (finalCfg.styleSource === "reference" && refImages.length === 0) {
       setError("Upload at least one reference poster before generating in reference style mode.");
       setBusy(false);
       return;
@@ -427,32 +530,29 @@ export function PromptComposer() {
       const layoutRes = await fetch("/api/generate/layout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ setup: cfg, lockedLayers: [], reference: refCtx, collageSubjects: processedSubjects }),
+        body: JSON.stringify({ setup: finalCfg, lockedLayers: [], reference: refCtx, collageSubjects: processedSubjects }),
       });
       if (!layoutRes.ok) throw new Error();
       const { layers, canvas, imagePrompt, isCollage: isCollageResult, demo: layoutDemo } = await layoutRes.json();
 
       let finalLayers = layers;
 
-      const isRefMode = cfg.styleSource === "reference";
+      const isRefMode = finalCfg.styleSource === "reference";
 
-      if (!isCollageResult && (cfg.imageSource === "generate" || isRefMode)) {
+      if (!isCollageResult && (finalCfg.imageSource === "generate" || isRefMode)) {
         // In reference mode, always generate image from reference (imageSource may be "reference")
         const imgRes = await fetch("/api/generate/image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            // userPrompt = the original user-typed concept ("rain") — must reach Flux
-            userPrompt: cfg.prompt,
-            // prompt = GPT-4o's atmospheric fluxPrompt (style context, may differ from subject)
+            userPrompt: finalCfg.prompt,
             prompt: imagePrompt,
-            // IMPORTANT: only send styleRecipe in preset mode — reference mode must not receive it
             ...(isRefMode ? {} : {
-              styleRecipe: cfg.styleRecipe,
-              imageStyle: cfg.imageStyle,
-              customImagePrompt: cfg.customImagePrompt,
+              styleRecipe: finalCfg.styleRecipe,
+              imageStyle: finalCfg.imageStyle,
+              customImagePrompt: finalCfg.customImagePrompt,
             }),
-            styleSource: cfg.styleSource ?? "preset",
+            styleSource: finalCfg.styleSource ?? "preset",
             width: canvas.width,
             height: canvas.height,
             reference: refCtx,
@@ -470,13 +570,16 @@ export function PromptComposer() {
 
       // Director — final composition approval (best-effort, non-blocking)
       try {
-        const layoutPipeline = isCollageResult ? "collage" : isRefMode ? "reference-driven" : "preset-standard";
+        const layoutPipeline = isCollageResult ? "collage"
+          : isEventMode ? "atmospheric-event"
+          : isRefMode ? "reference-driven"
+          : "preset-standard";
         const dirRes = await fetch("/api/generate/director", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             layers: finalLayers,
-            setup:  cfg,
+            setup:  finalCfg,
             canvas: { size: canvas.size, width: canvas.width, height: canvas.height },
             pipeline: layoutPipeline,
           }),
@@ -492,16 +595,20 @@ export function PromptComposer() {
       }
 
       const now = new Date().toISOString();
+      const projectTitle = isEventMode ? (eventFields.name || finalCfg.prompt || "Untitled Event")
+        : isProductMode ? (productFields.name || finalCfg.prompt || "Untitled Product")
+        : isCollageMode ? (collageFields.mainTitle || finalCfg.prompt || "Untitled Collage")
+        : (finalCfg.userTitle || finalCfg.prompt || "Untitled");
       const project: PosterProject = {
         id:            uuidv4(),
         userId:        "local",
-        title:         cfg.userTitle || cfg.prompt || "Untitled",
+        title:         projectTitle,
         canvas,
         layers:        finalLayers,
-        styleRecipe:   cfg.styleRecipe,
-        posterType:    cfg.posterType,
-        language:      cfg.language,
-        promptHistory: [cfg.prompt],
+        styleRecipe:   finalCfg.styleRecipe,
+        posterType:    finalCfg.posterType,
+        language:      finalCfg.language,
+        promptHistory: [finalCfg.prompt],
         lockedLayers:  [],
         isDemo:        !!layoutDemo,
         createdAt:     now,
@@ -514,6 +621,10 @@ export function PromptComposer() {
       setBusy(false);
     }
   }
+
+  const isCollageMode    = isCollageRecipe(cfg.styleRecipe) && cfg.styleSource !== "reference";
+  const isProductMode    = isProductExhibitRecipe(cfg.styleRecipe);
+  const isEventMode      = isAtmosphericEventRecipe(cfg.styleRecipe);
 
   return (
     <div className={`min-h-screen ${t.surface.page} flex flex-col`}>
@@ -529,41 +640,14 @@ export function PromptComposer() {
       <div className="flex-1 flex items-start justify-center px-8 pt-16 pb-24">
         <div className={`w-full max-w-xl ${t.gap.section}`}>
 
-          {/* ── What are we making? ─────────────────────────────────────── */}
-          <div className={t.gap.group}>
-            <SectionLabel>What are we making?</SectionLabel>
-            <textarea
-              value={cfg.prompt}
-              onChange={(e) => set({ prompt: e.target.value })}
-              placeholder="Describe the concept, mood, or subject…"
-              rows={3}
-              className={`${t.input.underline} resize-none pb-2`}
-            />
-          </div>
-
-          {/* ── Style source — explicit single choice ────────────────────── */}
+          {/* ── Style source ─────────────────────────────────────────────── */}
           <div className={t.gap.group}>
             <SectionLabel>Style source</SectionLabel>
-            <p className={`${t.mutedText} -mt-1`}>
-              Choose where the visual style comes from.
-            </p>
-
-            {/* Source selector */}
             <div className="grid grid-cols-2 gap-2">
-              {(
-                [
-                  {
-                    value: "preset" as StyleSource,
-                    label: "Preset",
-                    desc: "Pick from 8 curated design recipes",
-                  },
-                  {
-                    value: "reference" as StyleSource,
-                    label: "Reference image",
-                    desc: "Upload a poster — AI extracts and applies its style",
-                  },
-                ] as const
-              ).map(({ value, label, desc }) => {
+              {([
+                { value: "preset" as StyleSource,     label: "Preset",          desc: "Choose from curated design modules" },
+                { value: "reference" as StyleSource,  label: "Reference image", desc: "Upload a poster — AI extracts its style" },
+              ] as const).map(({ value, label, desc }) => {
                 const active = cfg.styleSource === value;
                 return (
                   <button
@@ -583,10 +667,10 @@ export function PromptComposer() {
             </div>
           </div>
 
-          {/* ── Preset recipe (only when styleSource === "preset") ────────── */}
+          {/* ── Module / recipe picker ────────────────────────────────────── */}
           {cfg.styleSource !== "reference" && (
             <div className={t.gap.group}>
-              <SectionLabel>Style</SectionLabel>
+              <SectionLabel>Module</SectionLabel>
               <div className="flex flex-wrap gap-2">
                 {RECIPE_LIST.map((r) => (
                   <Chip
@@ -598,13 +682,151 @@ export function PromptComposer() {
                   </Chip>
                 ))}
               </div>
+              {/* Module description */}
+              {isProductMode && (
+                <p className={`${t.mutedText} font-mono`}>
+                  Product Exhibit — sell a product. Commercial hero advertising for any category.
+                </p>
+              )}
+              {isCollageMode && (
+                <p className={`${t.mutedText} font-mono`}>
+                  Collage Poster — editorial graphic composition. Upload subject images to compose.
+                </p>
+              )}
+              {isEventMode && (
+                <p className={`${t.mutedText} font-mono`}>
+                  Atmospheric Event — cinematic event posters: concerts, festivals, exhibitions, lectures.
+                </p>
+              )}
             </div>
           )}
 
-          {/* ── Collage image upload (only for collage-poster in preset mode) ── */}
-          {cfg.styleSource !== "reference" && isCollageRecipe(cfg.styleRecipe) && (
+          {/* ════════════════════════════════════════════════════════════════
+              MODULE 1 — PRODUCT EXHIBIT form
+          ════════════════════════════════════════════════════════════════ */}
+          {cfg.styleSource !== "reference" && isProductMode && (
             <div className={t.gap.group}>
-              <SectionLabel>Collage images</SectionLabel>
+              <SectionLabel>Product details</SectionLabel>
+
+              <input
+                type="text"
+                value={productFields.name}
+                onChange={(e) => setProduct({ name: e.target.value })}
+                placeholder="Product name *"
+                className={t.input.underline}
+              />
+              <div className="grid grid-cols-2 gap-4">
+                <input
+                  type="text"
+                  value={productFields.brand}
+                  onChange={(e) => setProduct({ brand: e.target.value })}
+                  placeholder="Brand name"
+                  className={t.input.underline}
+                />
+                <input
+                  type="text"
+                  value={productFields.type}
+                  onChange={(e) => setProduct({ type: e.target.value })}
+                  placeholder="Category (e.g. coffee, sneaker)"
+                  className={t.input.underline}
+                />
+              </div>
+              <input
+                type="text"
+                value={productFields.tagline}
+                onChange={(e) => setProduct({ tagline: e.target.value })}
+                placeholder="Tagline / campaign headline"
+                className={t.input.underline}
+              />
+              <textarea
+                value={productFields.features}
+                onChange={(e) => setProduct({ features: e.target.value })}
+                placeholder="Product features (1-3 lines, separated by comma or newline)"
+                rows={2}
+                className={`${t.input.underline} resize-none pb-2`}
+              />
+              <div className="grid grid-cols-2 gap-4">
+                <input
+                  type="text"
+                  value={productFields.priceOffer}
+                  onChange={(e) => setProduct({ priceOffer: e.target.value })}
+                  placeholder="Price / offer (optional)"
+                  className={t.input.underline}
+                />
+                <input
+                  type="text"
+                  value={productFields.cta}
+                  onChange={(e) => setProduct({ cta: e.target.value })}
+                  placeholder="CTA (e.g. Shop Now)"
+                  className={t.input.underline}
+                />
+              </div>
+              <input
+                type="text"
+                value={productFields.website}
+                onChange={(e) => setProduct({ website: e.target.value })}
+                placeholder="Website / social handle"
+                className={t.input.underline}
+              />
+              <div>
+                <label className={`${t.controlLabel} block mb-1.5`}>Mood</label>
+                <div className="flex flex-wrap gap-2">
+                  {(["warm","premium","clean","playful","elegant","bold"] as const).map((m) => (
+                    <Chip key={m} active={productFields.mood === m} onClick={() => setProduct({ mood: m })} small>
+                      {m}
+                    </Chip>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ════════════════════════════════════════════════════════════════
+              MODULE 2 — COLLAGE POSTER form + image upload
+          ════════════════════════════════════════════════════════════════ */}
+          {cfg.styleSource !== "reference" && isCollageMode && (
+            <div className={t.gap.group}>
+              <SectionLabel>Collage content</SectionLabel>
+
+              <input
+                type="text"
+                value={collageFields.mainTitle}
+                onChange={(e) => setCollage({ mainTitle: e.target.value })}
+                placeholder="Main title / keyword *"
+                className={t.input.underline}
+              />
+              <textarea
+                value={collageFields.concept}
+                onChange={(e) => setCollage({ concept: e.target.value })}
+                placeholder="Concept / theme / mood (describe the visual idea)"
+                rows={2}
+                className={`${t.input.underline} resize-none pb-2`}
+              />
+              <input
+                type="text"
+                value={collageFields.shortPhrase}
+                onChange={(e) => setCollage({ shortPhrase: e.target.value })}
+                placeholder="Short phrase or tagline"
+                className={t.input.underline}
+              />
+              <div className="grid grid-cols-2 gap-4">
+                <input
+                  type="text"
+                  value={collageFields.archiveInfo}
+                  onChange={(e) => setCollage({ archiveInfo: e.target.value })}
+                  placeholder="Archive / date info"
+                  className={t.input.underline}
+                />
+                <input
+                  type="text"
+                  value={collageFields.credit}
+                  onChange={(e) => setCollage({ credit: e.target.value })}
+                  placeholder="Designer / credit"
+                  className={t.input.underline}
+                />
+              </div>
+
+              <SectionLabel>Subject images</SectionLabel>
               <p className={`${t.mutedText} -mt-1`}>
                 Upload 1–2 images. Subjects are extracted, contrast-enhanced, and composed into an editorial poster.
               </p>
@@ -649,10 +871,7 @@ export function PromptComposer() {
                           style={{ aspectRatio: "3/4", opacity: img.status === "done" ? 1 : 0.45 }}
                         />
                       ) : (
-                        <div
-                          className="w-full rounded-md border border-zinc-800/60 bg-zinc-900"
-                          style={{ aspectRatio: "3/4" }}
-                        />
+                        <div className="w-full rounded-md border border-zinc-800/60 bg-zinc-900" style={{ aspectRatio: "3/4" }} />
                       )}
                       {(img.status === "uploading" || img.status === "extracting") && (
                         <div className="absolute inset-0 flex items-center justify-center">
@@ -660,14 +879,9 @@ export function PromptComposer() {
                         </div>
                       )}
                       <div className={`${t.scale.xs} font-mono text-center mt-0.5 truncate ${
-                        img.status === "done" ? "text-green-400/70"
-                        : img.status === "error" ? "text-red-400/70"
-                        : "text-zinc-500"
+                        img.status === "done" ? "text-green-400/70" : img.status === "error" ? "text-red-400/70" : "text-zinc-500"
                       }`}>
-                        {img.status === "uploading" ? "reading…"
-                         : img.status === "extracting" ? "extracting…"
-                         : img.status === "done" ? "✓ ready"
-                         : img.error ?? "error"}
+                        {img.status === "uploading" ? "reading…" : img.status === "extracting" ? "extracting…" : img.status === "done" ? "✓ ready" : img.error ?? "error"}
                       </div>
                       <button
                         onClick={() => setCollageImages((prev) => prev.filter((e) => e.id !== img.id))}
@@ -686,17 +900,157 @@ export function PromptComposer() {
             </div>
           )}
 
+          {/* ════════════════════════════════════════════════════════════════
+              MODULE 3 — ATMOSPHERIC EVENT form
+          ════════════════════════════════════════════════════════════════ */}
+          {cfg.styleSource !== "reference" && isEventMode && (
+            <div className={t.gap.group}>
+              <SectionLabel>Event details</SectionLabel>
+
+              <input
+                type="text"
+                value={eventFields.name}
+                onChange={(e) => setEvent({ name: e.target.value })}
+                placeholder="Event name *"
+                className={t.input.underline}
+              />
+
+              <div>
+                <label className={`${t.controlLabel} block mb-1.5`}>Event type</label>
+                <div className="flex flex-wrap gap-2">
+                  {(["festival","concert","exhibition","workshop","lecture","conference","screening","pop-up","student show","performance","opening","party"] as const).map((et) => (
+                    <Chip
+                      key={et}
+                      active={eventFields.type === et}
+                      onClick={() => setEvent({ type: et })}
+                      small
+                    >
+                      {et}
+                    </Chip>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <input
+                  type="text"
+                  value={eventFields.date}
+                  onChange={(e) => setEvent({ date: e.target.value })}
+                  placeholder="Date (e.g. July 24–26, 2026)"
+                  className={t.input.underline}
+                />
+                <input
+                  type="text"
+                  value={eventFields.time}
+                  onChange={(e) => setEvent({ time: e.target.value })}
+                  placeholder="Time (e.g. 7:00 PM)"
+                  className={t.input.underline}
+                />
+              </div>
+
+              <input
+                type="text"
+                value={eventFields.location}
+                onChange={(e) => setEvent({ location: e.target.value })}
+                placeholder="Venue / location (e.g. Light Field Park, Portland)"
+                className={t.input.underline}
+              />
+
+              <textarea
+                value={eventFields.description}
+                onChange={(e) => setEvent({ description: e.target.value })}
+                placeholder="Short description of the event"
+                rows={2}
+                className={`${t.input.underline} resize-none pb-2`}
+              />
+
+              <textarea
+                value={eventFields.lineup}
+                onChange={(e) => setEvent({ lineup: e.target.value })}
+                placeholder="Lineup / speakers / artists (comma-separated)"
+                rows={2}
+                className={`${t.input.underline} resize-none pb-2`}
+              />
+
+              <div className="grid grid-cols-2 gap-4">
+                <input
+                  type="text"
+                  value={eventFields.ticketInfo}
+                  onChange={(e) => setEvent({ ticketInfo: e.target.value })}
+                  placeholder="Ticket info / price"
+                  className={t.input.underline}
+                />
+                <input
+                  type="text"
+                  value={eventFields.cta}
+                  onChange={(e) => setEvent({ cta: e.target.value })}
+                  placeholder="CTA (e.g. Get Tickets)"
+                  className={t.input.underline}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <input
+                  type="text"
+                  value={eventFields.organizer}
+                  onChange={(e) => setEvent({ organizer: e.target.value })}
+                  placeholder="Organizer / host"
+                  className={t.input.underline}
+                />
+                <input
+                  type="text"
+                  value={eventFields.website}
+                  onChange={(e) => setEvent({ website: e.target.value })}
+                  placeholder="Website / social"
+                  className={t.input.underline}
+                />
+              </div>
+
+              <div>
+                <label className={`${t.controlLabel} block mb-1.5`}>Mood</label>
+                <div className="flex flex-wrap gap-2">
+                  {(["cinematic","elegant","experimental","energetic","calm","futuristic","underground","academic","playful"] as const).map((m) => (
+                    <Chip key={m} active={eventFields.mood === m} onClick={() => setEvent({ mood: m })} small>
+                      {m}
+                    </Chip>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Generic prompt (for other preset recipes) ──────────────── */}
+          {cfg.styleSource !== "reference" && !isProductMode && !isCollageMode && !isEventMode && (
+            <div className={t.gap.group}>
+              <SectionLabel>Concept</SectionLabel>
+              <textarea
+                value={cfg.prompt}
+                onChange={(e) => set({ prompt: e.target.value })}
+                placeholder="Describe the concept, mood, or subject…"
+                rows={3}
+                className={`${t.input.underline} resize-none pb-2`}
+              />
+            </div>
+          )}
+
           {/* ── Reference style upload (only when styleSource === "reference") */}
           {cfg.styleSource === "reference" && (
             <div className={t.gap.group}>
+              <SectionLabel>Concept</SectionLabel>
+              <textarea
+                value={cfg.prompt}
+                onChange={(e) => set({ prompt: e.target.value })}
+                placeholder="Describe the concept or subject…"
+                rows={2}
+                className={`${t.input.underline} resize-none pb-2`}
+              />
               <SectionLabel>Reference poster</SectionLabel>
               <p className={`${t.mutedText} -mt-1`}>
                 Upload a poster whose style you want to replicate. The AI will analyze typography,
-                layout, color palette, image treatment, composition, and mood — and use that as the
-                complete style specification. No preset recipe will be applied.
+                layout, color palette, image treatment, composition, and mood — and apply that as the
+                complete style specification.
               </p>
 
-              {/* Drop zone */}
               <div
                 {...getRefRootProps()}
                 className={`py-5 text-center border border-dashed rounded-lg cursor-pointer transition-colors ${
@@ -710,42 +1064,32 @@ export function PromptComposer() {
                 <input {...getRefInputProps()} />
                 <div className="space-y-1">
                   <div className={`${t.scale.base} font-medium text-zinc-400`}>
-                    {refExtracting
-                      ? "Analyzing style…"
-                      : isRefDragActive
-                      ? "Drop to analyze"
-                      : refImages.length > 0
-                      ? "Drop another poster to add"
+                    {refExtracting ? "Analyzing style…"
+                      : isRefDragActive ? "Drop to analyze"
+                      : refImages.length > 0 ? "Drop another poster to add"
                       : "Drop a poster here, or click to browse"}
                   </div>
                   {!refExtracting && refImages.length === 0 && (
-                    <div className={`${t.mutedText}`}>JPG, PNG · up to 5 posters</div>
+                    <div className={t.mutedText}>JPG, PNG · up to 5 posters</div>
                   )}
                 </div>
               </div>
 
-              {/* Uploaded thumbnails + analysis status */}
               {refImages.length > 0 && (
                 <div className={t.gap.tight}>
                   <div className="flex gap-2 flex-wrap">
                     {refImages.map((img) => (
                       <div key={img.id} className="relative group flex-none" style={{ width: 56 }}>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={img.url}
-                          alt="reference"
+                        <img src={img.url} alt="reference"
                           className="w-full rounded-md border border-zinc-800/60 object-cover"
                           style={{ aspectRatio: "3/4" }}
                         />
-                        {/* Analysis status dot */}
                         <span
                           className="absolute top-1 right-1 w-2 h-2 rounded-full border border-zinc-900"
-                          style={{
-                            background: img.analysis ? "#4ade80" : img.analysisError ? "#f59e0b" : "#71717a",
-                          }}
+                          style={{ background: img.analysis ? "#4ade80" : img.analysisError ? "#f59e0b" : "#71717a" }}
                           title={img.analysis ? "Style analyzed" : (img.analysisError || "Analyzing…")}
                         />
-                        {/* Palette strip */}
                         {img.palette.length > 0 && (
                           <div className="absolute bottom-0 left-0 right-0 flex rounded-b-md overflow-hidden h-1">
                             {img.palette.slice(0, 5).map((c, i) => (
@@ -753,65 +1097,38 @@ export function PromptComposer() {
                             ))}
                           </div>
                         )}
-                        {/* Remove */}
-                        <button
-                          onClick={() => removeRefImage(img.id)}
+                        <button onClick={() => removeRefImage(img.id)}
                           className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-300 text-[9px] items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity flex"
                         >×</button>
                       </div>
                     ))}
                   </div>
-
-                  {/* Analysis summary line */}
                   <div className="flex items-center justify-between pt-1">
-                    <span className={`${t.scale.xs} font-mono ${
-                      analysisAvailable ? "text-green-400/80" : "text-zinc-600"
-                    }`}>
+                    <span className={`${t.scale.xs} font-mono ${analysisAvailable ? "text-green-400/80" : "text-zinc-600"}`}>
                       {analysisAvailable
                         ? `✓ Style analyzed — ${refImages.filter((r) => r.analysis).length}/${refImages.length} poster${refImages.length > 1 ? "s" : ""}`
-                        : refImages[0]?.analysisError
-                        ? `⚠ ${refImages[0].analysisError}`
-                        : "Analyzing…"}
+                        : refImages[0]?.analysisError ? `⚠ ${refImages[0].analysisError}` : "Analyzing…"}
                     </span>
-                    <button
-                      onClick={() => setShowDebug((v) => !v)}
+                    <button onClick={() => setShowDebug((v) => !v)}
                       className={`${t.scale.xs} font-mono text-zinc-700 hover:text-zinc-500 transition-colors`}
                     >
                       {showDebug ? "hide debug" : "debug output"}
                     </button>
                   </div>
-
-                  {/* Debug panel */}
                   {showDebug && (
                     <div className="rounded-md p-2.5 space-y-1 font-mono bg-zinc-950 border border-zinc-800/60">
                       <div className={`${t.scale.xs} text-zinc-500 uppercase tracking-widest mb-1`}>debug — style extraction</div>
-                      <div className={`${t.scale.xs} text-zinc-600`}>
-                        styleSource: <span className="text-green-400/80">reference</span> · preset: <span className="text-red-400/70">suppressed</span>
-                      </div>
                       {refImages.map((img, i) => (
                         <div key={img.id} className={`${t.scale.xs} text-zinc-600`}>
                           [img {i + 1}]
-                          {img.analysis
-                            ? ` ✓ ${img.analysis.styleClass} · ${img.analysis.mood}`
-                            : img.analysisError
-                            ? ` ⚠ ${img.analysisError}`
-                            : " analyzing…"}
+                          {img.analysis ? ` ✓ ${img.analysis.styleClass} · ${img.analysis.mood}` : img.analysisError ? ` ⚠ ${img.analysisError}` : " analyzing…"}
                           {img.palette.length > 0 && ` · palette: ${img.palette.slice(0, 3).map((p) => p.hex).join(", ")}`}
                         </div>
                       ))}
-                      {refImages[0]?.analysis && (
-                        <>
-                          <div className={`${t.scale.xs} text-zinc-600 pt-1`}>visual summary: {refImages[0].analysis.visualSummary}</div>
-                          <div className={`${t.scale.xs} text-zinc-600`}>composition: {refImages[0].analysis.composition}</div>
-                          <div className={`${t.scale.xs} text-zinc-600`}>typography: {refImages[0].analysis.typographyStyle}</div>
-                        </>
-                      )}
                     </div>
                   )}
                 </div>
               )}
-
-              {/* Warning: no images uploaded yet */}
               {refImages.length === 0 && !refExtracting && (
                 <p className={`${t.scale.xs} font-mono text-amber-600/70`}>
                   ⚠ Upload at least one reference poster before generating.
@@ -820,8 +1137,8 @@ export function PromptComposer() {
             </div>
           )}
 
-          {/* ── Image source (preset mode only, hidden for collage-poster) ── */}
-          {cfg.styleSource !== "reference" && cfg.styleRecipe !== "collage-poster" && (
+          {/* ── Image source (preset mode only, not collage/event/product) ── */}
+          {cfg.styleSource !== "reference" && !isProductMode && !isCollageMode && !isEventMode && (
             <div className={t.gap.group}>
               <SectionLabel>Image</SectionLabel>
               <div className="flex gap-2">
@@ -831,26 +1148,17 @@ export function PromptComposer() {
                   </Chip>
                 ))}
               </div>
-
               {cfg.imageSource === "generate" && (
                 <div className="flex flex-wrap gap-2 pt-1">
                   {IMAGE_STYLES.map((s) => (
-                    <Chip
-                      key={s.value}
-                      active={cfg.imageStyle === s.value}
-                      onClick={() => set({ imageStyle: s.value })}
-                      small
-                    >
+                    <Chip key={s.value} active={cfg.imageStyle === s.value} onClick={() => set({ imageStyle: s.value })} small>
                       {s.label}
                     </Chip>
                   ))}
                 </div>
               )}
-
               {cfg.imageSource === "generate" && cfg.imageStyle === "custom" && (
-                <input
-                  type="text"
-                  value={cfg.customImagePrompt ?? ""}
+                <input type="text" value={cfg.customImagePrompt ?? ""}
                   onChange={(e) => set({ customImagePrompt: e.target.value })}
                   placeholder="Describe the image style…"
                   className={t.input.underline}
@@ -963,9 +1271,9 @@ export function PromptComposer() {
               onClick={generate}
               disabled={
                 busy ||
-                (isCollageRecipe(cfg.styleRecipe) &&
-                  cfg.styleSource !== "reference" &&
-                  (!collageImages.some((i) => i.status === "done") || collageImages.some((i) => i.status === "extracting")))
+                (isCollageMode && (!collageImages.some((i) => i.status === "done") || collageImages.some((i) => i.status === "extracting"))) ||
+                (isEventMode && !eventFields.name.trim()) ||
+                (isProductMode && !productFields.name.trim())
               }
               className="flex items-center gap-3 group disabled:opacity-30 transition-opacity"
             >

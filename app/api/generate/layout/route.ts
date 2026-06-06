@@ -21,6 +21,14 @@ import {
   buildProductExhibitUserPrompt,
   type ProductExhibitPlan,
 } from "@/lib/productExhibit";
+import {
+  detectEventType,
+  detectEventMood,
+  selectEventCompositionPreset,
+  buildAtmosphericEventSystemPrompt,
+  buildAtmosphericEventUserPrompt,
+  type AtmosphericEventPlan,
+} from "@/lib/atmosphericEvent";
 import { normalizeLayerNames } from "@/lib/layerNaming";
 import {
   buildCollageLayoutTemplate,
@@ -495,10 +503,11 @@ export async function POST(req: NextRequest) {
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     // ── Pipeline selection ────────────────────────────────────────────────────
-    const pipeline              = selectPipeline(setup);
-    const pipelineCfg           = getPipelineConfig(setup);
-    const isCollageMode         = pipeline === "collage";
-    const isProductExhibitMode  = pipeline === "product-exhibit";
+    const pipeline                  = selectPipeline(setup);
+    const pipelineCfg               = getPipelineConfig(setup);
+    const isCollageMode             = pipeline === "collage";
+    const isProductExhibitMode      = pipeline === "product-exhibit";
+    const isAtmosphericEventMode    = pipeline === "atmospheric-event";
     console.log(`[layout/route] Pipeline: ${pipeline} (${pipelineCfg.label})`);
     let selectedCollagePattern: CollagePattern | undefined;
 
@@ -550,6 +559,17 @@ export async function POST(req: NextRequest) {
 
       console.log("[layout/route] ── PRODUCT EXHIBIT MODE ──");
       console.log("[layout/route] Category:", category, "| Layout:", layout);
+    } else if (isAtmosphericEventMode) {
+      // ── Atmospheric Event path ──────────────────────────────────────────────
+      const eventText  = setup.eventName || setup.prompt || "";
+      const eventType  = detectEventType(eventText + " " + (setup.eventType ?? ""));
+      const eventMood  = detectEventMood(eventText + " " + (setup.eventDescription ?? ""), setup.eventMood);
+      const preset     = selectEventCompositionPreset(eventType, eventMood);
+      systemContent    = buildAtmosphericEventSystemPrompt(canvas);
+      userContent      = buildAtmosphericEventUserPrompt(setup, canvas, brief, eventType, eventMood, preset);
+
+      console.log("[layout/route] ── ATMOSPHERIC EVENT MODE ──");
+      console.log("[layout/route] Event type:", eventType, "| Mood:", eventMood, "| Preset:", preset);
     } else {
       // Standard generation
       systemContent = buildSystemPrompt();
@@ -565,8 +585,8 @@ export async function POST(req: NextRequest) {
     console.log("[layout/route] User prompt (" + userContent.length + " chars):\n", userContent.slice(0, 2000));
     if (userContent.length > 2000) console.log("[layout/route] ... (truncated, full length:", userContent.length, ")");
 
-    // Product exhibit needs extra tokens for the plan schema + layers
-    const maxTokens = isProductExhibitMode ? 6144 : 4096;
+    // Product exhibit and atmospheric event need extra tokens for their plan schemas + layers
+    const maxTokens = (isProductExhibitMode || isAtmosphericEventMode) ? 6144 : 4096;
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
@@ -589,9 +609,13 @@ export async function POST(req: NextRequest) {
       plan?: ProductExhibitPlan;
     } = JSON.parse(text);
 
-    // Log the product exhibit plan when present
+    // Log the plan when present
     if (isProductExhibitMode && parsed.plan) {
       console.log("[layout/route] Product Exhibit Plan:");
+      console.log(JSON.stringify(parsed.plan, null, 2));
+    }
+    if (isAtmosphericEventMode && parsed.plan) {
+      console.log("[layout/route] Atmospheric Event Plan:");
       console.log(JSON.stringify(parsed.plan, null, 2));
     }
     console.log("[layout/route] fluxPrompt from GPT-4o:", parsed.fluxPrompt?.slice(0, 200));
@@ -851,8 +875,8 @@ export async function POST(req: NextRequest) {
       isCollage:         isCollageMode,
       pipeline,
       pipelineLabel:     pipelineCfg.label,
-      // Product Exhibit: include the Director plan for client logging/future use
       ...(isProductExhibitMode && parsed.plan ? { productExhibitPlan: parsed.plan } : {}),
+      ...(isAtmosphericEventMode && parsed.plan ? { atmosphericEventPlan: parsed.plan } : {}),
       demo: false,
     });
   } catch (err) {

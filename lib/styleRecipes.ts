@@ -104,7 +104,7 @@ export const RECIPES: Record<StyleRecipe, RecipeDef> = {
     collageMode: {
       requiresImages:      true,
       minImages:           1,
-      maxImages:           3,
+      maxImages:           2,
       autoExtractSubjects: true,
       autoGrayscale:       true,
       noFluxGeneration:    true,
@@ -200,6 +200,37 @@ export const RECIPES: Record<StyleRecipe, RecipeDef> = {
     },
   },
 
+  // ── Atmospheric Event (event poster: festival, concert, exhibition, lecture) ──
+  "atmospheric-event": {
+    id: "atmospheric-event",
+    name: "Atmospheric Event",
+    tagline: "Cinematic event posters — concerts, festivals, exhibitions",
+    imageKeywords:
+      "cinematic atmospheric scene, dramatic lighting, event venue, stage environment, immersive landscape, crowd silhouette, glow, mist, architectural space, deep color field",
+    imageAvoid: "text, logos, watermarks, flat icons, cluttered compositions",
+    palette: {
+      bg:      "#080810",
+      surface: "#0d0d1e",
+      text:    "#f5f0e8",
+      accent:  "#e05c20",
+    },
+    type: {
+      titleFamily:        "Bebas Neue",
+      bodyFamily:         "Space Mono",
+      titleWeight:        "700",
+      titleAlign:         "left",
+      titleLetterSpacing: -2,
+      titleColor:         "#ffffff",
+      bodyColor:          "rgba(255,255,255,0.75)",
+    },
+    layout: {
+      titlePosition: "center",
+      align:         "left",
+      density:       "dense",
+    },
+  },
+
+  // ── Legacy: kept for backward compatibility with saved projects ────────────
   "brutalist-wall": {
     id: "brutalist-wall",
     name: "Brutalist Wall",
@@ -349,5 +380,5 @@ export const RECIPES: Record<StyleRecipe, RecipeDef> = {
 
 /** Active recipes shown in the style picker — excludes legacy backward-compat entries */
 export const RECIPE_LIST = Object.values(RECIPES).filter(
-  (r) => r.id !== "cinematic-rain" && r.id !== "surreal-film",
+  (r) => r.id !== "cinematic-rain" && r.id !== "surreal-film" && r.id !== "brutalist-wall",
 );

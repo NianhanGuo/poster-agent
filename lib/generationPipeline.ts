@@ -10,7 +10,7 @@ import type { PosterSetupConfig } from "@/types/poster";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type Pipeline = "collage" | "product-exhibit" | "reference-driven" | "preset-standard";
+export type Pipeline = "collage" | "product-exhibit" | "atmospheric-event" | "reference-driven" | "preset-standard";
 
 export interface PipelineConfig {
   id: Pipeline;
@@ -105,6 +105,47 @@ COMPOSITION:
 - The poster must look like it was designed by a professional — not assembled from random layers.`,
   },
 
+  "atmospheric-event": {
+    id:          "atmospheric-event",
+    label:       "Atmospheric Event",
+    philosophy:  "Event poster with cinematic atmosphere. Generates an immersive background scene, organizes event information into clear hierarchy, and ensures date, location, lineup, and CTA are always readable.",
+    generateBrief:              false,
+    generateLayout:             true,
+    generateBackgroundImage:    true,
+    requiresSubjectImages:      false,
+    supportsTypographyRefinement: true,
+    requiresDirectorApproval:   true,
+    directorConstraints: `
+ATMOSPHERIC EVENT PIPELINE — hard constraints:
+
+BACKGROUND:
+- background/atmosphere (solidBackground) MUST exist and cover 100% of canvas (x:0, y:0, full width and height), zIndex:0.
+- background/scene (backgroundImage) MUST exist with a clipShape covering the full canvas.
+- background/overlay (colorOverlay) MUST exist and darken the bottom 40%+ of canvas for text readability.
+- background/texture (noiseTexture) is expected at high zIndex for atmospheric grain.
+
+TYPOGRAPHY HIERARCHY:
+- title/event-name MUST be the largest text element. It must dominate the composition.
+- info/date and info/location MUST be present and readable (minimum 16px font size).
+- If date or location layers are missing, add them. These are non-negotiable.
+- Typography hierarchy: title/event-name >>> info/date & info/location >> info/lineup > info/description > ticket/cta > ticket/website.
+
+INFORMATION COMPLETENESS:
+- date and location are NON-NEGOTIABLE — if missing, insert placeholder text.
+- ticket/cta must be present.
+- label/category (event type chip) should be present.
+
+LAYOUT SAFETY:
+- All text layers MUST stay within safe margins (5% from canvas edges).
+- No text outside canvas bounds.
+- Title must not push off-canvas — reduce fontSize if needed.
+- The bottom 15-20% of canvas should contain ticket/cta, website, and organizer info.
+
+LAYER NAMING:
+- No emoji in any label. Use only the semantic naming convention.
+- background/..., title/..., info/..., ticket/..., organizer/..., label/..., accent/...`,
+  },
+
   "reference-driven": {
     id:          "reference-driven",
     label:       "Reference",
@@ -147,8 +188,9 @@ PRESET-STANDARD PIPELINE — hard constraints:
 // ─── Pipeline router ──────────────────────────────────────────────────────────
 
 // Recipe ID sets — stored as Set<string> to avoid TypeScript TS2367 errors.
-const COLLAGE_RECIPE_IDS        = new Set<string>(["collage-poster"]);
-const PRODUCT_EXHIBIT_RECIPE_IDS = new Set<string>(["product-exhibit"]);
+const COLLAGE_RECIPE_IDS          = new Set<string>(["collage-poster"]);
+const PRODUCT_EXHIBIT_RECIPE_IDS  = new Set<string>(["product-exhibit"]);
+const ATMOSPHERIC_EVENT_RECIPE_IDS = new Set<string>(["atmospheric-event"]);
 
 /** Returns true when the recipe uses the collage pipeline. */
 export function isCollageRecipe(recipe: string): boolean {
@@ -160,20 +202,27 @@ export function isProductExhibitRecipe(recipe: string): boolean {
   return PRODUCT_EXHIBIT_RECIPE_IDS.has(recipe);
 }
 
+/** Returns true when the recipe uses the atmospheric-event pipeline. */
+export function isAtmosphericEventRecipe(recipe: string): boolean {
+  return ATMOSPHERIC_EVENT_RECIPE_IDS.has(recipe);
+}
+
 /**
  * Selects the correct generation pipeline based on user setup.
- * This is the single routing decision point — use it everywhere.
+ * Single routing decision point — use it everywhere.
  *
  * Precedence:
  *   1. collage-poster recipe → collage pipeline
  *   2. product-exhibit recipe → product-exhibit pipeline
- *   3. styleSource === "reference" → reference-driven pipeline
- *   4. everything else → preset-standard pipeline
+ *   3. atmospheric-event recipe → atmospheric-event pipeline
+ *   4. styleSource === "reference" → reference-driven pipeline
+ *   5. everything else → preset-standard pipeline
  */
 export function selectPipeline(setup: PosterSetupConfig): Pipeline {
-  if (isCollageRecipe(setup.styleRecipe))        return "collage";
-  if (isProductExhibitRecipe(setup.styleRecipe)) return "product-exhibit";
-  if (setup.styleSource === "reference")         return "reference-driven";
+  if (isCollageRecipe(setup.styleRecipe))          return "collage";
+  if (isProductExhibitRecipe(setup.styleRecipe))   return "product-exhibit";
+  if (isAtmosphericEventRecipe(setup.styleRecipe)) return "atmospheric-event";
+  if (setup.styleSource === "reference")           return "reference-driven";
   return "preset-standard";
 }
 
