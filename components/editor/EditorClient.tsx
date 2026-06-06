@@ -18,6 +18,7 @@ import type { DesignBrief, ReferenceTargets } from "@/types/poster";
 import { CANVAS_PRESETS } from "@/types/poster";
 import type { EnrichedRefCtx } from "@/lib/referencePrompt";
 import { loadFontsFromLayers, loadGoogleFont } from "@/lib/fonts";
+import { isCollageRecipe } from "@/lib/generationPipeline";
 
 const DEFAULT_TARGETS: ReferenceTargets = {
   mood: false,
@@ -133,7 +134,7 @@ export function EditorClient() {
     let layoutData: Record<string, unknown> = {};
     try {
       // For collage mode, re-use the subject images already in the project layers
-      const isCollageProject = project.styleRecipe === "collage-poster";
+      const isCollageProject = isCollageRecipe(project.styleRecipe);
       const existingSubjects = isCollageProject
         ? getSortedLayers()
             .filter((l) => l.type === "subjectImage" && l.imageData?.src && !l.imageData.src.startsWith("__"))

@@ -4,6 +4,7 @@ import { useDropzone } from "react-dropzone";
 import { v4 as uuidv4 } from "uuid";
 import { usePosterStore } from "@/store/posterStore";
 import { RECIPE_LIST } from "@/lib/styleRecipes";
+import { isCollageRecipe } from "@/lib/generationPipeline";
 import { extractPaletteFromUrl } from "@/lib/colorExtract";
 import type { PaletteColor } from "@/lib/colorExtract";
 import type { ReferenceAnalysis } from "@/types/poster";
@@ -383,7 +384,7 @@ export function PromptComposer() {
     setError("");
     const refCtx = buildRefCtx();
 
-    const isCollageMode = cfg.styleRecipe === "collage-poster" && cfg.styleSource !== "reference";
+    const isCollageMode = isCollageRecipe(cfg.styleRecipe) && cfg.styleSource !== "reference";
     const processedSubjects = isCollageMode
       ? collageImages.filter((i) => i.status === "done" && i.processedUrl).map((i) => i.processedUrl!)
       : [];
@@ -591,7 +592,7 @@ export function PromptComposer() {
           )}
 
           {/* ── Collage image upload (only for collage-poster in preset mode) ── */}
-          {cfg.styleSource !== "reference" && cfg.styleRecipe === "collage-poster" && (
+          {cfg.styleSource !== "reference" && isCollageRecipe(cfg.styleRecipe) && (
             <div className={t.gap.group}>
               <SectionLabel>Collage images</SectionLabel>
               <p className={`${t.mutedText} -mt-1`}>
@@ -952,7 +953,7 @@ export function PromptComposer() {
               onClick={generate}
               disabled={
                 busy ||
-                (cfg.styleRecipe === "collage-poster" &&
+                (isCollageRecipe(cfg.styleRecipe) &&
                   cfg.styleSource !== "reference" &&
                   !collageImages.some((i) => i.status === "done"))
               }

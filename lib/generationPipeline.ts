@@ -102,6 +102,19 @@ PRESET-STANDARD PIPELINE — hard constraints:
 
 // ─── Pipeline router ──────────────────────────────────────────────────────────
 
+// Recipe IDs that use the collage pipeline — stored as Set<string> to avoid
+// TypeScript TS2367 literal–union comparison errors across build environments.
+const COLLAGE_RECIPE_IDS = new Set<string>(["collage-poster"]);
+
+/**
+ * Returns true when the given recipe uses the collage pipeline.
+ * Accepts `string` (not `StyleRecipe`) so that TypeScript never raises
+ * TS2367 ("comparison has no overlap") regardless of build environment.
+ */
+export function isCollageRecipe(recipe: string): boolean {
+  return COLLAGE_RECIPE_IDS.has(recipe);
+}
+
 /**
  * Selects the correct generation pipeline based on user setup.
  * This is the single routing decision point — use it everywhere.
@@ -112,8 +125,8 @@ PRESET-STANDARD PIPELINE — hard constraints:
  *   3. everything else → preset-standard pipeline
  */
 export function selectPipeline(setup: PosterSetupConfig): Pipeline {
-  if (setup.styleRecipe === "collage-poster") return "collage";
-  if (setup.styleSource === "reference")      return "reference-driven";
+  if (isCollageRecipe(setup.styleRecipe)) return "collage";
+  if (setup.styleSource === "reference")  return "reference-driven";
   return "preset-standard";
 }
 
