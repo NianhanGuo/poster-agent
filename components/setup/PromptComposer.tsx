@@ -28,6 +28,72 @@ interface RefImage {
   analysisError: string;
 }
 
+interface CollageImageEntry {
+  id: string;
+  /** Original uploaded image data URL */
+  originalUrl: string;
+  /** Processed: background-removed + grayscale. Null until processing completes. */
+  processedUrl: string | null;
+  status: "uploading" | "extracting" | "done" | "error";
+  error?: string;
+}
+
+// ─── Collage image processing ─────────────────────────────────────────────────
+
+/**
+ * Converts a PNG data URL (with transparency) to grayscale.
+ * Preserves the alpha channel so transparent areas remain transparent.
+ */
+function toGrayscaleDataUrl(objectUrl: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { reject(new Error("no 2d context")); return; }
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, img.width, img.height);
+      const d = imageData.data;
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i + 3] > 0) { // only non-transparent pixels
+          const gray = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+          d[i] = d[i + 1] = d[i + 2] = gray;
+        }
+      }
+      ctx.putImageData(imageData, 0, 0);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = reject;
+    img.src = objectUrl;
+  });
+}
+
+/**
+ * Runs background removal and grayscale conversion on an image data URL.
+ * Returns the processed data URL (transparent cutout, grayscale).
+ */
+async function processCollageImage(dataUrl: string): Promise<string> {
+  // Convert data URL to Blob for the bg-removal library
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+
+  const { removeBackground } = await import("@imgly/background-removal");
+  const cutoutBlob = await removeBackground(blob, {
+    model: "isnet_fp16",
+    output: { format: "image/png", quality: 0.9 },
+  });
+
+  const objectUrl = URL.createObjectURL(cutoutBlob);
+  try {
+    const grayscale = await toGrayscaleDataUrl(objectUrl);
+    return grayscale;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 type Setter = (p: Partial<PosterSetupConfig>) => void;
 
 const IMAGE_STYLES: { value: ImageStyle; label: string }[] = [
@@ -112,7 +178,7 @@ export function PromptComposer() {
     posterType:  "poster",
     canvasSize:  "a4",
     language:    "en",
-    styleRecipe: "cinematic-rain",
+    styleRecipe: "gallery-minimal",
     styleSource: "preset",
     imageSource: "generate",
     imageStyle:  "cinematic-photography",
@@ -128,6 +194,7 @@ export function PromptComposer() {
   });
   const [refExtracting, setRefExtracting] = useState(false);
   const [showDebug, setShowDebug]         = useState(false);
+  const [collageImages, setCollageImages] = useState<CollageImageEntry[]>([]);
 
   const set: Setter = (p) => setCfg((c) => ({ ...c, ...p }));
 
@@ -172,6 +239,70 @@ export function PromptComposer() {
     onDrop: onRefDrop,
     accept: { "image/*": [] },
     disabled: busy || refExtracting,
+  });
+
+  const onCollageDrop = useCallback(
+    async (acceptedFiles: File[]) => {
+      const remaining = 3 - collageImages.length;
+      if (remaining <= 0) return;
+      const filesToProcess = acceptedFiles.slice(0, remaining);
+      const newIds = filesToProcess.map(() => uuidv4());
+
+      setCollageImages((prev) => [
+        ...prev,
+        ...filesToProcess.map((_, i) => ({
+          id: newIds[i],
+          originalUrl: "",
+          processedUrl: null,
+          status: "uploading" as const,
+        })),
+      ]);
+
+      for (let i = 0; i < filesToProcess.length; i++) {
+        const file = filesToProcess[i];
+        const entryId = newIds[i];
+        let dataUrl: string;
+        try {
+          dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve((e.target?.result as string) ?? "");
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+        } catch {
+          setCollageImages((prev) => prev.map((e) =>
+            e.id === entryId ? { ...e, status: "error" as const, error: "Failed to read file" } : e,
+          ));
+          continue;
+        }
+
+        setCollageImages((prev) => prev.map((e) =>
+          e.id === entryId ? { ...e, originalUrl: dataUrl, status: "extracting" as const } : e,
+        ));
+
+        try {
+          const processed = await processCollageImage(dataUrl);
+          setCollageImages((prev) => prev.map((e) =>
+            e.id === entryId ? { ...e, processedUrl: processed, status: "done" as const } : e,
+          ));
+        } catch {
+          setCollageImages((prev) => prev.map((e) =>
+            e.id === entryId ? { ...e, originalUrl: dataUrl, status: "error" as const, error: "Subject extraction failed" } : e,
+          ));
+        }
+      }
+    },
+    [collageImages.length],
+  );
+
+  const {
+    getRootProps: getCollageRootProps,
+    getInputProps: getCollageInputProps,
+    isDragActive: isCollageDragActive,
+  } = useDropzone({
+    onDrop: onCollageDrop,
+    accept: { "image/*": [] },
+    disabled: busy || collageImages.length >= 3,
   });
 
   function removeRefImage(id: string) {
@@ -252,14 +383,27 @@ export function PromptComposer() {
     setError("");
     const refCtx = buildRefCtx();
 
+    const isCollageMode = cfg.styleRecipe === "collage-poster" && cfg.styleSource !== "reference";
+    const processedSubjects = isCollageMode
+      ? collageImages.filter((i) => i.status === "done" && i.processedUrl).map((i) => i.processedUrl!)
+      : [];
+
     // Client-side debug — visible in browser DevTools console
     console.group("[PromptComposer] Generation debug");
     console.log("styleSource:    ", cfg.styleSource ?? "preset (default)");
     console.log("selectedPreset: ", cfg.styleSource === "reference" ? "(SUPPRESSED)" : cfg.styleRecipe);
+    console.log("isCollageMode:  ", isCollageMode, "subjects:", processedSubjects.length);
     console.log("referenceAnalysisExists:", refImages.some((r) => r.analysis != null));
     console.log("refCtx.references:", (refCtx as { references?: unknown })?.references ?? "(none — legacy format)");
     console.log("full refCtx:", refCtx);
     console.groupEnd();
+
+    // Guard: collage mode requires at least one processed image
+    if (isCollageMode && processedSubjects.length === 0) {
+      setError("Upload and wait for at least one image to finish processing before generating.");
+      setBusy(false);
+      return;
+    }
 
     // Guard: warn if reference mode selected but no images uploaded
     if (cfg.styleSource === "reference" && refImages.length === 0) {
@@ -272,16 +416,16 @@ export function PromptComposer() {
       const layoutRes = await fetch("/api/generate/layout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ setup: cfg, lockedLayers: [], reference: refCtx }),
+        body: JSON.stringify({ setup: cfg, lockedLayers: [], reference: refCtx, collageSubjects: processedSubjects }),
       });
       if (!layoutRes.ok) throw new Error();
-      const { layers, canvas, imagePrompt, demo: layoutDemo } = await layoutRes.json();
+      const { layers, canvas, imagePrompt, isCollage: isCollageResult, demo: layoutDemo } = await layoutRes.json();
 
       let finalLayers = layers;
 
       const isRefMode = cfg.styleSource === "reference";
 
-      if (cfg.imageSource === "generate" || isRefMode) {
+      if (!isCollageResult && (cfg.imageSource === "generate" || isRefMode)) {
         // In reference mode, always generate image from reference (imageSource may be "reference")
         const imgRes = await fetch("/api/generate/image", {
           method: "POST",
@@ -423,6 +567,91 @@ export function PromptComposer() {
             </div>
           )}
 
+          {/* ── Collage image upload (only for collage-poster in preset mode) ── */}
+          {cfg.styleSource !== "reference" && cfg.styleRecipe === "collage-poster" && (
+            <div className={t.gap.group}>
+              <SectionLabel>Collage images</SectionLabel>
+              <p className={`${t.mutedText} -mt-1`}>
+                Upload 1–3 images. Poster Agent will automatically extract subjects and build a collage composition.
+              </p>
+
+              {collageImages.length < 3 && (
+                <div
+                  {...getCollageRootProps()}
+                  className={`py-5 text-center border border-dashed rounded-lg cursor-pointer transition-colors ${
+                    isCollageDragActive
+                      ? "border-zinc-400 bg-zinc-800/30"
+                      : collageImages.length > 0
+                      ? "border-zinc-700 hover:border-zinc-500"
+                      : "border-zinc-800 hover:border-zinc-600"
+                  }`}
+                >
+                  <input {...getCollageInputProps()} />
+                  <div className="space-y-1">
+                    <div className={`${t.scale.base} font-medium text-zinc-400`}>
+                      {isCollageDragActive
+                        ? "Drop to add"
+                        : collageImages.length > 0
+                        ? `Add another image (${collageImages.length}/3)`
+                        : "Drop images here, or click to browse"}
+                    </div>
+                    {collageImages.length === 0 && (
+                      <div className={t.mutedText}>JPG, PNG · up to 3 images</div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {collageImages.length > 0 && (
+                <div className="flex gap-3 flex-wrap pt-1">
+                  {collageImages.map((img) => (
+                    <div key={img.id} className="relative group flex-none" style={{ width: 64 }}>
+                      {img.originalUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={img.processedUrl ?? img.originalUrl}
+                          alt="collage subject"
+                          className="w-full rounded-md border border-zinc-800/60 object-cover"
+                          style={{ aspectRatio: "3/4", opacity: img.status === "done" ? 1 : 0.45 }}
+                        />
+                      ) : (
+                        <div
+                          className="w-full rounded-md border border-zinc-800/60 bg-zinc-900"
+                          style={{ aspectRatio: "3/4" }}
+                        />
+                      )}
+                      {(img.status === "uploading" || img.status === "extracting") && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="w-4 h-4 border border-zinc-500 border-t-zinc-200 rounded-full animate-spin" />
+                        </div>
+                      )}
+                      <div className={`${t.scale.xs} font-mono text-center mt-0.5 truncate ${
+                        img.status === "done" ? "text-green-400/70"
+                        : img.status === "error" ? "text-red-400/70"
+                        : "text-zinc-500"
+                      }`}>
+                        {img.status === "uploading" ? "reading…"
+                         : img.status === "extracting" ? "extracting…"
+                         : img.status === "done" ? "✓ ready"
+                         : img.error ?? "error"}
+                      </div>
+                      <button
+                        onClick={() => setCollageImages((prev) => prev.filter((e) => e.id !== img.id))}
+                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-300 text-[9px] items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity flex"
+                      >×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {collageImages.length === 0 && (
+                <p className={`${t.scale.xs} font-mono text-amber-600/70`}>
+                  ⚠ Upload at least one image to generate a collage.
+                </p>
+              )}
+            </div>
+          )}
+
           {/* ── Reference style upload (only when styleSource === "reference") */}
           {cfg.styleSource === "reference" && (
             <div className={t.gap.group}>
@@ -557,8 +786,8 @@ export function PromptComposer() {
             </div>
           )}
 
-          {/* ── Image source (only shown in preset mode) ─────────────────── */}
-          {cfg.styleSource !== "reference" && (
+          {/* ── Image source (preset mode only, hidden for collage-poster) ── */}
+          {cfg.styleSource !== "reference" && cfg.styleRecipe !== "collage-poster" && (
             <div className={t.gap.group}>
               <SectionLabel>Image</SectionLabel>
               <div className="flex gap-2">
@@ -698,7 +927,12 @@ export function PromptComposer() {
           <div className="flex justify-end pt-2">
             <button
               onClick={generate}
-              disabled={busy}
+              disabled={
+                busy ||
+                (cfg.styleRecipe === "collage-poster" &&
+                  cfg.styleSource !== "reference" &&
+                  !collageImages.some((i) => i.status === "done"))
+              }
               className="flex items-center gap-3 group disabled:opacity-30 transition-opacity"
             >
               {busy ? (

@@ -132,6 +132,14 @@ export function EditorClient() {
     let imagePrompt = "";
     let layoutData: Record<string, unknown> = {};
     try {
+      // For collage mode, re-use the subject images already in the project layers
+      const isCollageProject = project.styleRecipe === "collage-poster";
+      const existingSubjects = isCollageProject
+        ? getSortedLayers()
+            .filter((l) => l.type === "subjectImage" && l.imageData?.src && !l.imageData.src.startsWith("__"))
+            .map((l) => l.imageData!.src)
+        : [];
+
       const res = await fetch("/api/generate/layout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -147,6 +155,7 @@ export function EditorClient() {
           lockedLayers,
           brief,
           reference: refCtx,
+          collageSubjects: existingSubjects,
         }),
       });
       if (!res.ok) throw new Error("layout failed");
@@ -181,35 +190,38 @@ export function EditorClient() {
       return;
     }
 
-    // Step 3: Image (Flux) — fires after layout is shown
-    setGenerating(true, "generating atmosphere…");
-    try {
-      const imgRes = await fetch("/api/generate/image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          // userPrompt = original user concept so Flux always sees the subject
-          userPrompt: promptOverride ?? project.promptHistory.at(-1) ?? "",
-          fluxPrompt,
-          prompt: imagePrompt,
-          styleRecipe: project.styleRecipe,
-          width: project.canvas.width,
-          height: project.canvas.height,
-          brief,
-          reference: refCtx,
-        }),
-      });
-      const { url } = await imgRes.json();
-      if (url) {
-        const updatedLayers = (layers as { type: string; imageData?: Record<string, unknown> }[]).map((l) =>
-          l.type === "backgroundImage"
-            ? { ...l, imageData: { ...(l.imageData ?? {}), src: url } }
-            : l,
-        );
-        layers = updatedLayers;
+    // Step 3: Image (Flux) — skipped for collage mode (subjects already injected)
+    const isCollageLayout = (layoutData.isCollage as boolean) ?? false;
+    if (!isCollageLayout) {
+      setGenerating(true, "generating atmosphere…");
+      try {
+        const imgRes = await fetch("/api/generate/image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            // userPrompt = original user concept so Flux always sees the subject
+            userPrompt: promptOverride ?? project.promptHistory.at(-1) ?? "",
+            fluxPrompt,
+            prompt: imagePrompt,
+            styleRecipe: project.styleRecipe,
+            width: project.canvas.width,
+            height: project.canvas.height,
+            brief,
+            reference: refCtx,
+          }),
+        });
+        const { url } = await imgRes.json();
+        if (url) {
+          const updatedLayers = (layers as { type: string; imageData?: Record<string, unknown> }[]).map((l) =>
+            l.type === "backgroundImage"
+              ? { ...l, imageData: { ...(l.imageData ?? {}), src: url } }
+              : l,
+          );
+          layers = updatedLayers;
+        }
+      } catch {
+        // Non-fatal — use layout without new image
       }
-    } catch {
-      // Non-fatal — use layout without new image
     }
 
     const newProject = {
