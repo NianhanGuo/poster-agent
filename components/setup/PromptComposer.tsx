@@ -457,6 +457,29 @@ export function PromptComposer() {
         }
       }
 
+      // Director — final composition approval (best-effort, non-blocking)
+      try {
+        const layoutPipeline = isCollageResult ? "collage" : isRefMode ? "reference-driven" : "preset-standard";
+        const dirRes = await fetch("/api/generate/director", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            layers: finalLayers,
+            setup:  cfg,
+            canvas: { size: canvas.size, width: canvas.width, height: canvas.height },
+            pipeline: layoutPipeline,
+          }),
+        });
+        if (dirRes.ok) {
+          const dirData = await dirRes.json();
+          if (dirData.layers && Array.isArray(dirData.layers)) {
+            finalLayers = dirData.layers;
+          }
+        }
+      } catch {
+        // Non-fatal — proceed with unreviewed layers
+      }
+
       const now = new Date().toISOString();
       const project: PosterProject = {
         id:            uuidv4(),

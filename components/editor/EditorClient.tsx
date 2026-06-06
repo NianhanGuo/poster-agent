@@ -192,6 +192,7 @@ export function EditorClient() {
 
     // Step 3: Image (Flux) — skipped for collage mode (subjects already injected)
     const isCollageLayout = (layoutData.isCollage as boolean) ?? false;
+    const layoutPipeline  = (layoutData.pipeline as string) ?? "preset-standard";
     if (!isCollageLayout) {
       setGenerating(true, "generating atmosphere…");
       try {
@@ -222,6 +223,38 @@ export function EditorClient() {
       } catch {
         // Non-fatal — use layout without new image
       }
+    }
+
+    // Step 4: Director — final composition approval
+    setGenerating(true, "director review…");
+    try {
+      const dirRes = await fetch("/api/generate/director", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          layers,
+          setup: {
+            posterType:  project.posterType,
+            canvasSize:  project.canvas.size,
+            language:    project.language,
+            styleRecipe: project.styleRecipe,
+            styleSource: layoutPipeline === "reference-driven" ? "reference" : "preset",
+            prompt:      promptOverride ?? project.promptHistory.at(-1) ?? "",
+          },
+          canvas:   { size: project.canvas.size, width: project.canvas.width, height: project.canvas.height },
+          brief,
+          pipeline: layoutPipeline,
+        }),
+      });
+      if (dirRes.ok) {
+        const dirData = await dirRes.json();
+        if (dirData.layers && Array.isArray(dirData.layers)) {
+          layers = dirData.layers;
+          console.log(`[EditorClient] Director: ${dirData.verdict}`);
+        }
+      }
+    } catch {
+      // Non-fatal — Director is best-effort
     }
 
     const newProject = {

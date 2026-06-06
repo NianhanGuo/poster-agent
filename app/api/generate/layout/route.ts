@@ -7,10 +7,20 @@ import { buildReferenceSection, buildReferenceStyleInstruction, ROLE_ORDER } fro
 import type { EnrichedRefCtx, RefImageCtx } from "@/lib/referencePrompt";
 import {
   validatePosterLayout,
+  validateCollageLayout,
+  validateDesignQuality,
   formatIssuesForDirector,
   summariseIssues,
   type ValidationIssue,
 } from "@/lib/posterValidation";
+import { selectPipeline, getPipelineConfig } from "@/lib/generationPipeline";
+import {
+  buildCollageSystemPrompt,
+  buildCollageUserPrompt,
+  buildCollagePalette,
+  randomCollagePattern,
+  type CollagePattern,
+} from "@/lib/collageComposition";
 
 function getCanvasConfig(setup: PosterSetupConfig): CanvasConfig {
   if (setup.canvasSize === "custom") {
@@ -417,12 +427,34 @@ Return JSON: {
   };
 }
 
+/**
+ * Replaces __SUBJECT_N__ placeholder src values in collage layers
+ * with the actual processed image data URLs sent by the client.
+ */
+function injectCollageSubjects(
+  layers: PosterLayer[],
+  subjects: string[],
+): PosterLayer[] {
+  return layers.map((l) => {
+    if (l.type === "subjectImage" && l.imageData?.src?.startsWith("__SUBJECT_")) {
+      const idx = parseInt(l.imageData.src.replace("__SUBJECT_", "").replace("__", ""), 10);
+      const subjectUrl = subjects[idx];
+      if (subjectUrl) {
+        return { ...l, imageData: { ...l.imageData, src: subjectUrl, fit: "contain" } };
+      }
+    }
+    return l;
+  });
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const setup: PosterSetupConfig = body.setup;
   const lockedLayers: PosterLayer[] = body.lockedLayers ?? [];
   const brief: DesignBrief | undefined = body.brief;
   const reference: EnrichedRefCtx | undefined = body.reference;
+  /** Processed subject images for collage mode (data URLs, already grayscale cutouts) */
+  const collageSubjects: string[] = body.collageSubjects ?? [];
 
   const canvas = getCanvasConfig(setup);
 
@@ -449,10 +481,38 @@ export async function POST(req: NextRequest) {
     const { default: OpenAI } = await import("openai");
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-    // Build system prompt — brief section injected into user prompt if present
-    const systemContent = buildSystemPrompt();
-    const userContent = buildUserPrompt(setup, canvas, reference)
-      + (brief ? "\n\n" + buildBriefSection(brief) : "");
+    // ── Pipeline selection ────────────────────────────────────────────────────
+    const pipeline        = selectPipeline(setup);
+    const pipelineCfg     = getPipelineConfig(setup);
+    const isCollageMode   = pipeline === "collage";
+    console.log(`[layout/route] Pipeline: ${pipeline} (${pipelineCfg.label})`);
+    let selectedCollagePattern: CollagePattern | undefined;
+
+    let systemContent: string;
+    let userContent: string;
+
+    if (isCollageMode) {
+      selectedCollagePattern = randomCollagePattern();
+      const subjectCount = Math.max(1, collageSubjects.length);
+
+      // Extract accent palette from reference analysis or fall back to defaults
+      const refPrimary = reference?.references?.[0];
+      const extractedColors = (refPrimary?.palette ?? []).map((p) => p.hex);
+      const collagePalette = buildCollagePalette(extractedColors);
+
+      systemContent = buildCollageSystemPrompt();
+      userContent   = buildCollageUserPrompt(setup, canvas, subjectCount, collagePalette, selectedCollagePattern);
+
+      console.log("[layout/route] ── COLLAGE MODE ──");
+      console.log("[layout/route] Pattern:", selectedCollagePattern);
+      console.log("[layout/route] Subject count:", subjectCount);
+      console.log("[layout/route] Palette:", collagePalette);
+    } else {
+      // Standard generation
+      systemContent = buildSystemPrompt();
+      userContent = buildUserPrompt(setup, canvas, reference)
+        + (brief ? "\n\n" + buildBriefSection(brief) : "");
+    }
 
     // Always log the full prompt — critical for debugging reference mode
     console.log("[layout/route] ── GPT-4o LAYOUT PROMPT ──");
@@ -563,6 +623,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── Collage: inject actual subject images into placeholder layers ─────────
+    if (isCollageMode && collageSubjects.length > 0) {
+      resultLayers = injectCollageSubjects(resultLayers as PosterLayer[], collageSubjects);
+      console.log(
+        "[layout/route] Injected",
+        collageSubjects.length,
+        "subject image(s) into placeholder layers",
+      );
+    }
+
+    // ── Skip self-check for collage (different content model) ─────────────────
+    // The reference self-check compares fluxPrompt content, which doesn't apply
+    // to collage mode (no image generation). Collage validation runs below instead.
+
     // ── Creative Director: validate draft layers + repair if needed ──────────
     console.log("[layout/route] ═══ LAYOUT VALIDATION START ═══");
     console.log("[layout/route] Draft layers:", resultLayers.length, "total");
@@ -577,7 +651,16 @@ export async function POST(req: NextRequest) {
       })),
     );
 
-    let validationIssues = validatePosterLayout(resultLayers as PosterLayer[], canvas);
+    // Run geometry validation + design-quality checks + pipeline-specific checks
+    let validationIssues: ValidationIssue[] = [
+      ...validatePosterLayout(resultLayers as PosterLayer[], canvas),
+      ...validateDesignQuality(resultLayers as PosterLayer[], canvas),
+    ];
+    if (isCollageMode) {
+      const collageIssues = validateCollageLayout(resultLayers as PosterLayer[], canvas);
+      validationIssues = [...validationIssues, ...collageIssues];
+      console.log("[layout/route] Collage validation:", summariseIssues(collageIssues));
+    }
     console.log("[layout/route] Initial validation:", summariseIssues(validationIssues));
     if (validationIssues.length > 0) {
       console.log("[layout/route] Issues detail:", validationIssues.map((i) => `[${i.severity}] ${i.type}: ${i.message}`));
@@ -649,13 +732,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       layers: finalLayers,
       canvas,
-      imagePrompt: resultFluxPrompt,
-      fluxPrompt:  resultFluxPrompt,
-      fonts:       resultFonts ?? {},
-      palette:     resultPalette ?? {},
-      designRationale: resultRationale,
-      designNotes:     resultRationale,
+      // Collage mode: no image generation — fluxPrompt is empty
+      imagePrompt:       isCollageMode ? "" : resultFluxPrompt,
+      fluxPrompt:        isCollageMode ? "" : resultFluxPrompt,
+      fonts:             resultFonts ?? {},
+      palette:           resultPalette ?? {},
+      designRationale:   resultRationale,
+      designNotes:       resultRationale,
       validationSummary: finalValidation,
+      collagePattern:    selectedCollagePattern,
+      isCollage:         isCollageMode,
+      pipeline,
+      pipelineLabel:     pipelineCfg.label,
       demo: false,
     });
   } catch (err) {
