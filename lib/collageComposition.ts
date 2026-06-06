@@ -1,14 +1,17 @@
 /**
  * Collage Poster composition system.
  *
- * Provides patterns, prompts, and helpers for the composition-first
- * Collage Poster style. This style uses uploaded cutout subjects
- * (no AI-generated backgrounds), flat geometric shapes, and integrated typography.
+ * Architecture: code computes ALL geometry (positions, sizes, z-indexes) for
+ * each pattern. GPT-4o's job is ONLY to fill in text content and style choices
+ * (font, colors, copy). A merge step then restores any positions GPT changed.
+ *
+ * This guarantees correct placement regardless of GPT-4o's spatial reasoning.
  */
 
-import type { PosterSetupConfig, CanvasConfig } from "@/types/poster";
+import { v4 as uuidv4 } from "uuid";
+import type { PosterLayer, PosterSetupConfig, CanvasConfig } from "@/types/poster";
 
-// ─── Pattern definitions ──────────────────────────────────────────────────────
+// ─── Pattern catalogue ────────────────────────────────────────────────────────
 
 export type CollagePattern = "A" | "B" | "C" | "D" | "E";
 
@@ -16,280 +19,530 @@ export interface CollagePatternDef {
   id: CollagePattern;
   name: string;
   tagline: string;
-  /** Whether the title z-index goes below subjects (subject cuts through text) */
   titleBehindSubjects: boolean;
-  allowedShapes: ("rect" | "circle" | "accentLine")[];
-  /** Injected verbatim into the GPT-4o user prompt */
-  instructions: string;
 }
 
 export const COLLAGE_PATTERNS: Record<CollagePattern, CollagePatternDef> = {
-
-  A: {
-    id: "A",
-    name: "Subject + Circle",
-    tagline: "Large geometric circle behind subject, display title overlapping",
-    titleBehindSubjects: false,
-    allowedShapes: ["circle"],
-    instructions: `
-PATTERN A — Subject + Circle:
-
-Shapes:
-  1. Large CIRCLE (geometricShape, shapeType:"circle", not shapeType:"rect"):
-     - Radius: 28-38% of canvas width
-     - Center: right-center zone (cx ≈ 65% W, cy ≈ 40% H) — adjust per concept
-     - Fill: accent color 1 (strong, non-white, non-black)
-     - zIndex: 1
-
-Subjects:
-  2. Subject_0: centered over or slightly overlapping the circle edge
-     - Size: ~50-65% canvas height
-     - Position: circle center ±10%
-     - zIndex: 3
-
-Typography:
-  3. Title: VERY LARGE (fontSize 110-170px), full canvas width
-     - Aligned LEFT or spanning full canvas
-     - zIndex: 6 (above subjects)
-     - Position: intersects or aligns with circle/subject boundary (y: 70-85% H)
-
-  4. metaText: small (fontSize 11-14px), bottom-left or vertical right edge
-     - zIndex: 7
-
-Key requirement: circle edge must be visible OUTSIDE the subject bounding box.
-The subject overlaps the circle but the arc remains visible around it.
-`,
-  },
-
-  B: {
-    id: "B",
-    name: "Title Behind Subject",
-    tagline: "Oversized title — subject cuts through typography",
-    titleBehindSubjects: true,
-    allowedShapes: ["rect"],
-    instructions: `
-PATTERN B — Title Behind Subject (subject cuts through text):
-
-Shapes:
-  1. Accent RECT (left or right strip):
-     - Width: 40-55% canvas width
-     - Height: full canvas height
-     - Fill: accent color (strong color — red, orange, cyan, etc.)
-     - zIndex: 1
-
-Typography:
-  2. Title: OVERSIZED (fontSize 150-200px), very large
-     - Spans most or full canvas width
-     - zIndex: 2 ← BELOW subjects (subject will physically cover it)
-     - Position: center of canvas or top-center
-     - This is intentional: subject cuts through the title
-
-Subjects:
-  3. Subject_0: ABOVE the title
-     - zIndex: 3 — sits ON TOP of title text
-     - The subject physically covers part of the oversized title
-     - Size: 55-70% canvas height, centered or offset
-     - This occlusion is the core design intent of Pattern B
-
-  4. If subject_1 exists: smaller, offset to opposite side, zIndex: 4
-
-Small text:
-  5. Subtitle: small (fontSize 14-18px), aligned to subject edge
-     - zIndex: 7
-`,
-  },
-
-  C: {
-    id: "C",
-    name: "Offset Block Anchor",
-    tagline: "Image offset left, large colored rectangle right, title in rect zone",
-    titleBehindSubjects: false,
-    allowedShapes: ["rect"],
-    instructions: `
-PATTERN C — Offset Block + Shape Anchor:
-
-Shapes:
-  1. Large accent RECT occupying RIGHT half:
-     - x: 50% W, y: 0, width: 50% W, height: 100% H
-     - Fill: accent color 1
-     - zIndex: 1
-
-  2. Optional thin accent RECT (horizontal bar):
-     - y: 15-20% H, x: 0, width: 45% W, height: 6-10px
-     - Fill: accent color 1
-     - zIndex: 2
-
-Subjects:
-  3. Subject_0: LEFT half of canvas
-     - x: 2-8% W, y: 10-20% H
-     - Width: 45-55% canvas width
-     - zIndex: 3
-     - Overlaps slightly into the right accent rect (subject bridges the boundary)
-
-  4. If subject_1: smaller, upper right corner
-     - zIndex: 4
-
-Typography:
-  5. Title: placed in the RIGHT COLORED ZONE
-     - x: 52-55% W, y: 30-50% H
-     - fontSize: 70-110px
-     - Fill: white or contrasting color against accent rect
-     - Aligned LEFT within the rect zone
-     - zIndex: 5
-
-  6. metaText: small, bottom of right rect, fill white or contrast
-     - zIndex: 7
-`,
-  },
-
-  D: {
-    id: "D",
-    name: "Editorial Asymmetric",
-    tagline: "Swiss editorial, image in quadrant, title in diagonal relationship",
-    titleBehindSubjects: false,
-    allowedShapes: ["rect", "accentLine"],
-    instructions: `
-PATTERN D — Editorial Asymmetric (Swiss/editorial style):
-
-Shapes:
-  1. Thin horizontal ACCENT LINE (accentLine):
-     - y: 55-60% H (visual divider), x: 0, width: full canvas
-     - Fill/stroke: accent color 1
-     - zIndex: 1
-
-  2. Optional small accent RECT (bottom-right anchor):
-     - x: 70% W, y: 75% H, width: 28% W, height: 20% H
-     - Fill: accent color 2
-     - zIndex: 2
-
-Subjects:
-  3. Subject_0: UPPER LEFT quadrant
-     - x: 0, y: 0
-     - Width: 45-55% canvas width, Height: 50-55% canvas height
-     - zIndex: 3
-
-Typography:
-  4. Title: LOWER RIGHT area
-     - x: 40-50% W, y: 60-75% H
-     - fontSize: 60-90px
-     - Spatial relationship: title starts where subject ends horizontally
-     - zIndex: 6
-
-  5. metaText: vertical (writingMode: "vertical") along RIGHT edge
-     - x: 92-95% W, y: 20-25% H
-     - zIndex: 7
-
-  6. Small descriptive body text BELOW the accent line, left-aligned
-     - zIndex: 7
-
-The composition should feel deliberate: text and image in balanced tension.
-`,
-  },
-
-  E: {
-    id: "E",
-    name: "Brutalist Collage",
-    tagline: "Bold rectangles, extreme type scale, high contrast black+accent",
-    titleBehindSubjects: true,
-    allowedShapes: ["rect", "rect"],
-    instructions: `
-PATTERN E — Brutalist Collage (high contrast, raw, extreme scale):
-
-Palette for this pattern:
-  - Background: white or near-white
-  - Shape 1: black (#0a0a0a)
-  - Shape 2: strong accent (red, orange, or cyan)
-  - Text: black or white (high contrast)
-
-Shapes:
-  1. Large BLACK RECT:
-     - Full canvas width, top 25-30% of canvas height (horizontal strip)
-     - Fill: "#0a0a0a"
-     - zIndex: 1
-
-  2. Accent RECT:
-     - Width: 40-55% canvas width, height: 60-70% canvas height
-     - Positioned mid-left or mid-right
-     - Fill: strong accent color
-     - zIndex: 2
-
-Subjects:
-  3. Subject_0: overlapping BOTH rectangles (bridges them)
-     - Position: spans from rect 1 into rect 2 zone
-     - Size: 50-70% canvas height
-     - zIndex: 4
-
-Typography:
-  4. Title: ENORMOUS (fontSize 160-200px)
-     - zIndex: 3 ← BELOW subject_0 (subject cuts through it)
-     - Positioned overlapping rect 1 (black strip) zone
-     - Fill: white (contrasts against black rect)
-     - The subject covering part of the title IS the design
-
-  5. Small body text blocks: 2-3 instances
-     - fontSize 10-14px
-     - Fill: black
-     - Positioned in lower zone, creating density contrast
-     - zIndex: 7
-
-Key feeling: raw, unpolished, everything pushed to extremes.
-`,
-  },
+  A: { id:"A", name:"Subject + Circle",       tagline:"Circle anchor behind subject, large title at base",       titleBehindSubjects:false },
+  B: { id:"B", name:"Title Behind Subject",   tagline:"Oversized title — subject physically cuts through text",  titleBehindSubjects:true  },
+  C: { id:"C", name:"Offset Block Anchor",    tagline:"Subject left, large color block right, title in block",   titleBehindSubjects:false },
+  D: { id:"D", name:"Editorial Asymmetric",   tagline:"Swiss editorial, image upper-left, title lower-right",    titleBehindSubjects:false },
+  E: { id:"E", name:"Brutalist Collage",      tagline:"Bold rectangles, extreme type scale, maximum contrast",   titleBehindSubjects:true  },
 };
 
 export function randomCollagePattern(): CollagePattern {
-  const patterns: CollagePattern[] = ["A", "B", "C", "D", "E"];
+  const patterns: CollagePattern[] = ["A","B","C","D","E"];
   return patterns[Math.floor(Math.random() * patterns.length)];
 }
 
-// ─── System prompt ────────────────────────────────────────────────────────────
+// ─── Palette ──────────────────────────────────────────────────────────────────
 
-export function buildCollageSystemPrompt(): string {
-  return `You are a Creative Director composing a COLLAGE POSTER.
+export type CollagePalette = {
+  bg: string;
+  accent1: string;
+  accent2: string;
+  text: string;
+};
 
-This is COMPOSITION-FIRST design, not image-generation-first.
-The uploaded cutout photographs are the primary visual content — you arrange them.
-
-ABSOLUTE RULES:
-
-1. NO Flux background generation. Set fluxPrompt to "" (empty string).
-   The background is solidBackground only — a flat solid color.
-
-2. Uploaded subjects are provided as placeholder src values:
-   "__SUBJECT_0__", "__SUBJECT_1__", "__SUBJECT_2__"
-   These are grayscale photographs with transparent backgrounds.
-   DO NOT replace them. DO NOT invent other subjects.
-   Use them exactly as-is.
-
-3. SHAPES: flat solid fill ONLY.
-   - Allowed: rect, circle (shapeType in shapeData)
-   - Allowed layer types: geometricShape, accentLine, solidBackground
-   - FORBIDDEN: gradients, shadows, glows, bevels, colorOverlay, gradientLayer
-   - All shapes must use shapeData.fill with a solid hex color
-
-4. LAYER ORDER (z-index):
-   - solidBackground: zIndex 0
-   - geometric shapes: zIndex 1-2
-   - subject images: zIndex 3-5 (ABOVE shapes)
-   - title text: zIndex 2 (below subjects) for Pattern B/E, zIndex 6 (above) for A/C/D
-   - other text: zIndex 7+
-
-5. SHAPE-SUBJECT OVERLAP RULE:
-   - Each geometric shape must be 30-80% visible after subjects are placed on top
-   - Position subjects to overlap shapes — this creates the collage effect
-   - The subject must NOT completely hide the shape
-
-6. TYPOGRAPHY INTEGRATION (mandatory):
-   - Title MUST have a direct spatial relationship to the composition
-   - The title must either: align with shape edges, overlap a subject, or follow an image boundary
-   - NO floating text disconnected from imagery
-
-7. PALETTE: flat solid colors only, maximum 3 accent colors
-
-8. Return ONLY valid JSON. No markdown. No code fences.`;
+export function buildCollagePalette(
+  extractedColors: string[],
+): CollagePalette {
+  const defaults: CollagePalette = {
+    bg:      "#f4f4f0",
+    accent1: "#d63c2a",
+    accent2: "#f5c400",
+    text:    "#0a0a0a",
+  };
+  if (!extractedColors || extractedColors.length === 0) return defaults;
+  const [c1, c2] = extractedColors;
+  return { ...defaults, accent1: c1 ?? defaults.accent1, accent2: c2 ?? defaults.accent2 };
 }
 
-// ─── User prompt ──────────────────────────────────────────────────────────────
+// ─── Layer factory helper ─────────────────────────────────────────────────────
+
+function lyr(
+  type: PosterLayer["type"],
+  geo: { x:number; y:number; w:number; h:number; z:number; rot?:number },
+  extra: Partial<PosterLayer> = {},
+): PosterLayer {
+  return {
+    id: uuidv4(),
+    type,
+    label: type,
+    x: geo.x, y: geo.y, width: geo.w, height: geo.h,
+    zIndex: geo.z, rotation: geo.rot ?? 0,
+    opacity: 1, visible: true, locked: false,
+    ...extra,
+  };
+}
+
+// ─── Pattern geometry builders ────────────────────────────────────────────────
+//
+// Every position is expressed as a fraction of canvas dimensions, then
+// rounded to integers. This ensures correct scaling on any canvas size.
+
+function buildPatternA(W:number, H:number, n:number, p:CollagePalette, concept:string): PosterLayer[] {
+  const M = 40;
+  const cr = Math.round(W * 0.30);           // circle radius
+  const cx = Math.round(W * 0.64);           // circle center x
+  const cy = Math.round(H * 0.38);           // circle center y
+  const title = concept.toUpperCase() || "COLLAGE";
+
+  return [
+    lyr("solidBackground", { x:0, y:0, w:W, h:H, z:0 }, {
+      shapeData: { shapeType:"rect", fill:p.bg, stroke:"none", strokeWidth:0 },
+    }),
+    lyr("geometricShape", { x:cx-cr, y:cy-cr, w:cr*2, h:cr*2, z:1 }, {
+      shapeData: { shapeType:"circle", fill:p.accent1, stroke:"none", strokeWidth:0 },
+    }),
+    lyr("subjectImage", {
+      x: Math.round(W*0.22), y: Math.round(H*0.03),
+      w: Math.round(W*0.55), h: Math.round(H*0.70), z:3,
+    }, { imageData: { src:"__SUBJECT_0__", fit:"contain" } }),
+    ...(n >= 2 ? [lyr("subjectImage", {
+      x: Math.round(W*0.53), y: Math.round(H*0.04),
+      w: Math.round(W*0.32), h: Math.round(H*0.42), z:4,
+    }, { imageData: { src:"__SUBJECT_1__", fit:"contain" } })] : []),
+    lyr("titleText", {
+      x:M, y:Math.round(H*0.74), w:W-(M*2), h:Math.round(H*0.17), z:6,
+    }, { textData: { text:title, fontFamily:"Bebas Neue", fontSize:130, fontWeight:400,
+        fontStyle:"normal", fill:p.text, align:"left", letterSpacing:4, lineHeight:0.9, textTransform:"uppercase" } }),
+    lyr("metaText", {
+      x:M, y:Math.round(H*0.94), w:Math.round(W*0.55), h:24, z:7,
+    }, { textData: { text:"2025", fontFamily:"Space Mono", fontSize:12, fontWeight:400,
+        fontStyle:"normal", fill:p.text, align:"left", letterSpacing:2, lineHeight:1.4 } }),
+  ];
+}
+
+function buildPatternB(W:number, H:number, n:number, p:CollagePalette, concept:string): PosterLayer[] {
+  const M = 40;
+  const title = concept.toUpperCase() || "COLLAGE";
+
+  return [
+    lyr("solidBackground", { x:0, y:0, w:W, h:H, z:0 }, {
+      shapeData: { shapeType:"rect", fill:p.bg, stroke:"none", strokeWidth:0 },
+    }),
+    // Accent strip — left side
+    lyr("geometricShape", { x:0, y:0, w:Math.round(W*0.46), h:H, z:1 }, {
+      shapeData: { shapeType:"rect", fill:p.accent1, stroke:"none", strokeWidth:0 },
+    }),
+    // TITLE BEHIND SUBJECT — zIndex 2 (below subject at z:3)
+    lyr("titleText", {
+      x:M, y:Math.round(H*0.26), w:W-(M*2), h:Math.round(H*0.30), z:2,
+    }, { textData: { text:title, fontFamily:"Bebas Neue", fontSize:170, fontWeight:400,
+        fontStyle:"normal", fill:p.text, align:"left", letterSpacing:2, lineHeight:0.88, textTransform:"uppercase" } }),
+    // Subject ABOVE title (cuts through text)
+    lyr("subjectImage", {
+      x: Math.round(W*0.12), y: Math.round(H*0.03),
+      w: Math.round(W*0.55), h: Math.round(H*0.78), z:3,
+    }, { imageData: { src:"__SUBJECT_0__", fit:"contain" } }),
+    ...(n >= 2 ? [lyr("subjectImage", {
+      x: Math.round(W*0.52), y: Math.round(H*0.14),
+      w: Math.round(W*0.38), h: Math.round(H*0.50), z:4,
+    }, { imageData: { src:"__SUBJECT_1__", fit:"contain" } })] : []),
+    lyr("metaText", {
+      x:M, y:Math.round(H*0.90), w:Math.round(W*0.55), h:22, z:7,
+    }, { textData: { text:"2025", fontFamily:"Space Mono", fontSize:12, fontWeight:400,
+        fontStyle:"normal", fill:p.text, align:"left", letterSpacing:2, lineHeight:1.4 } }),
+  ];
+}
+
+function buildPatternC(W:number, H:number, n:number, p:CollagePalette, concept:string): PosterLayer[] {
+  const M = 40;
+  const title = concept.toUpperCase() || "COLLAGE";
+  const rightX = Math.round(W * 0.50);
+
+  return [
+    lyr("solidBackground", { x:0, y:0, w:W, h:H, z:0 }, {
+      shapeData: { shapeType:"rect", fill:p.bg, stroke:"none", strokeWidth:0 },
+    }),
+    // Right color block
+    lyr("geometricShape", { x:rightX, y:0, w:W-rightX, h:H, z:1 }, {
+      shapeData: { shapeType:"rect", fill:p.accent1, stroke:"none", strokeWidth:0 },
+    }),
+    // Thin horizontal bar on left side
+    lyr("accentLine", {
+      x:0, y:Math.round(H*0.17), w:Math.round(W*0.48), h:6, z:2,
+    }, { shapeData: { shapeType:"rect", fill:p.accent1, stroke:"none", strokeWidth:0 } }),
+    // Subject LEFT, bridging into right zone
+    lyr("subjectImage", {
+      x: Math.round(W*0.02), y: Math.round(H*0.10),
+      w: Math.round(W*0.52), h: Math.round(H*0.72), z:3,
+    }, { imageData: { src:"__SUBJECT_0__", fit:"contain" } }),
+    ...(n >= 2 ? [lyr("subjectImage", {
+      x: Math.round(W*0.52), y: Math.round(H*0.05),
+      w: Math.round(W*0.36), h: Math.round(H*0.38), z:4,
+    }, { imageData: { src:"__SUBJECT_1__", fit:"contain" } })] : []),
+    // Title in RIGHT zone
+    lyr("titleText", {
+      x: Math.round(W*0.53), y: Math.round(H*0.36), w: Math.round(W*0.43), h: Math.round(H*0.32), z:5,
+    }, { textData: { text:title, fontFamily:"Bebas Neue", fontSize:90, fontWeight:400,
+        fontStyle:"normal", fill:"#ffffff", align:"left", letterSpacing:2, lineHeight:0.92, textTransform:"uppercase" } }),
+    lyr("metaText", {
+      x: Math.round(W*0.53), y: Math.round(H*0.88), w: Math.round(W*0.43), h:22, z:7,
+    }, { textData: { text:"2025", fontFamily:"Space Mono", fontSize:12, fontWeight:400,
+        fontStyle:"normal", fill:"#ffffff", align:"left", letterSpacing:2, lineHeight:1.4 } }),
+  ];
+}
+
+function buildPatternD(W:number, H:number, n:number, p:CollagePalette, concept:string): PosterLayer[] {
+  const M = 40;
+  const title = concept.toUpperCase() || "COLLAGE";
+  const divY = Math.round(H * 0.56);
+
+  return [
+    lyr("solidBackground", { x:0, y:0, w:W, h:H, z:0 }, {
+      shapeData: { shapeType:"rect", fill:p.bg, stroke:"none", strokeWidth:0 },
+    }),
+    // Horizontal divider
+    lyr("accentLine", { x:0, y:divY, w:W, h:4, z:1 }, {
+      shapeData: { shapeType:"rect", fill:p.accent1, stroke:"none", strokeWidth:0 },
+    }),
+    // Small anchor block bottom-right
+    lyr("geometricShape", {
+      x: Math.round(W*0.70), y: Math.round(H*0.74),
+      w: Math.round(W*0.27), h: Math.round(H*0.20), z:2,
+    }, { shapeData: { shapeType:"rect", fill:p.accent2, stroke:"none", strokeWidth:0 } }),
+    // Subject UPPER LEFT
+    lyr("subjectImage", {
+      x:0, y:0, w:Math.round(W*0.48), h:Math.round(H*0.55), z:3,
+    }, { imageData: { src:"__SUBJECT_0__", fit:"contain" } }),
+    ...(n >= 2 ? [lyr("subjectImage", {
+      x: Math.round(W*0.50), y: Math.round(H*0.06),
+      w: Math.round(W*0.34), h: Math.round(H*0.36), z:4,
+    }, { imageData: { src:"__SUBJECT_1__", fit:"contain" } })] : []),
+    // Title LOWER RIGHT
+    lyr("titleText", {
+      x: Math.round(W*0.42), y: Math.round(H*0.61),
+      w: Math.round(W*0.54), h: Math.round(H*0.24), z:6,
+    }, { textData: { text:title, fontFamily:"Bebas Neue", fontSize:80, fontWeight:400,
+        fontStyle:"normal", fill:p.text, align:"left", letterSpacing:3, lineHeight:0.92, textTransform:"uppercase" } }),
+    // Vertical meta text — right edge
+    lyr("metaText", {
+      x: Math.round(W*0.93), y: Math.round(H*0.20),
+      w: 20, h: Math.round(H*0.35), z:7, rot:-90,
+    }, { textData: { text:"2025 · EXHIBITION", fontFamily:"Space Mono", fontSize:11, fontWeight:400,
+        fontStyle:"normal", fill:p.text, align:"left", letterSpacing:3, lineHeight:1.4 } }),
+    lyr("subtitleText", {
+      x:M, y:Math.round(H*0.62), w:Math.round(W*0.38), h:22, z:6,
+    }, { textData: { text:concept || "Exhibition", fontFamily:"Space Mono", fontSize:13, fontWeight:400,
+        fontStyle:"normal", fill:p.text, align:"left", letterSpacing:1, lineHeight:1.4 } }),
+  ];
+}
+
+function buildPatternE(W:number, H:number, n:number, p:CollagePalette, concept:string): PosterLayer[] {
+  const M = 40;
+  const title = concept.toUpperCase() || "COLLAGE";
+  const stripH = Math.round(H * 0.28);
+
+  return [
+    // White/near-white base for brutalist contrast
+    lyr("solidBackground", { x:0, y:0, w:W, h:H, z:0 }, {
+      shapeData: { shapeType:"rect", fill:"#f2f0ec", stroke:"none", strokeWidth:0 },
+    }),
+    // Black top strip
+    lyr("geometricShape", { x:0, y:0, w:W, h:stripH, z:1 }, {
+      shapeData: { shapeType:"rect", fill:"#0a0a0a", stroke:"none", strokeWidth:0 },
+    }),
+    // Accent mid-block
+    lyr("geometricShape", {
+      x: Math.round(W*0.05), y: Math.round(H*0.22),
+      w: Math.round(W*0.55), h: Math.round(H*0.65), z:2,
+    }, { shapeData: { shapeType:"rect", fill:p.accent1, stroke:"none", strokeWidth:0 } }),
+    // TITLE in black strip, BELOW subject (zIndex 3 < subject zIndex 4)
+    lyr("titleText", {
+      x:M, y:Math.round(H*0.03), w:W-(M*2), h:Math.round(H*0.24), z:3,
+    }, { textData: { text:title, fontFamily:"Bebas Neue", fontSize:180, fontWeight:400,
+        fontStyle:"normal", fill:"#ffffff", align:"left", letterSpacing:1, lineHeight:0.86, textTransform:"uppercase" } }),
+    // Subject spanning both blocks
+    lyr("subjectImage", {
+      x: Math.round(W*0.20), y: Math.round(H*0.08),
+      w: Math.round(W*0.55), h: Math.round(H*0.78), z:4,
+    }, { imageData: { src:"__SUBJECT_0__", fit:"contain" } }),
+    ...(n >= 2 ? [lyr("subjectImage", {
+      x: Math.round(W*0.60), y: Math.round(H*0.30),
+      w: Math.round(W*0.32), h: Math.round(H*0.42), z:5,
+    }, { imageData: { src:"__SUBJECT_1__", fit:"contain" } })] : []),
+    lyr("bodyText", {
+      x: Math.round(W*0.05)+M, y: Math.round(H*0.62),
+      w: Math.round(W*0.45), h: Math.round(H*0.16), z:7,
+    }, { textData: { text:concept || "exhibition", fontFamily:"Space Mono", fontSize:13, fontWeight:400,
+        fontStyle:"normal", fill:"#f2f0ec", align:"left", letterSpacing:1, lineHeight:1.5 } }),
+    lyr("metaText", {
+      x: Math.round(W*0.05)+M, y: Math.round(H*0.90),
+      w: Math.round(W*0.45), h:22, z:7,
+    }, { textData: { text:"2025", fontFamily:"Space Mono", fontSize:12, fontWeight:400,
+        fontStyle:"normal", fill:"#0a0a0a", align:"left", letterSpacing:2, lineHeight:1.4 } }),
+  ];
+}
+
+/**
+ * Builds the full layer template for the given pattern.
+ * ALL positions, sizes, and z-indexes are computed here.
+ * GPT-4o only needs to personalize text and style.
+ */
+export function buildCollageLayoutTemplate(
+  pattern: CollagePattern,
+  canvas: CanvasConfig,
+  imageCount: number,
+  palette: CollagePalette,
+  concept: string,
+): PosterLayer[] {
+  const { width: W, height: H } = canvas;
+  const n = Math.min(imageCount, 3);
+  const builders = { A: buildPatternA, B: buildPatternB, C: buildPatternC, D: buildPatternD, E: buildPatternE };
+  return (builders[pattern] ?? buildPatternA)(W, H, n, palette, concept);
+}
+
+// ─── GPT-4o style prompts ─────────────────────────────────────────────────────
+
+/**
+ * Short system prompt — GPT-4o is only personalizing style, not doing layout.
+ */
+export function buildCollageStyleSystemPrompt(): string {
+  return `You are a typographer and color director finalizing a poster composition.
+The layout structure and all element positions have already been computed by the system.
+Your ONLY job: personalize text content, font choices, font sizes, and colors.
+NEVER change: x, y, width, height, zIndex, rotation, type, id, imageData.src.
+Return ONLY valid JSON — no markdown, no code fences.`;
+}
+
+/**
+ * User prompt for style personalization.
+ * Injects the pre-computed layer template and asks GPT to fill in creative choices.
+ */
+export function buildCollageStyleUserPrompt(
+  templateLayers: PosterLayer[],
+  setup: PosterSetupConfig,
+  canvas: CanvasConfig,
+  patternId: CollagePattern,
+  palette: CollagePalette,
+): string {
+  const pattern = COLLAGE_PATTERNS[patternId];
+  const { width: W, height: H } = canvas;
+  const concept = setup.prompt || "collage poster";
+
+  return `CONCEPT: "${concept}"
+PATTERN: ${pattern.id} — ${pattern.name}: ${pattern.tagline}
+CANVAS: ${W}×${H}px | LANGUAGE: ${setup.language ?? "en"}
+
+AVAILABLE PALETTE:
+  bg      = ${palette.bg}   (canvas background — keep as-is)
+  accent1 = ${palette.accent1}  (primary accent — main shape color)
+  accent2 = ${palette.accent2}  (secondary accent)
+  text    = ${palette.text}    (default text color)
+
+FONT OPTIONS:
+  Display (bold titles): "Bebas Neue" | "Space Grotesk" | "Oswald" | "Anton"
+  Body (meta/credits):   "Space Mono" | "Inter" | "Courier New"
+
+LAYER TEMPLATE — positions are FIXED, personalize the starred fields (*):
+${JSON.stringify(templateLayers, null, 2)}
+
+PERSONALIZATION RULES:
+1. titleText layers:
+   * text → write a punchy title for the concept; use ALL-CAPS for Bebas Neue
+   * fontFamily → choose from Display options above
+   * fontSize → ±20% of current value based on title length (shorter = bigger)
+   * fill → high-contrast against its background zone (check zIndex and position)
+   * letterSpacing → 0–20 for display type
+
+2. subtitleText / bodyText / metaText:
+   * text → write supporting copy: short tagline, date, venue, or credits
+   * fontFamily → choose from Body options
+   * fontSize → keep within ±2px of current value
+   * fill → coordinate with overall palette
+
+3. geometricShape (NOT solidBackground):
+   * shapeData.fill → choose accent1, accent2, or "#0a0a0a" for brutalist patterns
+
+4. solidBackground:
+   * shapeData.fill → keep as ${palette.bg} (do not change)
+
+5. subjectImage layers:
+   * DO NOT change imageData.src (keep "__SUBJECT_N__" exactly as-is)
+
+HARD RULES — NEVER change these fields:
+  x, y, width, height, zIndex, rotation, type, id, imageData.src
+
+RETURN FORMAT:
+{
+  "layers": [ ...all layers in same order, with text/style fields updated... ],
+  "fonts": { "display": "<chosen display font>", "body": "<chosen body font>" },
+  "palette": { "dominant": "${palette.text}", "secondary": "${palette.bg}", "accent": "${palette.accent1}", "background": "${palette.bg}" }
+}`;
+}
+
+/**
+ * Merges GPT-4o's style choices back into the template, restoring
+ * all positional properties from the template (so GPT can never break layout).
+ */
+export function mergeStyleIntoTemplate(
+  template: PosterLayer[],
+  gptLayers: Partial<PosterLayer>[],
+): PosterLayer[] {
+  return template.map((t) => {
+    const g = gptLayers.find((l) => l.id === t.id);
+    if (!g) return t;
+
+    const merged: PosterLayer = {
+      ...t,      // start from template
+      ...g,      // overlay GPT choices (text, colors, fonts)
+      // ALWAYS restore critical geometry from template — GPT cannot change these
+      id:       t.id,
+      type:     t.type,
+      label:    t.label,
+      x:        t.x,
+      y:        t.y,
+      width:    t.width,
+      height:   t.height,
+      zIndex:   t.zIndex,
+      rotation: t.rotation,
+      visible:  t.visible,
+      locked:   t.locked,
+    };
+
+    // For subject images: always restore src placeholder
+    if (t.type === "subjectImage") {
+      merged.imageData = t.imageData;
+    }
+
+    return merged;
+  });
+}
+
+// ─── Debug grid ───────────────────────────────────────────────────────────────
+
+const GRID_SYMBOL: Partial<Record<PosterLayer["type"], string>> = {
+  titleText:       "TT",
+  subtitleText:    "ST",
+  bodyText:        "BT",
+  metaText:        "MT",
+  subjectImage:    "SI",
+  backgroundImage: "BI",
+  geometricShape:  "GS",
+  accentLine:      "AL",
+  solidBackground: "BG",
+  noiseTexture:    "NX",
+  colorOverlay:    "CO",
+};
+
+/**
+ * Logs a 12-column ASCII grid to the server console showing which columns
+ * each layer occupies. Call this after layout is finalized.
+ */
+export function logCollageDebugGrid(
+  layers: PosterLayer[],
+  canvas: CanvasConfig,
+  pattern: CollagePattern,
+): void {
+  const W = canvas.width;
+  const colW = W / 12;
+  const patDef = COLLAGE_PATTERNS[pattern];
+  const bar = "─".repeat(62);
+
+  console.log(`\n[collage-grid] ╔${bar}╗`);
+  console.log(`[collage-grid] ║  PATTERN ${pattern}: ${patDef.name.padEnd(30)} Canvas ${W}×${canvas.height}  ║`);
+  console.log(`[collage-grid] ║  ${patDef.tagline.padEnd(58)} ║`);
+  console.log(`[collage-grid] ╠${bar}╣`);
+  console.log(`[collage-grid] ║  Layer               z   Col: 1  2  3  4  5  6  7  8  9 10 11 12  ║`);
+  console.log(`[collage-grid] ╠${bar}╣`);
+
+  const sorted = [...layers].filter(l => l.visible).sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+
+  for (const layer of sorted) {
+    const sym = GRID_SYMBOL[layer.type] ?? "??";
+    const startCol = Math.max(0, Math.floor(layer.x / colW));
+    const endCol   = Math.min(11, Math.ceil((layer.x + layer.width) / colW) - 1);
+    const grid = Array.from({ length: 12 }, (_, i) =>
+      i >= startCol && i <= endCol ? sym : " ·",
+    );
+    const label = layer.label.padEnd(20).slice(0, 20);
+    const z     = String(layer.zIndex ?? 0).padStart(3);
+    console.log(`[collage-grid] ║  ${label} ${z}    ${grid.join("  ")}  ║`);
+  }
+
+  console.log(`[collage-grid] ╚${bar}╝`);
+  console.log(`[collage-grid] Legend: BG=Background  GS=GeomShape  SI=SubjectImage  TT=Title  ST=Subtitle  MT=Meta  AL=AccentLine\n`);
+}
+
+// ─── Completeness check ───────────────────────────────────────────────────────
+
+export interface CompletenessCheck {
+  backgroundPresent: boolean;
+  patternChosen:     boolean;
+  subjectsSpread:    boolean;
+  typographyConnected: boolean;
+  hierarchyClear:    boolean;
+  passes: boolean;
+}
+
+/**
+ * Evaluates the 5 poster completeness criteria.
+ * Log the result; reject and re-run if passes === false.
+ */
+export function checkCollageCompleteness(
+  layers: PosterLayer[],
+  canvas: CanvasConfig,
+  pattern: CollagePattern | undefined,
+): CompletenessCheck {
+  const W = canvas.width;
+  const H = canvas.height;
+
+  // 1. Background present and covers full canvas
+  const bg = layers.find(l => l.type === "solidBackground" && l.visible);
+  const backgroundPresent = !!bg && bg.x === 0 && bg.y === 0 &&
+    bg.width >= W * 0.98 && bg.height >= H * 0.98;
+
+  // 2. Pattern was chosen
+  const patternChosen = !!pattern;
+
+  // 3. Subjects are spread — no two subjects within 100px of each other
+  const subjects = layers.filter(l => l.type === "subjectImage" && l.visible);
+  const subjectsSpread = subjects.length <= 1 || (() => {
+    for (let i = 0; i < subjects.length; i++) {
+      for (let j = i + 1; j < subjects.length; j++) {
+        const dx = Math.abs(subjects[i].x - subjects[j].x);
+        const dy = Math.abs(subjects[i].y - subjects[j].y);
+        if (dx < 100 && dy < 100) return false;
+      }
+    }
+    // Also check no subject is near origin (0,0 within 20px)
+    return !subjects.some(s => s.x < 20 && s.y < 20);
+  })();
+
+  // 4. Typography connected — title within 200px of a subject or shape
+  const title = layers.find(l => l.type === "titleText" && l.visible);
+  const anchors = layers.filter(l =>
+    l.visible && (l.type === "subjectImage" || l.type === "geometricShape"),
+  );
+  const typographyConnected = !title || anchors.length === 0 || anchors.some(a => {
+    const dx = Math.abs((title.x + title.width / 2) - (a.x + a.width / 2));
+    const dy = Math.abs((title.y + title.height / 2) - (a.y + a.height / 2));
+    return dx < W * 0.5 && dy < H * 0.5;
+  });
+
+  // 5. Hierarchy clear — title fontSize ≥ 2× any other text
+  const titleSize = title?.textData?.fontSize ?? 0;
+  const otherText = layers.filter(l =>
+    l.type !== "titleText" && l.visible && (l.textData?.fontSize ?? 0) > 0,
+  );
+  const hierarchyClear = titleSize === 0 || otherText.length === 0 ||
+    otherText.every(l => (l.textData?.fontSize ?? 0) <= titleSize * 0.6);
+
+  const passes = backgroundPresent && patternChosen && subjectsSpread &&
+    typographyConnected && hierarchyClear;
+
+  return { backgroundPresent, patternChosen, subjectsSpread, typographyConnected, hierarchyClear, passes };
+}
+
+// ─── Legacy prompt builders (kept for reference) ──────────────────────────────
+// The layout route now uses buildCollageLayoutTemplate + buildCollageStyleUserPrompt.
+// These originals remain for backward compatibility with any external callers.
+
+export function buildCollageSystemPrompt(): string {
+  return buildCollageStyleSystemPrompt();
+}
 
 export function buildCollageUserPrompt(
   setup: PosterSetupConfig,
@@ -298,92 +551,6 @@ export function buildCollageUserPrompt(
   palette: { bg: string; accent1: string; accent2: string; text: string },
   patternId: CollagePattern,
 ): string {
-  const W = canvas.width;
-  const H = canvas.height;
-  const pattern = COLLAGE_PATTERNS[patternId];
-
-  const subjectLines = Array.from(
-    { length: imageCount },
-    (_, i) =>
-      `  Subject ${i}: type="subjectImage", imageData.src="__SUBJECT_${i}__", imageData.fit="contain"`,
-  ).join("\n");
-
-  return `Compose a COLLAGE POSTER.
-
-CANVAS: ${W} × ${H}px
-SAFE MARGINS: 40px all sides
-USER CONCEPT: "${setup.prompt || "collage poster"}"
-LANGUAGE: ${setup.language ?? "en"}
-
-UPLOADED SUBJECTS (${imageCount} grayscale cutout image(s)):
-${subjectLines}
-These are the PRIMARY visual content. Do NOT replace them.
-
-COMPOSITION PATTERN: ${pattern.name}
-Pattern tagline: ${pattern.tagline}
-${pattern.instructions}
-
-PALETTE:
-  Background: ${palette.bg}
-  Accent 1 (primary — for main shape): ${palette.accent1}
-  Accent 2 (secondary): ${palette.accent2}
-  Text: ${palette.text}
-
-LAYER TYPE RULES:
-  solidBackground → shapeData.fill = background color, x:0, y:0, w:${W}, h:${H}, zIndex:0
-  geometricShape  → shapeData.fill = accent color, shapeData.stroke:"none", flat color
-  accentLine      → shapeData.shapeType:"line", shapeData.stroke = accent color
-  subjectImage    → imageData.src = "__SUBJECT_N__", imageData.fit:"contain"
-  titleText       → textData with fontFamily, fontSize, fill, align
-  subtitleText / metaText → smaller text elements
-
-TYPOGRAPHY REQUIREMENTS:
-  - Title font: "Bebas Neue" (display) OR "Space Grotesk" (weight 700)
-  - Body font: "Space Mono" OR "Inter" (weight 400)
-  - Title fontSize: ${pattern.titleBehindSubjects ? "150-200" : "80-140"}px
-  - ${pattern.titleBehindSubjects ? "Title zIndex MUST BE BELOW subjects (subjects cut through title)" : "Title zIndex above subjects"}
-  - Title must align with or overlap at least one shape or subject boundary
-
-USER COPY TO USE:
-  - Title: based on concept "${setup.prompt || "COLLAGE"}" — all caps if Bebas Neue
-  - Use short, punchy words for brutalist/editorial feel
-
-FINAL CHECK BEFORE RETURNING:
-  1. fluxPrompt = "" (empty — no image generation)
-  2. All subject src values are "__SUBJECT_N__" placeholders
-  3. Shapes use shapeData with flat fill, NO gradientData
-  4. Every text layer is within safe margins (x≥40, y≥40, x+w≤${W - 40}, y+h≤${H - 40})
-  5. No layer extends outside canvas [0,0,${W},${H}]
-  6. Title has a spatial relationship to the composition
-
-Return ONLY the JSON poster layout (same schema as normal posters).`;
-}
-
-// ─── Palette extraction from image data ───────────────────────────────────────
-
-/**
- * Extracts a simple representative palette from an array of palette colors.
- * Maps to the accent1/accent2/bg/text structure needed for collage.
- */
-export function buildCollagePalette(
-  extractedColors: string[],
-): { bg: string; accent1: string; accent2: string; text: string } {
-  // Collage default: neutral bg + strong accent
-  const defaults = {
-    bg:      "#f4f4f0",
-    accent1: "#d63c2a",
-    accent2: "#f5c400",
-    text:    "#0a0a0a",
-  };
-
-  if (!extractedColors || extractedColors.length === 0) return defaults;
-
-  // Use first extracted color as accent1, second (if distinct) as accent2
-  const [c1, c2] = extractedColors;
-  return {
-    bg:      defaults.bg,
-    accent1: c1 ?? defaults.accent1,
-    accent2: c2 ?? defaults.accent2,
-    text:    defaults.text,
-  };
+  const template = buildCollageLayoutTemplate(patternId, canvas, imageCount, palette, setup.prompt ?? "");
+  return buildCollageStyleUserPrompt(template, setup, canvas, patternId, palette);
 }

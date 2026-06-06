@@ -16,10 +16,14 @@ import {
 import { selectPipeline, getPipelineConfig } from "@/lib/generationPipeline";
 import { normalizeLayerNames } from "@/lib/layerNaming";
 import {
-  buildCollageSystemPrompt,
-  buildCollageUserPrompt,
+  buildCollageLayoutTemplate,
+  buildCollageStyleSystemPrompt,
+  buildCollageStyleUserPrompt,
+  mergeStyleIntoTemplate,
   buildCollagePalette,
   randomCollagePattern,
+  logCollageDebugGrid,
+  checkCollageCompleteness,
   type CollagePattern,
 } from "@/lib/collageComposition";
 
@@ -493,22 +497,39 @@ export async function POST(req: NextRequest) {
     let systemContent: string;
     let userContent: string;
 
+    // Template layers are pre-computed for collage; stored outside the if block
+    // so the merge step after GPT can access them.
+    let collageTemplate: import("@/types/poster").PosterLayer[] = [];
+    let collagePaletteRef: { bg: string; accent1: string; accent2: string; text: string } | undefined;
+
     if (isCollageMode) {
       selectedCollagePattern = randomCollagePattern();
-      const subjectCount = Math.max(1, collageSubjects.length);
+      const imageCount = Math.max(1, collageSubjects.length);
 
-      // Extract accent palette from reference analysis or fall back to defaults
+      // Palette: reference image colors → uploaded image colors → style defaults
       const refPrimary = reference?.references?.[0];
       const extractedColors = (refPrimary?.palette ?? []).map((p) => p.hex);
-      const collagePalette = buildCollagePalette(extractedColors);
+      collagePaletteRef = buildCollagePalette(extractedColors);
 
-      systemContent = buildCollageSystemPrompt();
-      userContent   = buildCollageUserPrompt(setup, canvas, subjectCount, collagePalette, selectedCollagePattern);
+      // Build the full layer template with exact, code-computed positions.
+      // GPT-4o will only personalize text content and style — not positions.
+      collageTemplate = buildCollageLayoutTemplate(
+        selectedCollagePattern,
+        canvas,
+        imageCount,
+        collagePaletteRef,
+        setup.prompt ?? "",
+      );
+
+      systemContent = buildCollageStyleSystemPrompt();
+      userContent   = buildCollageStyleUserPrompt(
+        collageTemplate, setup, canvas, selectedCollagePattern, collagePaletteRef,
+      );
 
       console.log("[layout/route] ── COLLAGE MODE ──");
       console.log("[layout/route] Pattern:", selectedCollagePattern);
-      console.log("[layout/route] Subject count:", subjectCount);
-      console.log("[layout/route] Palette:", collagePalette);
+      console.log("[layout/route] Image count:", imageCount, "| Template layers:", collageTemplate.length);
+      console.log("[layout/route] Palette:", collagePaletteRef);
     } else {
       // Standard generation
       systemContent = buildSystemPrompt();
@@ -547,12 +568,24 @@ export async function POST(req: NextRequest) {
     console.log("[layout/route] palette from GPT-4o:", parsed.palette);
     console.log("[layout/route] fonts from GPT-4o:", parsed.fonts);
 
-    let resultLayers = parsed.layers.map((l) => ({
+    let gptLayers = parsed.layers?.map((l) => ({
       ...l,
       id: l.id || uuidv4(),
       visible: true,
       locked: false,
-    }));
+    })) ?? [];
+
+    // ── Collage: merge GPT style choices back into the template ───────────────
+    // The template has correct positions; GPT may have changed them — restore.
+    let resultLayers: PosterLayer[];
+    if (isCollageMode && collageTemplate.length > 0) {
+      resultLayers = mergeStyleIntoTemplate(collageTemplate, gptLayers);
+      console.log("[layout/route] Collage merge: template", collageTemplate.length,
+        "layers → merged", resultLayers.length, "layers");
+    } else {
+      resultLayers = gptLayers;
+    }
+
     let resultFluxPrompt = parsed.fluxPrompt;
     let resultPalette = parsed.palette;
     let resultFonts = parsed.fonts;
@@ -710,6 +743,24 @@ export async function POST(req: NextRequest) {
       } catch (dirErr) {
         console.error("[layout/route] Director repair error:", dirErr);
         break;
+      }
+    }
+
+    // ── Collage: debug grid + completeness check ──────────────────────────────
+    if (isCollageMode && selectedCollagePattern) {
+      logCollageDebugGrid(resultLayers, canvas, selectedCollagePattern);
+
+      const completeness = checkCollageCompleteness(resultLayers, canvas, selectedCollagePattern);
+      console.log("[layout/route] ── POSTER COMPLETENESS CHECK ──");
+      console.log(`[layout/route]   Background present:      ${completeness.backgroundPresent ? "✓" : "✗"}`);
+      console.log(`[layout/route]   Pattern chosen:          ${completeness.patternChosen     ? "✓" : "✗"} (${selectedCollagePattern})`);
+      console.log(`[layout/route]   Subjects spread:         ${completeness.subjectsSpread    ? "✓" : "✗"}`);
+      console.log(`[layout/route]   Typography connected:    ${completeness.typographyConnected ? "✓" : "✗"}`);
+      console.log(`[layout/route]   Hierarchy clear:         ${completeness.hierarchyClear    ? "✓" : "✗"}`);
+      console.log(`[layout/route]   OVERALL: ${completeness.passes ? "✓ PASS" : "✗ FAIL"}`);
+
+      if (!completeness.passes) {
+        console.warn("[layout/route] Completeness check FAILED — returning best available composition");
       }
     }
 
