@@ -28,7 +28,7 @@ import {
   buildCollageStyleUserPrompt,
   mergeStyleIntoTemplate,
   buildCollagePalette,
-  randomCollagePattern,
+  detectCollagePreset,
   logCollageDebugGrid,
   checkCollageCompleteness,
   type CollagePattern,
@@ -511,13 +511,16 @@ export async function POST(req: NextRequest) {
     let collagePaletteRef: { bg: string; accent1: string; accent2: string; text: string } | undefined;
 
     if (isCollageMode) {
-      selectedCollagePattern = randomCollagePattern();
-      const imageCount = Math.max(1, collageSubjects.length);
+      const concept = setup.prompt ?? "";
+      // Concept-driven preset selection (not random — editorial consistency requires intent)
+      selectedCollagePattern = detectCollagePreset(concept);
+      // Enforce max 2 hero subjects regardless of how many images were uploaded
+      const imageCount = Math.max(1, Math.min(collageSubjects.length, 2));
 
-      // Palette: reference image colors → uploaded image colors → style defaults
+      // Palette: reference image colors → concept keywords → editorial default
       const refPrimary = reference?.references?.[0];
       const extractedColors = (refPrimary?.palette ?? []).map((p) => p.hex);
-      collagePaletteRef = buildCollagePalette(extractedColors);
+      collagePaletteRef = buildCollagePalette(extractedColors, concept);
 
       // Build the full layer template with exact, code-computed positions.
       // GPT-4o will only personalize text content and style — not positions.
@@ -711,7 +714,7 @@ export async function POST(req: NextRequest) {
 
     // ── Collage: inject actual subject images into placeholder layers ─────────
     if (isCollageMode && collageSubjects.length > 0) {
-      resultLayers = injectCollageSubjects(resultLayers as PosterLayer[], collageSubjects);
+      resultLayers = injectCollageSubjects(resultLayers as PosterLayer[], collageSubjects.slice(0, 2));
       console.log(
         "[layout/route] Injected",
         collageSubjects.length,

@@ -42,10 +42,11 @@ interface CollageImageEntry {
 // ─── Collage image processing ─────────────────────────────────────────────────
 
 /**
- * Converts a PNG data URL (with transparency) to grayscale.
- * Preserves the alpha channel so transparent areas remain transparent.
+ * Converts a cutout PNG (transparent background) to high-contrast grayscale
+ * suitable for editorial poster use. Applies luminance-based grayscale conversion
+ * followed by contrast expansion and a slight brightness lift.
  */
-function toGrayscaleDataUrl(objectUrl: string): Promise<string> {
+function toEditorialSubjectDataUrl(objectUrl: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
@@ -57,11 +58,22 @@ function toGrayscaleDataUrl(objectUrl: string): Promise<string> {
       ctx.drawImage(img, 0, 0);
       const imageData = ctx.getImageData(0, 0, img.width, img.height);
       const d = imageData.data;
+      // Pass 1: compute luminance range of visible pixels for histogram stretch
+      let lo = 255, hi = 0;
       for (let i = 0; i < d.length; i += 4) {
-        if (d[i + 3] > 0) { // only non-transparent pixels
-          const gray = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
-          d[i] = d[i + 1] = d[i + 2] = gray;
-        }
+        if (d[i + 3] < 10) continue;
+        const lum = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+        if (lum < lo) lo = lum;
+        if (lum > hi) hi = lum;
+      }
+      const range = hi - lo || 1;
+      // Pass 2: grayscale + histogram stretch + contrast boost (factor 1.25)
+      for (let i = 0; i < d.length; i += 4) {
+        if (d[i + 3] < 10) continue;
+        const lum = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+        const stretched = ((lum - lo) / range) * 255; // histogram stretch
+        const enhanced = Math.max(0, Math.min(255, (stretched - 128) * 1.25 + 133)); // contrast + slight lift
+        d[i] = d[i + 1] = d[i + 2] = enhanced;
       }
       ctx.putImageData(imageData, 0, 0);
       resolve(canvas.toDataURL("image/png"));
@@ -72,24 +84,22 @@ function toGrayscaleDataUrl(objectUrl: string): Promise<string> {
 }
 
 /**
- * Runs background removal and grayscale conversion on an image data URL.
- * Returns the processed data URL (transparent cutout, grayscale).
+ * Runs background removal on an uploaded image, then applies editorial-quality
+ * grayscale + contrast enhancement. Returns a poster-ready transparent PNG.
  */
 async function processCollageImage(dataUrl: string): Promise<string> {
-  // Convert data URL to Blob for the bg-removal library
   const res = await fetch(dataUrl);
   const blob = await res.blob();
 
   const { removeBackground } = await import("@imgly/background-removal");
   const cutoutBlob = await removeBackground(blob, {
     model: "isnet_fp16",
-    output: { format: "image/png", quality: 0.9 },
+    output: { format: "image/png", quality: 0.95 },
   });
 
   const objectUrl = URL.createObjectURL(cutoutBlob);
   try {
-    const grayscale = await toGrayscaleDataUrl(objectUrl);
-    return grayscale;
+    return await toEditorialSubjectDataUrl(objectUrl);
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
@@ -244,7 +254,7 @@ export function PromptComposer() {
 
   const onCollageDrop = useCallback(
     async (acceptedFiles: File[]) => {
-      const remaining = 3 - collageImages.length;
+      const remaining = 2 - collageImages.length;
       if (remaining <= 0) return;
       const filesToProcess = acceptedFiles.slice(0, remaining);
       const newIds = filesToProcess.map(() => uuidv4());
@@ -303,7 +313,7 @@ export function PromptComposer() {
   } = useDropzone({
     onDrop: onCollageDrop,
     accept: { "image/*": [] },
-    disabled: busy || collageImages.length >= 3,
+    disabled: busy || collageImages.length >= 2,
   });
 
   function removeRefImage(id: string) {
@@ -596,10 +606,10 @@ export function PromptComposer() {
             <div className={t.gap.group}>
               <SectionLabel>Collage images</SectionLabel>
               <p className={`${t.mutedText} -mt-1`}>
-                Upload 1–3 images. Poster Agent will automatically extract subjects and build a collage composition.
+                Upload 1–2 images. Subjects are extracted, contrast-enhanced, and composed into an editorial poster.
               </p>
 
-              {collageImages.length < 3 && (
+              {collageImages.length < 2 && (
                 <div
                   {...getCollageRootProps()}
                   className={`py-5 text-center border border-dashed rounded-lg cursor-pointer transition-colors ${
@@ -616,11 +626,11 @@ export function PromptComposer() {
                       {isCollageDragActive
                         ? "Drop to add"
                         : collageImages.length > 0
-                        ? `Add another image (${collageImages.length}/3)`
+                        ? `Add second image (${collageImages.length}/2)`
                         : "Drop images here, or click to browse"}
                     </div>
                     {collageImages.length === 0 && (
-                      <div className={t.mutedText}>JPG, PNG · up to 3 images</div>
+                      <div className={t.mutedText}>JPG, PNG · 1–2 images · one clear subject each</div>
                     )}
                   </div>
                 </div>
@@ -670,7 +680,7 @@ export function PromptComposer() {
 
               {collageImages.length === 0 && (
                 <p className={`${t.scale.xs} font-mono text-amber-600/70`}>
-                  ⚠ Upload at least one image to generate a collage.
+                  ⚠ Upload at least one image (max 2) to generate an editorial poster.
                 </p>
               )}
             </div>
@@ -955,7 +965,7 @@ export function PromptComposer() {
                 busy ||
                 (isCollageRecipe(cfg.styleRecipe) &&
                   cfg.styleSource !== "reference" &&
-                  !collageImages.some((i) => i.status === "done"))
+                  (!collageImages.some((i) => i.status === "done") || collageImages.some((i) => i.status === "extracting")))
               }
               className="flex items-center gap-3 group disabled:opacity-30 transition-opacity"
             >

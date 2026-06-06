@@ -66,7 +66,7 @@ PRODUCT EXHIBIT PIPELINE — hard constraints:
   collage: {
     id:          "collage",
     label:       "Collage",
-    philosophy:  "Composition-first. Uploaded cutout photographs are the primary visual content. Flat geometric shapes and integrated typography build the poster around them.",
+    philosophy:  "Editorial composition-first. Uploaded cutout subjects are the hero visual. High-contrast typography, flat geometric shapes, and a global texture layer build a poster that reads as professionally designed — not assembled.",
     generateBrief:              true,
     generateLayout:             true,
     generateBackgroundImage:    false,
@@ -74,13 +74,35 @@ PRODUCT EXHIBIT PIPELINE — hard constraints:
     supportsTypographyRefinement: true,
     requiresDirectorApproval:   true,
     directorConstraints: `
-COLLAGE PIPELINE — hard constraints:
+COLLAGE PIPELINE — editorial poster hard constraints:
+
+SUBJECT HIERARCHY:
 - NO AI-generated background image. solidBackground only.
-- Uploaded subject images are the PRIMARY visual content — they must be prominent and unoccluded.
-- All shapes must be flat solid fills. No gradients, shadows, or glows.
-- Typography must physically interact with subjects or shapes (overlap, edge-align, or straddle a boundary).
-- Subject images must overlap at least one geometric shape (the overlap IS the collage effect).
-- The title should feel integrated into the composition — not floating.`,
+- MAX 2 subject images (subjectImage layers). Exactly 1 is strongly preferred.
+- The hero subject must dominate: minimum 65% of canvas height, visually dominant.
+- Subjects must NOT be fully occluded by shapes or overlays. If a shape covers a subject's face/focal area, move or reduce the shape.
+
+TYPOGRAPHY:
+- The titleText layer must be the largest text element: 150–220px display font.
+- titleText must PHYSICALLY INTERACT with the subject — pass behind it, overlap it, or straddle a boundary with it.
+- No floating title text isolated from both subjects and shapes.
+- Typography hierarchy must be clear: titleText > subtitleText > bodyText > metaText.
+
+SHAPES:
+- All shapes must be flat solid fills — no gradients, shadows, or glows.
+- Every geometricShape must be adjacent to or overlapping at least one subject or text layer.
+- Shapes that float in empty space with no relationship to other elements must be moved.
+
+TEXTURE:
+- The noiseTexture layer must cover the full canvas (x:0, y:0, full width and height).
+- noiseTexture must be at the highest zIndex — it unifies all elements.
+
+MICRO INFORMATION:
+- At least 2 metaText layers with archive-style data must be present and legible.
+
+COMPOSITION:
+- The poster must have a single clear focal hierarchy. The viewer's eye must travel: Subject → Title → Information.
+- The poster must look like it was designed by a professional — not assembled from random layers.`,
   },
 
   "reference-driven": {
