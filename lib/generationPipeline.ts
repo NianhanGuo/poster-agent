@@ -52,15 +52,35 @@ export const PIPELINE_CONFIGS: Record<Pipeline, PipelineConfig> = {
     supportsTypographyRefinement: true,
     requiresDirectorApproval:   true,
     directorConstraints: `
-PRODUCT EXHIBIT PIPELINE — hard constraints:
-- background/base layer MUST exist and cover 100% of canvas (x:0, y:0, full width and height).
-- product/hero MUST be positioned using the layout variant's zone rules — NOT in the top-left corner.
-- All text layers (text/headline, text/tagline, text/details) MUST stay within safe margins (5% padding).
-- Typography hierarchy: text/headline dominates. tagline ≤ 50% of headline size. details ≤ 25%.
-- badge/offer and trust/label layers must NOT cover the product's focal center.
-- Layer names must follow the semantic convention: background/..., product/..., text/..., badge/..., trust/..., brand/...
+PRODUCT EXHIBIT PIPELINE — THE PRODUCT IS THE HERO. Enforce ALL of these:
+
+PRODUCT SIZE (most critical):
+- product/hero (backgroundImage) MUST occupy ≥ 25% of canvas area (width × height ≥ 0.25 × W × H).
+- If product is too small: increase its width and height to match the layout zone coordinates — do NOT reposition it to a corner.
+- clipShape MUST match the product layer's x, y, width, height exactly.
+
+TYPOGRAPHY SUBORDINATION:
+- text/product-name fontSize MUST be ≤ 60px. If larger, reduce it. Typography serves the product.
+- text/tagline fontSize MUST be ≤ 22px.
+- Text must not cover the product's primary visual zone.
+- Headline does NOT dominate — product does.
+
+BRAND SYSTEM (required):
+- text/brand or similar brand label MUST be present (small, understated).
+- At least 2 feature/ or trust/ layers MUST be present (feature callouts or quality signals).
+- badge/offer MUST be present.
+
+BACKGROUND:
+- background/base MUST exist and cover 100% of canvas (x:0, y:0, full width and height).
+- For full-bleed Layout D: overlay/gradient layers MUST darken the text zones for readability.
+
+LAYER NAMING:
+- Layer labels MUST follow: background/..., product/..., text/..., feature/..., badge/..., trust/..., brand/...
 - No emoji in any layer label.
-- The fluxPrompt must match the product category's atmosphere (food=warm, beauty=clean, tech=minimal, etc).`,
+
+FLUX PROMPT:
+- Must describe a product-specific staging world (not a generic studio).
+- Must match the product category's atmosphere (food=appetizing warm scene, tech=dark gradient, beauty=marble surface, etc).`,
   },
 
   collage: {

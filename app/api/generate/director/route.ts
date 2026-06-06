@@ -23,6 +23,7 @@ import {
   validatePosterLayout,
   validateCollageLayout,
   validateDesignQuality,
+  validateProductExhibitLayout,
   formatIssuesForDirector,
   summariseIssues,
   type ValidationIssue,
@@ -173,7 +174,8 @@ export async function POST(req: NextRequest): Promise<NextResponse<DirectorRespo
   let issues: ValidationIssue[] = [
     ...validatePosterLayout(layers, canvas),
     ...validateDesignQuality(layers, canvas),
-    ...(pipeline === "collage" ? validateCollageLayout(layers, canvas) : []),
+    ...(pipeline === "collage"          ? validateCollageLayout(layers, canvas)        : []),
+    ...(pipeline === "product-exhibit"  ? validateProductExhibitLayout(layers, canvas) : []),
   ];
 
   const summary = summariseIssues(issues);
@@ -267,7 +269,8 @@ export async function POST(req: NextRequest): Promise<NextResponse<DirectorRespo
       issues = [
         ...validatePosterLayout(resultLayers, canvas),
         ...validateDesignQuality(resultLayers, canvas),
-        ...(pipeline === "collage" ? validateCollageLayout(resultLayers, canvas) : []),
+        ...(pipeline === "collage"         ? validateCollageLayout(resultLayers, canvas)        : []),
+        ...(pipeline === "product-exhibit" ? validateProductExhibitLayout(resultLayers, canvas) : []),
       ];
       console.log(`[director] After repair ${attempt + 1}: ${summariseIssues(issues)}`);
     } catch (err) {

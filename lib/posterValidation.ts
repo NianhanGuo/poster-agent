@@ -621,6 +621,140 @@ export function validateDesignQuality(
   ];
 }
 
+// ─── Product Exhibit–specific validation ──────────────────────────────────────
+
+/**
+ * Enforces the "product is the hero" rule.
+ *
+ * Checks:
+ *  1. Product layer (backgroundImage with label containing "product") exists
+ *  2. Product layer occupies ≥ 25% of canvas area (hard minimum)
+ *  3. Title fontSize is not dominating the product (warns if headline > 80px
+ *     while product is smaller than 35% canvas)
+ *  4. Brand/feature system present (at least one feature or trust layer)
+ */
+export function validateProductExhibitLayout(
+  layers: PosterLayer[],
+  canvas: CanvasConfig,
+): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const W = canvas.width;
+  const H = canvas.height;
+  const canvasArea = W * H;
+  const MIN_PRODUCT_FRACTION = 0.25;
+
+  // Find the product/hero layer
+  const productLayer = layers.find(
+    (l) =>
+      l.visible &&
+      l.type === "backgroundImage" &&
+      (l.label?.toLowerCase().includes("product") || l.label?.toLowerCase().includes("hero")),
+  );
+
+  if (!productLayer) {
+    issues.push({
+      type:         "focal-overlap",
+      layerId:      "missing-product",
+      layerLabel:   "product/hero",
+      message:      "No product/hero layer found. Product Exhibit requires a backgroundImage layer labeled 'product/hero'.",
+      severity:     "error",
+      suggestedFix: "Add a backgroundImage layer with label 'product/hero' and large dimensions (≥40% canvas area).",
+    });
+    return issues;
+  }
+
+  // Compute visible product area from clipShape (more accurate) or layer bounds
+  let productW = productLayer.width;
+  let productH = productLayer.height;
+  const cs = productLayer.clipShape;
+  if (cs?.type === "rect" && cs.width && cs.height) {
+    productW = cs.width;
+    productH = cs.height;
+  } else if (cs?.type === "circle" && cs.radius) {
+    const area = Math.PI * cs.radius * cs.radius;
+    const fraction = area / canvasArea;
+    if (fraction < MIN_PRODUCT_FRACTION) {
+      issues.push({
+        type:         "subject-coverage",
+        layerId:      productLayer.id,
+        layerLabel:   productLayer.label,
+        message:      `Product hero circle (r=${cs.radius}px) covers only ${Math.round(fraction * 100)}% of canvas. ` +
+          `Minimum is ${Math.round(MIN_PRODUCT_FRACTION * 100)}%. The product must be the visual hero.`,
+        severity:     "error",
+        suggestedFix: `Increase product radius to at least ${Math.round(Math.sqrt(canvasArea * MIN_PRODUCT_FRACTION / Math.PI))}px.`,
+      });
+    }
+    return issues;
+  }
+
+  const productArea = productW * productH;
+  const productFraction = productArea / canvasArea;
+
+  if (productFraction < MIN_PRODUCT_FRACTION) {
+    issues.push({
+      type:         "subject-coverage",
+      layerId:      productLayer.id,
+      layerLabel:   productLayer.label,
+      message:
+        `Product hero "${productLayer.label}" covers only ${Math.round(productFraction * 100)}% of canvas ` +
+        `(${Math.round(productW)}×${Math.round(productH)}px). ` +
+        `Minimum is ${Math.round(MIN_PRODUCT_FRACTION * 100)}%. ` +
+        `The product must be the dominant visual element.`,
+      severity:     "error",
+      suggestedFix:
+        `Increase product/hero to at least: width=${Math.round(W * 0.50)}px, height=${Math.round(H * 0.55)}px ` +
+        `(≥${Math.round(MIN_PRODUCT_FRACTION * 100)}% canvas area). ` +
+        `Shrink the headline if needed — typography must yield to the product.`,
+    });
+  }
+
+  // Warn when headline is very large relative to the (still small) product
+  const titleLayer = layers.find((l) => l.type === "titleText" && l.visible);
+  const titleFontSize = titleLayer?.textData?.fontSize ?? 0;
+  if (productFraction < 0.35 && titleFontSize > 80) {
+    issues.push({
+      type:         "hierarchy",
+      layerId:      titleLayer!.id,
+      layerLabel:   titleLayer!.label,
+      message:
+        `text/product-name fontSize=${titleFontSize}px is very large while product covers ` +
+        `only ${Math.round(productFraction * 100)}% of canvas. ` +
+        `Typography is dominating the product.`,
+      severity:     "warning",
+      suggestedFix:
+        `Either: (A) reduce headline fontSize to ≤60px, ` +
+        `OR (B) increase product/hero dimensions to ≥35% canvas. ` +
+        `The product must visually outweigh the headline.`,
+    });
+  }
+
+  // Warn if no brand/feature system is present
+  const hasBrandOrFeature = layers.some(
+    (l) =>
+      l.visible &&
+      (l.label?.startsWith("feature/") ||
+        l.label?.startsWith("trust/") ||
+        l.label?.startsWith("brand/") ||
+        l.label === "text/brand"),
+  );
+  if (!hasBrandOrFeature) {
+    issues.push({
+      type:         "composition-relationship",
+      layerId:      productLayer.id,
+      layerLabel:   "brand/feature system",
+      message:
+        "No feature/, trust/, or brand/ layers found. " +
+        "Product Exhibit requires a brand system: brand name, feature callouts, and trust signals.",
+      severity:     "warning",
+      suggestedFix:
+        "Add at least: text/brand (brand name), feature/01 + feature/02 (2 feature lines), " +
+        "and trust/label-01 (1 quality signal).",
+    });
+  }
+
+  return issues;
+}
+
 // ─── Issue formatter for Creative Director prompt ─────────────────────────────
 
 export function formatIssuesForDirector(issues: ValidationIssue[]): string {

@@ -9,6 +9,7 @@ import {
   validatePosterLayout,
   validateCollageLayout,
   validateDesignQuality,
+  validateProductExhibitLayout,
   formatIssuesForDirector,
   summariseIssues,
   type ValidationIssue,
@@ -773,6 +774,11 @@ export async function POST(req: NextRequest) {
       const collageIssues = validateCollageLayout(resultLayers as PosterLayer[], canvas);
       validationIssues = [...validationIssues, ...collageIssues];
       console.log("[layout/route] Collage validation:", summariseIssues(collageIssues));
+    }
+    if (isProductExhibitMode) {
+      const productIssues = validateProductExhibitLayout(resultLayers as PosterLayer[], canvas);
+      validationIssues = [...validationIssues, ...productIssues];
+      console.log("[layout/route] Product exhibit validation:", summariseIssues(productIssues));
     }
     console.log("[layout/route] Initial validation:", summariseIssues(validationIssues));
     if (validationIssues.length > 0) {
