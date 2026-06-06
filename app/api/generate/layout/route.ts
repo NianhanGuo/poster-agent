@@ -14,6 +14,7 @@ import {
   type ValidationIssue,
 } from "@/lib/posterValidation";
 import { selectPipeline, getPipelineConfig } from "@/lib/generationPipeline";
+import { normalizeLayerNames } from "@/lib/layerNaming";
 import {
   buildCollageSystemPrompt,
   buildCollageUserPrompt,
@@ -460,9 +461,10 @@ export async function POST(req: NextRequest) {
 
   if (!process.env.OPENAI_API_KEY) {
     const mock = mockLayout(setup, canvas);
+    const namedMockLayers = normalizeLayerNames(mock.layers);
     const finalLayers = [
       ...lockedLayers,
-      ...mock.layers.filter((l) => !lockedLayers.find((ll) => ll.id === l.id)),
+      ...namedMockLayers.filter((l) => !lockedLayers.find((ll) => ll.id === l.id)),
     ];
     return NextResponse.json({
       layers: finalLayers,
@@ -724,9 +726,10 @@ export async function POST(req: NextRequest) {
     const finalValidation = summariseIssues(validationIssues);
     console.log("[layout/route] Final validation:", finalValidation);
 
+    const namedResultLayers = normalizeLayerNames(resultLayers);
     const finalLayers = [
       ...lockedLayers,
-      ...resultLayers.filter((l) => !lockedLayers.find((ll) => ll.id === l.id)),
+      ...namedResultLayers.filter((l) => !lockedLayers.find((ll) => ll.id === l.id)),
     ];
 
     return NextResponse.json({
