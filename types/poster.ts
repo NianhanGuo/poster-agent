@@ -5,15 +5,16 @@ export type Language = "en" | "zh" | "mixed";
 
 export type StyleRecipe =
   | "collage-poster"
+  | "product-exhibit"
   | "gallery-minimal"
   | "brutalist-wall"
   | "soft-editorial"
-  | "surreal-film"
   | "archive-museum"
   | "experimental-type"
   | "blur-field"
   // kept for backward compatibility with existing saved projects
-  | "cinematic-rain";
+  | "cinematic-rain"
+  | "surreal-film";
 
 export type CanvasSize =
   | "instagram-post"

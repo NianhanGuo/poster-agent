@@ -44,6 +44,36 @@ export interface RecipeDef {
 
 export const RECIPES: Record<StyleRecipe, RecipeDef> = {
 
+  // ── Product Exhibit (commercial product advertisement) ─────────────────────
+  "product-exhibit": {
+    id: "product-exhibit",
+    name: "Product Exhibit",
+    tagline: "Commercial hero advertising for any product",
+    imageKeywords:
+      "commercial product photography, hero shot, professional studio lighting, clean background, sharp focus, advertising quality",
+    imageAvoid: "text, watermarks, logos, cluttered backgrounds, busy patterns",
+    palette: {
+      bg:      "#1a1a1a",
+      surface: "#2d2d2d",
+      text:    "#f5f5f0",
+      accent:  "#f5c400",
+    },
+    type: {
+      titleFamily:        "Playfair Display",
+      bodyFamily:         "Inter",
+      titleWeight:        "700",
+      titleAlign:         "left",
+      titleLetterSpacing: 0,
+      titleColor:         "#f5f5f0",
+      bodyColor:          "#cccccc",
+    },
+    layout: {
+      titlePosition: "top",
+      align:         "left",
+      density:       "moderate",
+    },
+  },
+
   // ── Collage Poster (composition-first, uploaded images only) ───────────────
   "collage-poster": {
     id: "collage-poster",
@@ -82,6 +112,35 @@ export const RECIPES: Record<StyleRecipe, RecipeDef> = {
   },
 
   // ── Legacy: kept for backward compatibility with saved projects ────────────
+  "surreal-film": {
+    id: "surreal-film",
+    name: "Surreal Film",
+    tagline: "Between waking and dream",
+    imageKeywords:
+      "surreal, dreamlike, double exposure, ethereal light, mist, otherworldly, symbolic, Magritte, Tarkovsky",
+    imageAvoid: "realistic documentary, mundane, flat, literal",
+    palette: {
+      bg: "#0e0a1e",
+      surface: "#160d28",
+      text: "#d8c8f0",
+      accent: "#9060c0",
+    },
+    type: {
+      titleFamily: "Palatino",
+      bodyFamily: "Arial",
+      titleWeight: "normal",
+      titleAlign: "center",
+      titleLetterSpacing: 6,
+      titleColor: "#e8d8ff",
+      bodyColor: "#8868aa",
+    },
+    layout: {
+      titlePosition: "off-center",
+      align: "center",
+      density: "sparse",
+    },
+  },
+
   "cinematic-rain": {
     id: "cinematic-rain",
     name: "Cinematic Rain",
@@ -199,35 +258,6 @@ export const RECIPES: Record<StyleRecipe, RecipeDef> = {
     },
   },
 
-  "surreal-film": {
-    id: "surreal-film",
-    name: "Surreal Film",
-    tagline: "Between waking and dream",
-    imageKeywords:
-      "surreal, dreamlike, double exposure, ethereal light, mist, otherworldly, symbolic, Magritte, Tarkovsky",
-    imageAvoid: "realistic documentary, mundane, flat, literal",
-    palette: {
-      bg: "#0e0a1e",
-      surface: "#160d28",
-      text: "#d8c8f0",
-      accent: "#9060c0",
-    },
-    type: {
-      titleFamily: "Palatino",
-      bodyFamily: "Arial",
-      titleWeight: "normal",
-      titleAlign: "center",
-      titleLetterSpacing: 6,
-      titleColor: "#e8d8ff",
-      bodyColor: "#8868aa",
-    },
-    layout: {
-      titlePosition: "off-center",
-      align: "center",
-      density: "sparse",
-    },
-  },
-
   "archive-museum": {
     id: "archive-museum",
     name: "Archive Museum",
@@ -317,7 +347,7 @@ export const RECIPES: Record<StyleRecipe, RecipeDef> = {
   },
 };
 
-/** All recipes including legacy ones (for lookup by id) */
+/** Active recipes shown in the style picker — excludes legacy backward-compat entries */
 export const RECIPE_LIST = Object.values(RECIPES).filter(
-  (r) => r.id !== "cinematic-rain",
+  (r) => r.id !== "cinematic-rain" && r.id !== "surreal-film",
 );

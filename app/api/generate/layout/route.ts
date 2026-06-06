@@ -14,6 +14,13 @@ import {
   type ValidationIssue,
 } from "@/lib/posterValidation";
 import { selectPipeline, getPipelineConfig } from "@/lib/generationPipeline";
+import {
+  detectProductCategory,
+  selectProductLayout,
+  buildProductExhibitSystemPrompt,
+  buildProductExhibitUserPrompt,
+  type ProductExhibitPlan,
+} from "@/lib/productExhibit";
 import { normalizeLayerNames } from "@/lib/layerNaming";
 import {
   buildCollageLayoutTemplate,
@@ -488,9 +495,10 @@ export async function POST(req: NextRequest) {
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     // ── Pipeline selection ────────────────────────────────────────────────────
-    const pipeline        = selectPipeline(setup);
-    const pipelineCfg     = getPipelineConfig(setup);
-    const isCollageMode   = pipeline === "collage";
+    const pipeline              = selectPipeline(setup);
+    const pipelineCfg           = getPipelineConfig(setup);
+    const isCollageMode         = pipeline === "collage";
+    const isProductExhibitMode  = pipeline === "product-exhibit";
     console.log(`[layout/route] Pipeline: ${pipeline} (${pipelineCfg.label})`);
     let selectedCollagePattern: CollagePattern | undefined;
 
@@ -530,6 +538,15 @@ export async function POST(req: NextRequest) {
       console.log("[layout/route] Pattern:", selectedCollagePattern);
       console.log("[layout/route] Image count:", imageCount, "| Template layers:", collageTemplate.length);
       console.log("[layout/route] Palette:", collagePaletteRef);
+    } else if (isProductExhibitMode) {
+      // ── Product Exhibit path ────────────────────────────────────────────────
+      const category = detectProductCategory(setup.prompt ?? "");
+      const layout   = selectProductLayout(category);
+      systemContent  = buildProductExhibitSystemPrompt(canvas);
+      userContent    = buildProductExhibitUserPrompt(setup, canvas, brief, category, layout);
+
+      console.log("[layout/route] ── PRODUCT EXHIBIT MODE ──");
+      console.log("[layout/route] Category:", category, "| Layout:", layout);
     } else {
       // Standard generation
       systemContent = buildSystemPrompt();
@@ -545,9 +562,12 @@ export async function POST(req: NextRequest) {
     console.log("[layout/route] User prompt (" + userContent.length + " chars):\n", userContent.slice(0, 2000));
     if (userContent.length > 2000) console.log("[layout/route] ... (truncated, full length:", userContent.length, ")");
 
+    // Product exhibit needs extra tokens for the plan schema + layers
+    const maxTokens = isProductExhibitMode ? 6144 : 4096;
+
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
-      max_tokens: 4096,
+      max_tokens: maxTokens,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: systemContent },
@@ -563,7 +583,14 @@ export async function POST(req: NextRequest) {
       designRationale: string;
       fonts?: { display?: string; body?: string };
       palette?: { dominant: string; secondary: string; accent: string; background: string };
+      plan?: ProductExhibitPlan;
     } = JSON.parse(text);
+
+    // Log the product exhibit plan when present
+    if (isProductExhibitMode && parsed.plan) {
+      console.log("[layout/route] Product Exhibit Plan:");
+      console.log(JSON.stringify(parsed.plan, null, 2));
+    }
     console.log("[layout/route] fluxPrompt from GPT-4o:", parsed.fluxPrompt?.slice(0, 200));
     console.log("[layout/route] palette from GPT-4o:", parsed.palette);
     console.log("[layout/route] fonts from GPT-4o:", parsed.fonts);
@@ -584,6 +611,30 @@ export async function POST(req: NextRequest) {
         "layers → merged", resultLayers.length, "layers");
     } else {
       resultLayers = gptLayers;
+    }
+
+    // ── Product Exhibit: validate background layer exists ─────────────────────
+    if (isProductExhibitMode) {
+      const hasBg = resultLayers.some(l => l.type === "solidBackground");
+      if (!hasBg) {
+        console.warn("[layout/route] Product Exhibit: missing background/base — injecting fallback");
+        const palette = parsed.palette;
+        resultLayers = [{
+          id: uuidv4(),
+          type: "solidBackground" as const,
+          label: "background/base",
+          x: 0, y: 0, width: canvas.width, height: canvas.height,
+          rotation: 0, opacity: 1, visible: true, locked: false, zIndex: 0,
+          shapeData: { shapeType: "rect", fill: palette?.background ?? "#1a1a1a", stroke: "none", strokeWidth: 0 },
+        }, ...resultLayers];
+      }
+      // Ensure background covers full canvas
+      resultLayers = resultLayers.map(l =>
+        l.type === "solidBackground"
+          ? { ...l, x: 0, y: 0, width: canvas.width, height: canvas.height, zIndex: 0 }
+          : l,
+      );
+      console.log("[layout/route] Product Exhibit: final layer count", resultLayers.length);
     }
 
     let resultFluxPrompt = parsed.fluxPrompt;
@@ -786,7 +837,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       layers: finalLayers,
       canvas,
-      // Collage mode: no image generation — fluxPrompt is empty
       imagePrompt:       isCollageMode ? "" : resultFluxPrompt,
       fluxPrompt:        isCollageMode ? "" : resultFluxPrompt,
       fonts:             resultFonts ?? {},
@@ -798,6 +848,8 @@ export async function POST(req: NextRequest) {
       isCollage:         isCollageMode,
       pipeline,
       pipelineLabel:     pipelineCfg.label,
+      // Product Exhibit: include the Director plan for client logging/future use
+      ...(isProductExhibitMode && parsed.plan ? { productExhibitPlan: parsed.plan } : {}),
       demo: false,
     });
   } catch (err) {

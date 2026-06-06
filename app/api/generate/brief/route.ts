@@ -9,11 +9,13 @@ import type { EnrichedRefCtx } from "@/lib/referencePrompt";
 const SYSTEM_PROMPT = `You are a world-class art director and design strategist.
 You create concise, opinionated design briefs that push beyond safe defaults.
 Your references: A24, Criterion Collection, MoMA, Tate Modern, ICA London, Taschen.
+For product exhibit briefs: reference commercial advertising design — Apple, Muji, Bottega Veneta campaigns.
 Output ONLY valid JSON — no markdown, no prose, no explanation.`;
 
 function buildDemoBrief(recipe: RecipeDef): DesignBrief {
   const name = recipe.id;
   const map: Record<string, Partial<DesignBrief>> = {
+    "product-exhibit":   { mood: "commercial clarity", composition: "asymmetric", typographyStrategy: "dominant-title", colorStrategy: "high-contrast", imageStrategy: "background-hero", negativeSpace: "medium" },
     "cinematic-rain":    { mood: "atmospheric dread", composition: "asymmetric", typographyStrategy: "dominant-title", colorStrategy: "high-contrast", imageStrategy: "background-hero", negativeSpace: "medium" },
     "gallery-minimal":   { mood: "refined silence",   composition: "center",     typographyStrategy: "subtle-type",    colorStrategy: "muted",          imageStrategy: "texture",          negativeSpace: "high"   },
     "brutalist-wall":    { mood: "confrontational weight", composition: "edge-heavy", typographyStrategy: "dominant-title", colorStrategy: "high-contrast", imageStrategy: "abstract",    negativeSpace: "low"    },
@@ -50,6 +52,14 @@ export async function POST(req: NextRequest) {
     ? `Tonal context (soft hint only): ${posterType}`
     : "";
 
+  const isProductExhibit = recipe.id === "product-exhibit";
+  const productExhibitNote = isProductExhibit
+    ? `\nPRODUCT EXHIBIT BRIEF: This is a commercial product advertisement poster.
+Think like an advertising creative director. The imageStrategy should be "background-hero" (product is the hero).
+The composition should showcase the product with maximum commercial impact.
+Mood should reflect the product's emotional world (warm for food, premium for luxury, clean for beauty, etc.).
+colorStrategy: derive from product category — avoid generic choices.` : "";
+
   const userPrompt = `Create an opinionated design brief for a poster.
 
 Concept: ${prompt || "an intentionally designed poster"}
@@ -57,7 +67,7 @@ Style recipe: "${recipe.name}" — ${recipe.tagline}
 ${posterContext}
 Language: ${language === "zh" ? "Chinese" : language === "mixed" ? "bilingual EN/ZH" : "English"}
 ${refSection}
-
+${productExhibitNote}
 Be deliberately opinionated. Avoid safe, average outputs. Push the concept.
 ${ref?.analysis?.visualSummary ? `The reference image shows: ${ref.analysis.visualSummary} — let this inform your mood and colorStrategy.` : ""}
 
