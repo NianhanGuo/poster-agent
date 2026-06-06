@@ -4,14 +4,16 @@ export type PosterType = "film" | "exhibition" | "poster";
 export type Language = "en" | "zh" | "mixed";
 
 export type StyleRecipe =
-  | "cinematic-rain"
+  | "collage-poster"
   | "gallery-minimal"
   | "brutalist-wall"
   | "soft-editorial"
   | "surreal-film"
   | "archive-museum"
   | "experimental-type"
-  | "blur-field";
+  | "blur-field"
+  // kept for backward compatibility with existing saved projects
+  | "cinematic-rain";
 
 export type CanvasSize =
   | "instagram-post"

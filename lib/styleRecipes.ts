@@ -25,9 +25,63 @@ export interface RecipeDef {
     align: "left" | "center" | "right";
     density: "sparse" | "moderate" | "dense";
   };
+  /**
+   * When set, this recipe uses the collage composition pipeline instead of
+   * the standard image-generation pipeline.
+   */
+  collageMode?: {
+    requiresImages: true;
+    minImages: number;
+    maxImages: number;
+    /** Run @imgly/background-removal automatically on each uploaded image */
+    autoExtractSubjects: boolean;
+    /** Convert extracted subjects to grayscale before compositing */
+    autoGrayscale: boolean;
+    /** Skip Flux image generation entirely — use solidBackground only */
+    noFluxGeneration: boolean;
+  };
 }
 
 export const RECIPES: Record<StyleRecipe, RecipeDef> = {
+
+  // ── Collage Poster (composition-first, uploaded images only) ───────────────
+  "collage-poster": {
+    id: "collage-poster",
+    name: "Collage Poster",
+    tagline: "Cutout subjects, geometric blocks, integrated type",
+    imageKeywords: "",
+    imageAvoid: "",
+    palette: {
+      bg:      "#f4f4f0",
+      surface: "#ffffff",
+      text:    "#0a0a0a",
+      accent:  "#d63c2a",
+    },
+    type: {
+      titleFamily:        "Bebas Neue",
+      bodyFamily:         "Space Mono",
+      titleWeight:        "400",
+      titleAlign:         "left",
+      titleLetterSpacing: 2,
+      titleColor:         "#0a0a0a",
+      bodyColor:          "#0a0a0a",
+    },
+    layout: {
+      titlePosition: "off-center",
+      align:         "left",
+      density:       "dense",
+    },
+    collageMode: {
+      requiresImages:      true,
+      minImages:           1,
+      maxImages:           3,
+      autoExtractSubjects: true,
+      autoGrayscale:       true,
+      noFluxGeneration:    true,
+    },
+  },
+
+  // ── Legacy: kept for backward compatibility with saved projects ────────────
   "cinematic-rain": {
     id: "cinematic-rain",
     name: "Cinematic Rain",
@@ -263,4 +317,7 @@ export const RECIPES: Record<StyleRecipe, RecipeDef> = {
   },
 };
 
-export const RECIPE_LIST = Object.values(RECIPES);
+/** All recipes including legacy ones (for lookup by id) */
+export const RECIPE_LIST = Object.values(RECIPES).filter(
+  (r) => r.id !== "cinematic-rain",
+);
