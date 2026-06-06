@@ -186,7 +186,7 @@ FLUX PROMPT ATMOSPHERE GUIDANCE:
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
-export function buildAtmosphericEventSystemPrompt(canvas: CanvasConfig): string {
+export function buildAtmosphericEventSystemPrompt(canvas: CanvasConfig, typographyBlock = ""): string {
   const W = canvas.width;
   const H = canvas.height;
   const PAD = Math.round(Math.min(W, H) * 0.05);
@@ -252,9 +252,12 @@ Use ONLY these semantic labels. No emoji. No generic names. No single letters.
   accent/line              → accentLine
   accent/shape             → geometricShape
 
+${typographyBlock || ""}
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TYPOGRAPHY SYSTEM
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Follow the Typography Director above. Additional reference:
 Title fonts by mood:
   cinematic/festival/concert: Bebas Neue, Oswald, Barlow Condensed (bold condensed)
   elegant/opening/gallery:    Playfair Display, Cormorant Garamond, EB Garamond (editorial serif)
@@ -284,6 +287,7 @@ export function buildAtmosphericEventUserPrompt(
   eventType: EventType,
   mood: EventMood,
   compositionPreset: EventCompositionPreset,
+  campaignHeadline = "",
 ): string {
   const W = canvas.width;
   const H = canvas.height;
@@ -366,6 +370,7 @@ EVENT CONTENT (include ALL provided information)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 TITLE:        ${eventName}
+${campaignHeadline && campaignHeadline !== eventName ? `DISPLAY HEADLINE: "${campaignHeadline}" ← use as the main visual title (the event name goes in title/event-name layer text)` : "DISPLAY HEADLINE: the event name itself is the headline — make it ENORMOUS and BOLD"}
 ${description ? `TAGLINE:      (generate from: "${description.split(/[.!?]/)[0]}")` : "TAGLINE:      (generate a compelling short tagline for this event type)"}
 DATE & TIME:  ${dateTime || "(no date provided — write placeholder: Date & Time)"}
 LOCATION:     ${location || "(no location provided — write placeholder: Venue, City)"}

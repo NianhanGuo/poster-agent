@@ -527,7 +527,7 @@ const EDITORIAL_FONT_SYSTEMS: Record<string, { display: string; body: string }> 
 
 // ─── GPT-4o style prompts ─────────────────────────────────────────────────────
 
-export function buildCollageStyleSystemPrompt(): string {
+export function buildCollageStyleSystemPrompt(typographyBlock = ""): string {
   return `You are a senior editorial poster designer with the authority and taste of Wolfgang Weingart, Neville Brody, Saul Bass, and the A24 design team.
 You design for cultural institutions, film festivals, galleries, and avant-garde publications.
 
@@ -541,16 +541,20 @@ WHAT THIS IS AND IS NOT
 
 The viewer must look at this poster and feel: "A human designer made this."
 
+${typographyBlock || ""}
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 MANDATORY QUALITY STANDARDS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 TITLE (most critical field):
   • Max 3 words. ALL-CAPS. SHORT. EMOTIONALLY RESONANT.
+  • Use the campaign headline from Typography Director above, or generate something stronger.
   • Must evoke the CONCEPT — not describe the poster format
-  • ✓ Examples: "VOID", "HUMAN ERROR", "THE WEIGHT", "COLLAPSE", "SIGNAL LOSS", "NO EXIT", "SYSTEM FAILURE", "REMAINS"
-  • ✗ Reject immediately: "Art Poster 2025", "Exhibition Title", "Our Poster"
+  • ✓ Examples: "VOID", "HUMAN ERROR", "THE WEIGHT", "COLLAPSE", "SIGNAL LOSS", "FORM", "ECHO"
+  • ✗ Reject: "Art Poster 2025", "Exhibition Title", "Our Poster", "Collage"
   • Think: what 1-3 words capture the ESSENCE or TENSION of the concept?
+  • Type scale: use the Typography Director's scale guidance — oversized to monumental is encouraged
 
 TAGLINE:
   • 1 editorial line, 30–50 characters max
@@ -590,6 +594,7 @@ export function buildCollageStyleUserPrompt(
   canvas: CanvasConfig,
   presetId: CollagePreset,
   palette: CollagePalette,
+  campaignHeadline = "",
 ): string {
   const preset = COLLAGE_PATTERNS[presetId];
   const concept = setup.prompt || "editorial poster";
@@ -648,12 +653,13 @@ TYPOGRAPHY SYSTEM: ${typographySystem.toUpperCase()}
 
 TITLE — this is the most important field:
   • Write 1–3 ALL-CAPS words that CAPTURE the concept's emotional core
-  • Suggested from "${concept}":
+  • Typography Director campaign headline: "${campaignHeadline || titleWord1}" ← use this or improve it
+  • Alternatives from concept "${concept}":
       Option A: "${titleWord1}"
       Option B: "${titleWord2}"
       Option C: "${titlePhrase}"
-  • Choose whichever feels most powerful, or write a better alternative
   • The title must feel like it belongs in a museum or cinema lobby
+  • Scale: use OVERSIZED to MONUMENTAL (the Typography Director preset is Brutalist — type IS the design)
 
 TAGLINE — 1 editorial line, 30–50 chars:
   • Evocative, specific to "${concept}"

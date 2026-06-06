@@ -30,6 +30,12 @@ import {
   buildAtmosphericEventUserPrompt,
   type AtmosphericEventPlan,
 } from "@/lib/atmosphericEvent";
+import {
+  buildTypographyBlock,
+  suggestCampaignHeadline,
+  selectTypographyPreset,
+  type TypographyContext,
+} from "@/lib/typographyDirector";
 import { normalizeLayerNames } from "@/lib/layerNaming";
 import {
   buildCollageLayoutTemplate,
@@ -542,35 +548,71 @@ export async function POST(req: NextRequest) {
         setup.prompt ?? "",
       );
 
-      systemContent = buildCollageStyleSystemPrompt();
+      // ── Typography Director for collage ──────────────────────────────────────
+      const collageTypoCtx: TypographyContext = {
+        pipeline:  "collage",
+        concept:   concept,
+        userTitle: setup.collageTitle,
+      };
+      const collageTypoBlock    = buildTypographyBlock(collageTypoCtx);
+      const collageCampaignHead = setup.collageTitle || suggestCampaignHeadline(concept, "general");
+
+      systemContent = buildCollageStyleSystemPrompt(collageTypoBlock);
       userContent   = buildCollageStyleUserPrompt(
-        collageTemplate, setup, canvas, selectedCollagePattern, collagePaletteRef,
+        collageTemplate, setup, canvas, selectedCollagePattern, collagePaletteRef, collageCampaignHead,
       );
 
       console.log("[layout/route] ── COLLAGE MODE ──");
-      console.log("[layout/route] Pattern:", selectedCollagePattern);
+      console.log("[layout/route] Pattern:", selectedCollagePattern, "| Typography: brutalist | Headline:", collageCampaignHead);
       console.log("[layout/route] Image count:", imageCount, "| Template layers:", collageTemplate.length);
       console.log("[layout/route] Palette:", collagePaletteRef);
     } else if (isProductExhibitMode) {
       // ── Product Exhibit path ────────────────────────────────────────────────
-      const category = detectProductCategory(setup.prompt ?? "");
+      const concept  = setup.productName || setup.prompt || "";
+      const category = detectProductCategory(concept);
       const layout   = selectProductLayout(category);
-      systemContent  = buildProductExhibitSystemPrompt(canvas);
-      userContent    = buildProductExhibitUserPrompt(setup, canvas, brief, category, layout);
+
+      // ── Typography Director for product ──────────────────────────────────────
+      const productTypoCtx: TypographyContext = {
+        pipeline:  "product-exhibit",
+        category,
+        concept,
+        userTitle: setup.productName,
+      };
+      const productTypoPreset   = selectTypographyPreset("product-exhibit", category);
+      const productTypoBlock    = buildTypographyBlock(productTypoCtx);
+      const productCampaignHead = suggestCampaignHeadline(concept, category);
+
+      systemContent = buildProductExhibitSystemPrompt(canvas, productTypoBlock);
+      userContent   = buildProductExhibitUserPrompt(setup, canvas, brief, category, layout, productCampaignHead);
 
       console.log("[layout/route] ── PRODUCT EXHIBIT MODE ──");
-      console.log("[layout/route] Category:", category, "| Layout:", layout);
+      console.log("[layout/route] Category:", category, "| Layout:", layout, "| Typography:", productTypoPreset, "| Headline:", productCampaignHead);
     } else if (isAtmosphericEventMode) {
       // ── Atmospheric Event path ──────────────────────────────────────────────
       const eventText  = setup.eventName || setup.prompt || "";
       const eventType  = detectEventType(eventText + " " + (setup.eventType ?? ""));
       const eventMood  = detectEventMood(eventText + " " + (setup.eventDescription ?? ""), setup.eventMood);
       const preset     = selectEventCompositionPreset(eventType, eventMood);
-      systemContent    = buildAtmosphericEventSystemPrompt(canvas);
-      userContent      = buildAtmosphericEventUserPrompt(setup, canvas, brief, eventType, eventMood, preset);
+
+      // ── Typography Director for event ─────────────────────────────────────────
+      const eventTypoCtx: TypographyContext = {
+        pipeline:  "atmospheric-event",
+        category:  eventType,
+        mood:      eventMood,
+        concept:   eventText,
+        userTitle: setup.eventName,
+      };
+      const eventTypoPreset   = selectTypographyPreset("atmospheric-event", eventType, eventMood);
+      const eventTypoBlock    = buildTypographyBlock(eventTypoCtx);
+      // For events, the event name IS the headline — use it directly
+      const eventCampaignHead = setup.eventName || suggestCampaignHeadline(eventText, eventType);
+
+      systemContent = buildAtmosphericEventSystemPrompt(canvas, eventTypoBlock);
+      userContent   = buildAtmosphericEventUserPrompt(setup, canvas, brief, eventType, eventMood, preset, eventCampaignHead);
 
       console.log("[layout/route] ── ATMOSPHERIC EVENT MODE ──");
-      console.log("[layout/route] Event type:", eventType, "| Mood:", eventMood, "| Preset:", preset);
+      console.log("[layout/route] Event type:", eventType, "| Mood:", eventMood, "| Preset:", preset, "| Typography:", eventTypoPreset, "| Headline:", eventCampaignHead);
     } else {
       // Standard generation
       systemContent = buildSystemPrompt();

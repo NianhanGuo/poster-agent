@@ -244,7 +244,7 @@ GENERAL PRODUCT RULES:
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
-export function buildProductExhibitSystemPrompt(canvas: CanvasConfig): string {
+export function buildProductExhibitSystemPrompt(canvas: CanvasConfig, typographyBlock = ""): string {
   const W = canvas.width;
   const H = canvas.height;
   const PAD = Math.round(Math.min(W, H) * 0.05);
@@ -318,10 +318,15 @@ PRODUCT HERO RULES
 • Include product/shadow below product (geometricShape, opacity 0.10-0.20)
 • Product must have clear contrast from background — never lost in background
 
+${typographyBlock || ""}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TYPOGRAPHY RULES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• text/product-name: fontSize 28-60px (NOT 80-120px — headline is SECONDARY to product)
+• text/product-name: use the CAMPAIGN HEADLINE from Typography Director above — NOT the literal product name
+• fontSize: follow the Typography Director's scale guidance (28-80px depending on preset)
+• fontFamily: use the display font from the Typography Director font pair
+• letterSpacing: use the Typography Director's tracking value
+• typography is SECONDARY to the product — never let it visually dominate the product image
 • text/tagline: fontSize 14-22px
 • feature/0N: fontSize 11-16px
 • trust/label: fontSize 10-14px
@@ -377,6 +382,7 @@ export function buildProductExhibitUserPrompt(
   brief: DesignBrief | undefined,
   category: ProductCategory,
   layout: ProductLayout,
+  campaignHeadline = "",
 ): string {
   const W = canvas.width;
   const H = canvas.height;
@@ -410,6 +416,7 @@ export function buildProductExhibitUserPrompt(
 
 PRODUCT:  "${productName}"
 ${brandName ? `BRAND:    "${brandName}"` : "BRAND:    (generate brand name from product concept)"}
+${campaignHeadline ? `CAMPAIGN HEADLINE: "${campaignHeadline}" ← use this as text/product-name, NOT the product name literally` : "CAMPAIGN HEADLINE: (see Typography Director — generate evocative 1-4 word title)"}
 ${productTagline ? `TAGLINE:  "${productTagline}"` : "TAGLINE:  (generate short emotional or benefit tagline)"}
 ${featureSection}
 ${priceOffer ? `PRICE:    "${priceOffer}"` : ""}
